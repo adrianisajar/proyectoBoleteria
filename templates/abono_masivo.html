@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}Abonos | Boletería Pro{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Registro con prevalidación</p>
+        <h1 class="h3 mb-0">Abonos</h1>
+    </div>
+    <a class="btn btn-outline-primary d-inline-flex align-items-center gap-2" href="{{ url_for('caja') }}">
+        <i class="bi bi-lightning-charge"></i>
+        Modo caja
+    </a>
+</div>
+
+<div class="office-card bg-body p-3 p-md-4 mb-4">
+    <form method="post" class="row g-3 compact-form">
+        <div class="col-md-3">
+            <label for="facturero" class="form-label fw-semibold">Facturero</label>
+            <input type="text" class="form-control text-uppercase" id="facturero" name="facturero" value="{{ form.facturero }}" placeholder="F-502" required>
+        </div>
+        <div class="col-md-3">
+            <label for="valor" class="form-label fw-semibold">Valor del abono</label>
+            <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="text" inputmode="numeric" class="form-control" id="valor" name="valor" value="{{ form.valor }}" placeholder="20.000" required data-money-input>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <label for="fecha" class="form-label fw-semibold">Fecha</label>
+            <input type="date" class="form-control" id="fecha" name="fecha" value="{{ form.fecha }}" required>
+        </div>
+        <div class="col-md-3">
+            <label for="metodo" class="form-label fw-semibold">Método</label>
+            <select class="form-select" id="metodo" name="metodo" required>
+                <option value="efectivo" {% if form.metodo == "efectivo" %}selected{% endif %}>Efectivo</option>
+                <option value="transferencia" {% if form.metodo == "transferencia" %}selected{% endif %}>Transferencia</option>
+            </select>
+        </div>
+
+        <div class="col-12 {% if form.metodo != 'transferencia' %}d-none{% endif %}" id="referenciaGroup">
+            <label for="referencia" class="form-label fw-semibold">Referencia bancaria</label>
+            <input type="text" class="form-control" id="referencia" name="referencia" value="{{ form.referencia }}" placeholder="TX-9981">
+        </div>
+
+        <div class="col-12">
+            <div class="d-flex flex-column flex-sm-row justify-content-between gap-2 mb-2">
+                <label for="boletas" class="form-label fw-semibold mb-0">Boletas</label>
+                <span class="badge text-bg-light border align-self-start" id="contadorBoletas">0 unicas</span>
+            </div>
+            <textarea class="form-control ticket-number" id="boletas" name="boletas" rows="8" placeholder="1, 0050, 432, 9999" required data-ticket-input data-ticket-counter="#contadorBoletas" data-ticket-helper="#resumenBoletas">{{ form.boletas }}</textarea>
+            <div class="ticket-helper small text-secondary mt-2" id="resumenBoletas"></div>
+        </div>
+
+        <div class="col-12 d-flex flex-column flex-sm-row justify-content-end gap-2 pt-2">
+            <a class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-2" href="{{ url_for('abono_masivo') }}">
+                <i class="bi bi-eraser"></i>
+                Limpiar
+            </a>
+            <button type="submit" name="action" value="preview" class="btn btn-outline-primary d-inline-flex align-items-center justify-content-center gap-2">
+                <i class="bi bi-eye"></i>
+                Previsualizar
+            </button>
+            {% if preview and preview.can_confirm %}
+                <button type="submit" name="action" value="confirm" class="btn btn-success d-inline-flex align-items-center justify-content-center gap-2">
+                    <i class="bi bi-check2-circle"></i>
+                    Confirmar {{ preview.validas|length }}
+                </button>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+{% if preview %}
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-success);">
+            <div class="metric-label mb-2">Aplicables</div>
+            <div class="metric-value ticket-number">{{ preview.validas|length }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-secondary);">
+            <div class="metric-label mb-2">Inexistentes</div>
+            <div class="metric-value ticket-number">{{ preview.inexistentes|length }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-warning);">
+            <div class="metric-label mb-2">Ya pagadas</div>
+            <div class="metric-value ticket-number">{{ preview.pagadas|length }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-info);">
+            <div class="metric-label mb-2">Duplicadas</div>
+            <div class="metric-value ticket-number">{{ preview.duplicadas|length }}</div>
+        </div>
+    </div>
+</div>
+
+{% if preview.warnings %}
+    {% for warning in preview.warnings %}
+        <div class="alert alert-warning">{{ warning }}</div>
+    {% endfor %}
+{% endif %}
+
+{% if preview.referencias_usadas %}
+    <div class="alert alert-danger">
+        La referencia ya aparece en:
+        {% for numero in preview.referencias_usadas %}
+            <span class="badge text-bg-light border ticket-number">#{{ "%04d"|format(numero) }}</span>
+        {% endfor %}
+    </div>
+{% endif %}
+
+<div class="office-card bg-body overflow-hidden">
+    <div class="p-3 p-md-4 border-bottom">
+        <h2 class="section-title">Vista previa de aplicación</h2>
+    </div>
+    {% if preview.validas %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle table-sticky mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Boleta</th>
+                        <th>Vendedor</th>
+                        <th>Cliente</th>
+                        <th class="text-end">Actual</th>
+                        <th class="text-end">Nuevo total</th>
+                        <th>Nuevo estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in preview.validas %}
+                        <tr>
+                            <td class="fw-bold ticket-number">#{{ "%04d"|format(item._id) }}</td>
+                            <td>{{ item.vendedor_id }}</td>
+                            <td>{{ item.cliente.nombre or "Sin registrar" }}</td>
+                            <td class="text-end">{{ item.total_abonado|cop }}</td>
+                            <td class="text-end fw-bold text-success">{{ item.nuevo_total|cop }}</td>
+                            <td><span class="badge {% if item.nuevo_estado == 'pagada' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ item.nuevo_estado }}</span></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="p-4">
+            <div class="alert alert-secondary mb-0">No hay boletas aplicables en esta previsualización.</div>
+        </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const metodo = document.getElementById("metodo");
+        const referenciaGroup = document.getElementById("referenciaGroup");
+        const referencia = document.getElementById("referencia");
+        const toggleReferencia = () => {
+            const isTransfer = metodo.value === "transferencia";
+            referenciaGroup.classList.toggle("d-none", !isTransfer);
+            referencia.required = isTransfer;
+            if (!isTransfer) referencia.value = "";
+        };
+
+        metodo.addEventListener("change", toggleReferencia);
+        toggleReferencia();
+    })();
+</script>
+{% endblock %}

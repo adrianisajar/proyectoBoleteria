@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Auditoría | Boletería Pro{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Trazabilidad</p>
+        <h1 class="h3 mb-0">Auditoría</h1>
+    </div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('configuracion_panel') }}">Configuración</a>
+</div>
+
+<div class="office-card bg-body p-3 p-md-4 mb-4">
+    <form method="get" class="row g-2 align-items-end">
+        <div class="col-md-9">
+            <label for="accion" class="form-label fw-semibold">Acción</label>
+            <select class="form-select" id="accion" name="accion">
+                <option value="">Todas</option>
+                {% for item in acciones %}
+                    <option value="{{ item }}" {% if accion == item %}selected{% endif %}>{{ item }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3 d-grid">
+            <button class="btn btn-primary" type="submit">Filtrar</button>
+        </div>
+    </form>
+</div>
+
+<div class="office-card bg-body overflow-hidden">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Fecha UTC</th>
+                    <th>Usuario</th>
+                    <th>Acción</th>
+                    <th>Entidad</th>
+                    <th>Detalle</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in registros %}
+                    <tr>
+                        <td>{{ item.fecha }}</td>
+                        <td>{{ item.usuario }} <span class="text-secondary small">({{ item.rol }})</span></td>
+                        <td><span class="badge text-bg-secondary">{{ item.accion }}</span></td>
+                        <td>{{ item.entidad }} {{ item.entidad_id }}</td>
+                        <td><code>{{ item.detalles }}</code></td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5" class="text-secondary p-4">Sin registros.</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

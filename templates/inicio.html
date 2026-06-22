@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+
+{% block title %}Consultas | Boletería Pro{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Consulta operativa</p>
+        <h1 class="h3 mb-0">Consultas</h1>
+    </div>
+    <a class="btn btn-primary d-inline-flex align-items-center gap-2" href="{{ url_for('abono_masivo') }}">
+        <i class="bi bi-receipt"></i>
+        Ingresar abonos
+    </a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-dark);">
+            <div class="metric-label mb-2">Total</div>
+            <div class="metric-value ticket-number">{{ total }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-success);">
+            <div class="metric-label mb-2">Disponibles</div>
+            <div class="metric-value ticket-number">{{ disponibles }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-warning);">
+            <div class="metric-label mb-2">Abonadas/Pagadas</div>
+            <div class="metric-value ticket-number">{{ vendidas }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-info);">
+            <div class="metric-label mb-2">Asignadas</div>
+            <div class="metric-value ticket-number">{{ asignadas }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="office-card bg-body p-3 p-md-4 mb-4">
+    <form action="{{ url_for('consultas') }}" method="get" class="row g-3 align-items-end">
+        <div class="col-sm-6 col-lg-2">
+            <label for="numero" class="form-label fw-semibold">Número o parte</label>
+            <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="numero" name="numero" value="{{ filters.numero }}" placeholder="0001">
+            <div class="form-text">432 busca todas las boletas que contienen 432. 0432 abre solo esa boleta.</div>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <label for="vendedor_id" class="form-label fw-semibold">Vendedor</label>
+            <select class="form-select" id="vendedor_id" name="vendedor_id">
+                <option value="">Todos</option>
+                <option value="LOCAL" {% if filters.vendedor_id == "LOCAL" %}selected{% endif %}>LOCAL</option>
+                {% for vendedor in vendedor_options %}
+                    <option value="{{ vendedor._id }}" {% if filters.vendedor_id == vendedor._id %}selected{% endif %}>
+                        {{ vendedor._id }}{% if vendedor.nombre %} - {{ vendedor.nombre }}{% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-sm-6 col-lg-2">
+            <label for="estado" class="form-label fw-semibold">Estado</label>
+            <select class="form-select" id="estado" name="estado">
+                <option value="">Todos</option>
+                <option value="disponible" {% if filters.estado == "disponible" %}selected{% endif %}>Disponible</option>
+                <option value="abonado" {% if filters.estado == "abonado" %}selected{% endif %}>Abonado</option>
+                <option value="pagada" {% if filters.estado == "pagada" %}selected{% endif %}>Pagada</option>
+            </select>
+        </div>
+        <div class="col-sm-6 col-lg-2">
+            <label for="cliente_estado" class="form-label fw-semibold">Cliente</label>
+            <select class="form-select" id="cliente_estado" name="cliente_estado">
+                <option value="">Todos</option>
+                <option value="con_cliente" {% if filters.cliente_estado == "con_cliente" %}selected{% endif %}>Con cliente</option>
+                <option value="sin_cliente" {% if filters.cliente_estado == "sin_cliente" %}selected{% endif %}>Sin cliente</option>
+            </select>
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <label for="abono_estado" class="form-label fw-semibold">Abono</label>
+            <select class="form-select" id="abono_estado" name="abono_estado">
+                <option value="">Todos</option>
+                <option value="con_abono" {% if filters.abono_estado == "con_abono" %}selected{% endif %}>Con abono</option>
+                <option value="sin_abono" {% if filters.abono_estado == "sin_abono" %}selected{% endif %}>Sin abono</option>
+            </select>
+        </div>
+
+        <div class="col-sm-6 col-lg-2">
+            <label for="desde" class="form-label fw-semibold">Desde</label>
+            <input type="number" class="form-control ticket-number" id="desde" name="desde" value="{{ filters.desde }}" min="0" max="9999" placeholder="0000">
+        </div>
+        <div class="col-sm-6 col-lg-2">
+            <label for="hasta" class="form-label fw-semibold">Hasta</label>
+            <input type="number" class="form-control ticket-number" id="hasta" name="hasta" value="{{ filters.hasta }}" min="0" max="9999" placeholder="9999">
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <label for="cliente" class="form-label fw-semibold">Nombre</label>
+            <input type="text" class="form-control" id="cliente" name="cliente" value="{{ filters.cliente }}" placeholder="Cliente" list="clientesSugeridos" autocomplete="off">
+            <datalist id="clientesSugeridos"></datalist>
+        </div>
+        <div class="col-sm-6 col-lg-2">
+            <label for="telefono" class="form-label fw-semibold">Teléfono</label>
+            <input type="text" class="form-control" id="telefono" name="telefono" value="{{ filters.telefono }}" placeholder="300">
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <label for="pago_metodo" class="form-label fw-semibold">Método pago</label>
+            <select class="form-select" id="pago_metodo" name="pago_metodo">
+                <option value="">Todos</option>
+                <option value="efectivo" {% if filters.pago_metodo == "efectivo" %}selected{% endif %}>Efectivo</option>
+                <option value="transferencia" {% if filters.pago_metodo == "transferencia" %}selected{% endif %}>Transferencia</option>
+            </select>
+        </div>
+
+        <div class="col-sm-6 col-lg-3">
+            <label for="saldo_estado" class="form-label fw-semibold">Saldo</label>
+            <select class="form-select" id="saldo_estado" name="saldo_estado">
+                <option value="">Todos</option>
+                <option value="pendiente" {% if filters.saldo_estado == "pendiente" %}selected{% endif %}>Con saldo pendiente</option>
+                <option value="sin_saldo" {% if filters.saldo_estado == "sin_saldo" %}selected{% endif %}>Sin saldo</option>
+            </select>
+        </div>
+
+        <div class="col-sm-6 col-lg-3">
+            <label for="facturero" class="form-label fw-semibold">Facturero</label>
+            <input type="text" class="form-control text-uppercase" id="facturero" name="facturero" value="{{ filters.facturero }}" placeholder="F-502">
+        </div>
+        <div class="col-sm-6 col-lg-3">
+            <label for="referencia" class="form-label fw-semibold">Referencia</label>
+            <input type="text" class="form-control" id="referencia" name="referencia" value="{{ filters.referencia }}" placeholder="TX-9981">
+        </div>
+        <div class="col-sm-6 col-lg-2">
+            <label for="limite" class="form-label fw-semibold">Límite</label>
+            <select class="form-select" id="limite" name="limite">
+                <option value="50" {% if limite == 50 %}selected{% endif %}>50</option>
+                <option value="100" {% if limite == 100 %}selected{% endif %}>100</option>
+                <option value="200" {% if limite == 200 %}selected{% endif %}>200</option>
+            </select>
+        </div>
+        <div class="col-sm-6 col-lg-4 d-flex gap-2">
+            <button type="submit" class="btn btn-primary flex-fill d-inline-flex align-items-center justify-content-center gap-2">
+                <i class="bi bi-search"></i>
+                Consultar
+            </button>
+            <a class="btn btn-outline-secondary flex-fill d-inline-flex align-items-center justify-content-center gap-2" href="{{ url_for('consultas') }}">
+                <i class="bi bi-eraser"></i>
+                Limpiar
+            </a>
+        </div>
+    </form>
+</div>
+
+<div class="office-card bg-body overflow-hidden mb-4">
+    <div class="p-3 p-md-4 border-bottom d-flex flex-column flex-md-row justify-content-between gap-2">
+        <div>
+            <h2 class="h5 mb-0">Resultados</h2>
+            <div class="text-secondary small ticket-number">{{ total_resultados }} coincidencia(s)</div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <a class="btn btn-outline-secondary btn-sm {% if not prev_url %}disabled{% endif %}" href="{{ prev_url or '#' }}" aria-label="Página anterior">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+            <span class="badge text-bg-light border ticket-number">Página {{ page }} / {{ total_pages }}</span>
+            <a class="btn btn-outline-secondary btn-sm {% if not next_url %}disabled{% endif %}" href="{{ next_url or '#' }}" aria-label="Página siguiente">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+        </div>
+    </div>
+
+    {% if resultados %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Boleta</th>
+                        <th>Estado</th>
+                        <th>Vendedor</th>
+                        <th>Cliente</th>
+                        <th>Teléfono</th>
+                        <th class="text-end">Abonado</th>
+                        <th>Último pago</th>
+                        <th class="text-end">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in resultados %}
+                        {% set ultimo_pago = item.historial_pagos[0] if item.historial_pagos else none %}
+                        <tr>
+                            <td class="fw-bold ticket-number">#{{ "%04d"|format(item._id) }}</td>
+                            <td>
+                                <span class="badge rounded-pill {% if item.estado == 'pagada' %}text-bg-success{% elif item.estado == 'abonado' %}text-bg-warning{% else %}text-bg-secondary{% endif %} text-uppercase">
+                                    {{ item.estado }}
+                                </span>
+                            </td>
+                            <td>{{ item.vendedor_id }}</td>
+                            <td>{{ item.cliente.nombre or "Sin registrar" }}</td>
+                            <td>{{ item.cliente.telefono or "-" }}</td>
+                            <td class="text-end fw-bold">{{ item.total_abonado|cop }}</td>
+                            <td>
+                                {% if ultimo_pago %}
+                                    <span class="badge text-bg-light border">{{ ultimo_pago.fecha }}</span>
+                                    <span class="small text-secondary">{{ ultimo_pago.facturero }}</span>
+                                {% else %}
+                                    <span class="text-secondary">Sin pagos</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('consultas', numero='%04d'|format(item._id)) }}">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                    Abrir
+                                </a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="p-4">
+            <div class="alert alert-secondary mb-0">Sin resultados.</div>
+        </div>
+    {% endif %}
+</div>
+
+{% if boleta %}
+<div class="office-card bg-body overflow-hidden mb-4">
+    <div class="d-flex flex-column flex-md-row justify-content-between gap-3 p-3 p-md-4 border-bottom">
+        <div>
+            <p class="text-secondary fw-bold text-uppercase small mb-1">Detalle</p>
+            <h2 class="h4 mb-0 ticket-number">Boleta #{{ "%04d"|format(boleta._id) }}</h2>
+        </div>
+        <div class="align-self-start">
+            <span class="badge rounded-pill {% if boleta.estado == 'pagada' %}text-bg-success{% elif boleta.estado == 'abonado' %}text-bg-warning{% else %}text-bg-secondary{% endif %} text-uppercase px-3 py-2">
+                {{ boleta.estado }}
+            </span>
+        </div>
+    </div>
+
+    <div class="p-3 p-md-4">
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="text-secondary small fw-semibold">Vendedor asignado</div>
+                <div class="fw-bold">{{ boleta.vendedor_id }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-secondary small fw-semibold">Total abonado</div>
+                <div class="fw-bold text-success">{{ boleta.total_abonado|cop }} COP</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-secondary small fw-semibold">Cliente</div>
+                <div class="fw-bold">{{ boleta.cliente.nombre or "Sin registrar" }}</div>
+            </div>
+        </div>
+
+        <form action="{{ url_for('actualizar_cliente', boleta_id=boleta._id) }}" method="post" class="row g-3 align-items-end bg-body-tertiary border rounded p-3 mb-4">
+            <div class="col-lg-3">
+                <label for="cliente_nombre" class="form-label fw-semibold">Nombre cliente</label>
+                <input type="text" class="form-control" id="cliente_nombre" name="nombre" value="{{ boleta.cliente.nombre }}" placeholder="Nombre completo">
+            </div>
+            <div class="col-lg-3">
+                <label for="cliente_telefono" class="form-label fw-semibold">Teléfono</label>
+                <input type="tel" class="form-control" id="cliente_telefono" name="telefono" value="{{ boleta.cliente.telefono }}" placeholder="3001234567">
+            </div>
+            <div class="col-lg-4">
+                <label for="cliente_direccion" class="form-label fw-semibold">Dirección</label>
+                <input type="text" class="form-control" id="cliente_direccion" name="direccion" value="{{ boleta.cliente.direccion }}" placeholder="Dirección">
+            </div>
+            <div class="col-lg-2 d-grid">
+                <button type="submit" class="btn btn-outline-primary d-inline-flex align-items-center justify-content-center gap-2">
+                    <i class="bi bi-person-check"></i>
+                    Guardar
+                </button>
+            </div>
+        </form>
+
+        <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+            <h3 class="h6 fw-bold mb-0">Historial de pagos</h3>
+            <span class="badge text-bg-light border">{{ boleta.historial_pagos|length }} registro(s)</span>
+        </div>
+
+        {% if boleta.historial_pagos %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Facturero</th>
+                            <th>Fecha</th>
+                            <th>Método</th>
+                            <th>Referencia</th>
+                            <th class="text-end">Valor</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pago in boleta.historial_pagos %}
+                            <tr>
+                                <td><span class="badge text-bg-secondary">{{ pago.facturero }}</span></td>
+                                <td>{{ pago.fecha }}</td>
+                                <td class="text-uppercase"><small>{{ pago.metodo }}</small></td>
+                                <td><code>{{ pago.referencia }}</code></td>
+                                <td class="text-end fw-bold text-success">{{ pago.valor|cop }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="alert alert-secondary mb-0">Esta boleta no registra abonos.</div>
+        {% endif %}
+
+        {% if boleta.premios_adicionales %}
+        <div class="mt-4">
+            <h3 class="h6 fw-bold mb-3">Premios adicionales</h3>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Premio</th>
+                            <th>Fecha de juego</th>
+                            <th>Participa</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for premio in boleta.premios_adicionales %}
+                            <tr>
+                                <td class="fw-bold">{{ premio.nombre }}</td>
+                                <td>{{ premio.fecha_juego }}</td>
+                                <td>
+                                    {% if premio.participa %}
+                                        <span class="badge rounded-pill text-bg-success"><i class="bi bi-check-lg"></i> Sí</span>
+                                    {% else %}
+                                        <span class="badge rounded-pill text-bg-secondary"><i class="bi bi-x-lg"></i> No</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const input = document.getElementById("cliente");
+        const list = document.getElementById("clientesSugeridos");
+        if (!input || !list) return;
+
+        let timer = null;
+        input.addEventListener("input", () => {
+            window.clearTimeout(timer);
+            const query = input.value.trim();
+            if (query.length < 2) {
+                list.innerHTML = "";
+                return;
+            }
+            timer = window.setTimeout(async () => {
+                const response = await fetch(`/api/clientes?q=${encodeURIComponent(query)}`);
+                const items = await response.json();
+                list.innerHTML = items.map((item) => `<option value="${item.nombre}">${item.label}</option>`).join("");
+            }, 180);
+        });
+    })();
+</script>
+{% endblock %}

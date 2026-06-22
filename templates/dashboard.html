@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard | Boletería Pro{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Estado general</p>
+        <h1 class="h3 mb-0">Dashboard</h1>
+    </div>
+    <a class="btn btn-primary d-inline-flex align-items-center gap-2" href="{{ url_for('caja') }}">
+        <i class="bi bi-lightning-charge"></i>
+        Modo caja
+    </a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-xl-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-success);">
+            <div class="metric-label mb-2">Recaudo total</div>
+            <div class="metric-value">{{ stats.recaudo_total|cop }}</div>
+            <div class="progress progress-thin my-3" role="progressbar" aria-label="Progreso de recaudo" aria-valuenow="{{ stats.progreso_recaudo_pct }}" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar bg-success" style="width: {{ stats.progreso_recaudo_pct }}%"></div>
+            </div>
+            <div class="metric-subtext">{{ stats.progreso_recaudo_pct }}% de {{ stats.recaudo_potencial|cop }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-primary);">
+            <div class="metric-label mb-2">Recaudo hoy</div>
+            <div class="metric-value">{{ stats.recaudo_hoy|cop }}</div>
+            <div class="metric-subtext">{{ stats.pagos_hoy or 0 }} pago(s)</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-warning);">
+            <div class="metric-label mb-2">Saldo pendiente</div>
+            <div class="metric-value">{{ stats.saldo_pendiente|cop }}</div>
+            <div class="metric-subtext">Boletas abonadas no pagadas</div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-info);">
+            <div class="metric-label mb-2">Vendidas</div>
+            <div class="metric-value ticket-number">{{ stats.vendidas or 0 }}</div>
+            <div class="progress progress-thin my-3" role="progressbar" aria-label="Progreso de ventas" aria-valuenow="{{ stats.progreso_ventas_pct }}" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar bg-info" style="width: {{ stats.progreso_ventas_pct }}%"></div>
+            </div>
+            <div class="metric-subtext">{{ stats.progreso_ventas_pct }}% vendidas · {{ stats.pagadas or 0 }} pagadas</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="office-card bg-body p-3 h-100">
+            <div class="metric-label mb-2">Disponibles</div>
+            <div class="h2 mb-0 ticket-number">{{ stats.disponibles or 0 }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="office-card bg-body p-3 h-100">
+            <div class="metric-label mb-2">Abonadas</div>
+            <div class="h2 mb-0 ticket-number">{{ stats.abonadas or 0 }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="office-card bg-body p-3 h-100">
+            <div class="metric-label mb-2">Pagadas</div>
+            <div class="h2 mb-0 ticket-number">{{ stats.pagadas or 0 }}</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="office-card bg-body p-3 h-100">
+            <div class="metric-label mb-2">Asignadas</div>
+            <div class="h2 mb-0 ticket-number">{{ stats.asignadas or 0 }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="office-card bg-body overflow-hidden">
+    <div class="p-3 p-md-4 border-bottom">
+        <h2 class="section-title">Ranking de vendedores</h2>
+    </div>
+    {% if stats.ranking %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Vendedor</th>
+                        <th>Nombre</th>
+                        <th class="text-end">Vendidas</th>
+                        <th class="text-end">Pagadas</th>
+                        <th class="text-end">Recaudo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in stats.ranking %}
+                        <tr>
+                            <td><span class="badge text-bg-secondary">{{ item._id }}</span></td>
+                            <td>{{ item.nombre or "-" }}</td>
+                            <td class="text-end fw-bold ticket-number">{{ item.vendidas }}</td>
+                            <td class="text-end ticket-number">{{ item.pagadas }}</td>
+                            <td class="text-end fw-bold text-success">{{ item.recaudo|cop }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="p-4">
+            <div class="alert alert-secondary mb-0">Aún no hay recaudos registrados.</div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

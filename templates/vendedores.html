@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block title %}Vendedores | Boletería Pro{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Control de lotes físicos</p>
+        <h1 class="h3 mb-0">Vendedores</h1>
+    </div>
+    <a class="btn btn-outline-secondary d-inline-flex align-items-center gap-2" href="{{ url_for('consultas') }}">
+        <i class="bi bi-arrow-left"></i>
+        Consultas
+    </a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-primary);">
+            <div class="metric-label mb-2">Vendedores registrados</div>
+            <div class="metric-value ticket-number">{{ resumen.total_vendedores }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-info);">
+            <div class="metric-label mb-2">Boletas asignadas</div>
+            <div class="metric-value ticket-number">{{ resumen.total_asignadas }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-success);">
+            <div class="metric-label mb-2">Recaudado</div>
+            <div class="metric-value">{{ resumen.total_recaudado|cop }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-warning);">
+            <div class="metric-label mb-2">Comisiones</div>
+            <div class="metric-value">{{ resumen.total_comision|cop }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="office-card bg-body p-3 p-md-4 mb-4">
+    <form method="post" class="row g-3">
+        <div class="col-md-3">
+            <label for="vendedor_id" class="form-label fw-semibold">ID vendedor</label>
+            <input type="text" class="form-control text-uppercase" id="vendedor_id" name="vendedor_id" value="{{ form.vendedor_id }}" placeholder="VEND_01" required>
+        </div>
+        <div class="col-md-4">
+            <label for="nombre" class="form-label fw-semibold">Nombre</label>
+            <input type="text" class="form-control" id="nombre" name="nombre" value="{{ form.nombre }}" placeholder="Juan Pérez">
+        </div>
+        <div class="col-md-3">
+            <label for="telefono" class="form-label fw-semibold">Teléfono</label>
+            <input type="tel" class="form-control" id="telefono" name="telefono" value="{{ form.telefono }}" placeholder="3001234567">
+        </div>
+        <div class="col-md-2">
+            <label class="form-label fw-semibold">Comisión</label>
+            <div class="form-control-plaintext text-secondary small">Automática según ventas</div>
+        </div>
+        <div class="col-md-12 col-lg-2">
+            <label for="operacion" class="form-label fw-semibold">Operación</label>
+            <select class="form-select" id="operacion" name="operacion">
+                <option value="guardar" {% if form.operacion == "guardar" %}selected{% endif %}>Guardar</option>
+                <option value="asignar" {% if form.operacion == "asignar" %}selected{% endif %}>Asignar</option>
+                <option value="quitar" {% if form.operacion == "quitar" %}selected{% endif %}>Quitar</option>
+                <option value="reemplazar" {% if form.operacion == "reemplazar" %}selected{% endif %}>Reemplazar</option>
+            </select>
+        </div>
+
+        <div class="col-12">
+            <div class="d-flex flex-column flex-sm-row justify-content-between gap-2 mb-2">
+                <label for="boletas" class="form-label fw-semibold mb-0">Boletas</label>
+                <span class="badge text-bg-light border align-self-start" id="contadorBoletas">0 detectadas</span>
+            </div>
+            <textarea
+                class="form-control ticket-number"
+                id="boletas"
+                name="boletas"
+                rows="7"
+                placeholder="1, 0050, 432, 9999"
+            >{{ form.boletas }}</textarea>
+        </div>
+
+        <div class="col-12 d-flex flex-column flex-sm-row justify-content-end gap-2 pt-2">
+            <a class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-2" href="{{ url_for('vendedores_panel') }}">
+                <i class="bi bi-eraser"></i>
+                Limpiar
+            </a>
+            <button type="submit" class="btn btn-primary d-inline-flex align-items-center justify-content-center gap-2">
+                <i class="bi bi-check2-circle"></i>
+                Aplicar
+            </button>
+        </div>
+    </form>
+</div>
+
+<div class="office-card bg-body overflow-hidden">
+    <div class="p-3 p-md-4 border-bottom d-flex align-items-center justify-content-between gap-3">
+        <h2 class="h5 mb-0">Listado</h2>
+        <span class="badge text-bg-light border">{{ vendedores_lista|length }} registro(s)</span>
+    </div>
+
+    {% if vendedores_lista %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Nombre</th>
+                        <th>Teléfono</th>
+                        <th class="text-end">Boletas</th>
+                        <th class="text-end">Vendidas</th>
+                        <th class="text-end">Recaudado</th>
+                        <th class="text-end">Comisión</th>
+                        <th class="text-end">Pendiente</th>
+                        <th>Vista rápida</th>
+                        <th class="text-end">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vendedor in vendedores_lista %}
+                        <tr>
+                            <td><span class="badge text-bg-secondary">{{ vendedor._id }}</span></td>
+                            <td>{{ vendedor.nombre or "Sin nombre" }}</td>
+                            <td>{{ vendedor.telefono or "Sin teléfono" }}</td>
+                            <td class="text-end fw-bold ticket-number">{{ vendedor.cantidad }}</td>
+                            <td class="text-end ticket-number">{{ vendedor.vendidas }}</td>
+                            <td class="text-end fw-bold text-success">{{ vendedor.recaudado|cop }}</td>
+                            <td class="text-end">{{ vendedor.comision|cop }} <span class="text-secondary small">({{ vendedor.comision_por_boleta|cop }}/u)</span></td>
+                            <td class="text-end">{{ vendedor.saldo_pendiente|cop }}</td>
+                            <td class="ticket-number">
+                                {% if vendedor.preview %}
+                                    {% for numero in vendedor.preview %}
+                                        <span class="badge text-bg-light border">#{{ "%04d"|format(numero) }}</span>
+                                    {% endfor %}
+                                    {% if vendedor.cantidad > vendedor.preview|length %}
+                                        <span class="text-secondary small">+{{ vendedor.cantidad - vendedor.preview|length }}</span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-secondary">Sin boletas</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-primary cargar-vendedor"
+                                    data-vendedor-id="{{ vendedor._id }}"
+                                    data-nombre="{{ vendedor.nombre }}"
+                                    data-telefono="{{ vendedor.telefono }}"
+                                >
+                                    <i class="bi bi-pencil-square"></i>
+                                    Editar
+                                </button>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="p-4">
+            <div class="alert alert-secondary mb-0">No hay vendedores registrados.</div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const vendedorId = document.getElementById("vendedor_id");
+        const nombre = document.getElementById("nombre");
+        const telefono = document.getElementById("telefono");
+        const operacion = document.getElementById("operacion");
+        const boletas = document.getElementById("boletas");
+        const contador = document.getElementById("contadorBoletas");
+
+        const actualizarContador = () => {
+            const partes = boletas.value.trim().split(/[\s,;]+/).filter(Boolean);
+            const unicas = new Set(partes.filter((item) => /^\d+$/.test(item)).map((item) => Number(item)));
+            contador.textContent = `${unicas.size} detectada${unicas.size === 1 ? "" : "s"}`;
+        };
+
+        document.querySelectorAll(".cargar-vendedor").forEach((button) => {
+            button.addEventListener("click", () => {
+                vendedorId.value = button.dataset.vendedorId || "";
+                nombre.value = button.dataset.nombre || "";
+                telefono.value = button.dataset.telefono || "";
+                operacion.value = "guardar";
+                vendedorId.focus();
+            });
+        });
+
+        boletas.addEventListener("input", actualizarContador);
+        actualizarContador();
+    })();
+</script>
+{% endblock %}

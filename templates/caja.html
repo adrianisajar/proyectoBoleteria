@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+
+{% block title %}Caja | Boletería Pro{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Digitación rápida</p>
+        <h1 class="h3 mb-0">Modo caja</h1>
+    </div>
+    <div class="d-flex flex-column flex-sm-row gap-2">
+        <a class="btn btn-outline-secondary d-inline-flex align-items-center gap-2" href="{{ url_for('consultas') }}">
+            <i class="bi bi-search"></i>
+            Consultas
+        </a>
+        <button class="btn btn-outline-primary d-inline-flex align-items-center gap-2" type="button" data-bs-toggle="collapse" data-bs-target="#pagoRapido" aria-expanded="false" aria-controls="pagoRapido">
+            <i class="bi bi-lightning-charge"></i>
+            Cobro rápido
+        </button>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-5">
+        <div class="office-card bg-body p-3 p-md-4 h-100">
+            <form method="post" class="row g-3 compact-form" id="clienteRapidoForm" autocomplete="off">
+                <input type="hidden" name="action" value="cliente_rapido">
+                <div class="col-12">
+                    <label for="boleta_cliente" class="form-label fw-semibold">Boleta</label>
+                    <input type="text" inputmode="numeric" maxlength="4" class="form-control form-control-lg ticket-number" id="boleta_cliente" name="boleta_cliente" value="{{ cliente_form.boleta }}" placeholder="0004" required autofocus>
+                </div>
+                <div class="col-12">
+                    <label for="nombre" class="form-label fw-semibold">Comprador</label>
+                    <input type="text" class="form-control text-uppercase" id="nombre" name="nombre" value="{{ cliente_form.nombre }}" placeholder="Nombre completo" required>
+                </div>
+                <div class="col-md-5">
+                    <label for="telefono" class="form-label fw-semibold">Teléfono</label>
+                    <input type="tel" class="form-control" id="telefono" name="telefono" value="{{ cliente_form.telefono }}" placeholder="3001234567">
+                </div>
+                <div class="col-md-7">
+                    <label for="direccion" class="form-label fw-semibold">Dirección</label>
+                    <input type="text" class="form-control text-uppercase" id="direccion" name="direccion" value="{{ cliente_form.direccion }}" placeholder="Dirección">
+                </div>
+                <div class="col-12 pt-2">
+                    <div class="border-top pt-3">
+                        <h2 class="section-title mb-3">Abono de esta boleta</h2>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="valor_cliente" class="form-label fw-semibold">Valor abono</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input type="text" inputmode="numeric" class="form-control" id="valor_cliente" name="valor_cliente" value="{{ cliente_form.valor }}" placeholder="Opcional" data-money-input>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="facturero_cliente" class="form-label fw-semibold">Facturero</label>
+                                <input type="text" class="form-control text-uppercase" id="facturero_cliente" name="facturero_cliente" value="{{ cliente_form.facturero }}" placeholder="F-502">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="fecha_cliente" class="form-label fw-semibold">Fecha</label>
+                                <input type="date" class="form-control" id="fecha_cliente" name="fecha_cliente" value="{{ cliente_form.fecha }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="metodo_cliente" class="form-label fw-semibold">Método</label>
+                                <select class="form-select" id="metodo_cliente" name="metodo_cliente">
+                                    <option value="efectivo" {% if cliente_form.metodo == "efectivo" %}selected{% endif %}>Efectivo</option>
+                                    <option value="transferencia" {% if cliente_form.metodo == "transferencia" %}selected{% endif %}>Transferencia</option>
+                                </select>
+                            </div>
+                            <div class="col-12 {% if cliente_form.metodo != 'transferencia' %}d-none{% endif %}" id="referenciaClienteGroup">
+                                <label for="referencia_cliente" class="form-label fw-semibold">Referencia</label>
+                                <input type="text" class="form-control" id="referencia_cliente" name="referencia_cliente" value="{{ cliente_form.referencia }}" placeholder="TX-9981">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 d-grid">
+                    <button type="submit" class="btn btn-success btn-lg d-inline-flex align-items-center justify-content-center gap-2">
+                        <i class="bi bi-person-check"></i>
+                        Guardar comprador
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="office-card bg-body p-3 p-md-4 h-100">
+            <div class="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
+                <div>
+                    <div class="metric-label mb-1">Boleta consultada</div>
+                    <div class="h2 mb-0 ticket-number" id="boletaResumen">----</div>
+                </div>
+                <span class="badge rounded-pill text-bg-secondary align-self-start text-uppercase" id="estadoResumen">Sin consulta</span>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="text-secondary small fw-semibold">Vendedor</div>
+                    <div class="fw-bold" id="vendedorResumen">-</div>
+                </div>
+                <div class="col-md-6">
+                    <div class="text-secondary small fw-semibold">Total abonado</div>
+                    <div class="fw-bold text-success" id="abonadoResumen">$0</div>
+                </div>
+                <div class="col-md-6">
+                    <div class="text-secondary small fw-semibold">Comprador actual</div>
+                    <div class="fw-bold" id="compradorResumen">Sin registrar</div>
+                </div>
+                <div class="col-md-6">
+                    <div class="text-secondary small fw-semibold">Teléfono actual</div>
+                    <div class="fw-bold" id="telefonoResumen">-</div>
+                </div>
+                <div class="col-12">
+                    <div class="text-secondary small fw-semibold">Dirección actual</div>
+                    <div class="fw-bold" id="direccionResumen">-</div>
+                </div>
+                <div class="col-12" id="premiosResumen" style="display:none;">
+                    <div class="text-secondary small fw-semibold mb-1">Premios adicionales</div>
+                    <div id="premiosListaResumen"></div>
+                </div>
+            </div>
+            <div class="alert alert-secondary mt-4 mb-0 py-2" id="lookupMensaje">Digite una boleta para ver sus datos.</div>
+        </div>
+    </div>
+</div>
+
+<div class="collapse" id="pagoRapido">
+    <form method="post" class="row g-3">
+        <input type="hidden" name="action" value="pago_rapido">
+        <div class="col-lg-8">
+            <div class="office-card bg-body p-3 p-md-4 h-100">
+                <label for="boletas" class="form-label fw-semibold">Boletas a cobrar</label>
+                <textarea class="form-control form-control-lg ticket-number" id="boletas" name="boletas" rows="8" placeholder="1 0050 432" required data-ticket-input data-ticket-counter="#contadorBoletas" data-ticket-helper="#resumenBoletas">{{ form.boletas }}</textarea>
+                <div class="d-flex justify-content-between align-items-center gap-2 mt-3">
+                    <div>
+                        <span class="badge text-bg-light border" id="contadorBoletas">0 unicas</span>
+                        <div class="ticket-helper small text-secondary mt-1" id="resumenBoletas"></div>
+                    </div>
+                    <button type="submit" class="btn btn-success btn-lg d-inline-flex align-items-center justify-content-center gap-2">
+                        <i class="bi bi-lightning-charge"></i>
+                        Registrar pago
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="office-card bg-body p-3 p-md-4 h-100">
+                <h2 class="section-title mb-3">Datos del pago</h2>
+                <div class="row g-3 compact-form">
+                    <div class="col-12">
+                        <label for="facturero" class="form-label fw-semibold">Facturero</label>
+                        <input type="text" class="form-control text-uppercase" id="facturero" name="facturero" value="{{ form.facturero }}" placeholder="F-502" required>
+                    </div>
+                    <div class="col-12">
+                        <label for="valor" class="form-label fw-semibold">Valor por boleta</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="text" inputmode="numeric" class="form-control" id="valor" name="valor" value="{{ form.valor }}" placeholder="20.000" required data-money-input>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label for="fecha" class="form-label fw-semibold">Fecha</label>
+                        <input type="date" class="form-control" id="fecha" name="fecha" value="{{ form.fecha }}" required>
+                    </div>
+                    <div class="col-12">
+                        <label for="metodo" class="form-label fw-semibold">Método</label>
+                        <select class="form-select" id="metodo" name="metodo">
+                            <option value="efectivo" {% if form.metodo == "efectivo" %}selected{% endif %}>Efectivo</option>
+                            <option value="transferencia" {% if form.metodo == "transferencia" %}selected{% endif %}>Transferencia</option>
+                        </select>
+                    </div>
+                    <div class="col-12 {% if form.metodo != 'transferencia' %}d-none{% endif %}" id="referenciaGroup">
+                        <label for="referencia" class="form-label fw-semibold">Referencia</label>
+                        <input type="text" class="form-control" id="referencia" name="referencia" value="{{ form.referencia }}" placeholder="TX-9981">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const metodo = document.getElementById("metodo");
+        const referenciaGroup = document.getElementById("referenciaGroup");
+        const referencia = document.getElementById("referencia");
+        const metodoCliente = document.getElementById("metodo_cliente");
+        const referenciaClienteGroup = document.getElementById("referenciaClienteGroup");
+        const referenciaCliente = document.getElementById("referencia_cliente");
+        const boletas = document.getElementById("boletas");
+        const boletaCliente = document.getElementById("boleta_cliente");
+        const nombre = document.getElementById("nombre");
+        const telefono = document.getElementById("telefono");
+        const direccion = document.getElementById("direccion");
+        const lookupMensaje = document.getElementById("lookupMensaje");
+        const estadoResumen = document.getElementById("estadoResumen");
+        const boletaResumen = document.getElementById("boletaResumen");
+        const vendedorResumen = document.getElementById("vendedorResumen");
+        const abonadoResumen = document.getElementById("abonadoResumen");
+        const compradorResumen = document.getElementById("compradorResumen");
+        const telefonoResumen = document.getElementById("telefonoResumen");
+        const direccionResumen = document.getElementById("direccionResumen");
+        const premiosResumen = document.getElementById("premiosResumen");
+        const premiosListaResumen = document.getElementById("premiosListaResumen");
+
+        const money = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
+
+        const toggle = () => {
+            const transfer = metodo.value === "transferencia";
+            referenciaGroup.classList.toggle("d-none", !transfer);
+            referencia.required = transfer;
+            if (!transfer) referencia.value = "";
+        };
+
+        const toggleCliente = () => {
+            const transfer = metodoCliente.value === "transferencia";
+            referenciaClienteGroup.classList.toggle("d-none", !transfer);
+            referenciaCliente.required = transfer;
+            if (!transfer) referenciaCliente.value = "";
+        };
+
+        const setEstadoBadge = (estado) => {
+            estadoResumen.className = "badge rounded-pill align-self-start text-uppercase ";
+            if (estado === "pagada") estadoResumen.className += "text-bg-success";
+            else if (estado === "abonado") estadoResumen.className += "text-bg-warning";
+            else if (estado === "disponible") estadoResumen.className += "text-bg-secondary";
+            else estadoResumen.className += "text-bg-secondary";
+            estadoResumen.textContent = estado || "Sin consulta";
+        };
+
+        const limpiarResumen = (message) => {
+            boletaResumen.textContent = "----";
+            vendedorResumen.textContent = "-";
+            abonadoResumen.textContent = "$0";
+            compradorResumen.textContent = "Sin registrar";
+            telefonoResumen.textContent = "-";
+            direccionResumen.textContent = "-";
+            premiosResumen.style.display = "none";
+            setEstadoBadge("");
+            lookupMensaje.className = "alert alert-secondary mt-4 mb-0 py-2";
+            lookupMensaje.textContent = message;
+        };
+
+        const cargarBoleta = async () => {
+            const raw = boletaCliente.value.trim();
+            if (!/^\d{1,4}$/.test(raw)) {
+                limpiarResumen("Digite una boleta para ver sus datos.");
+                return;
+            }
+
+            const number = Number(raw);
+            try {
+                const response = await fetch(`/api/boletas/${number}`);
+                const payload = await response.json();
+                if (!response.ok || !payload.ok) {
+                    limpiarResumen(payload.error || "No se pudo consultar la boleta.");
+                    lookupMensaje.className = "alert alert-warning mt-4 mb-0 py-2";
+                    return;
+                }
+
+                boletaResumen.textContent = `#${payload.boleta}`;
+                vendedorResumen.textContent = payload.vendedor_id || "LOCAL";
+                abonadoResumen.textContent = money.format(payload.total_abonado || 0);
+                compradorResumen.textContent = payload.cliente.nombre || "Sin registrar";
+                telefonoResumen.textContent = payload.cliente.telefono || "-";
+                direccionResumen.textContent = payload.cliente.direccion || "-";
+                setEstadoBadge(payload.estado);
+
+                if (payload.premios_adicionales && payload.premios_adicionales.length) {
+                    premiosResumen.style.display = "";
+                    premiosListaResumen.innerHTML = payload.premios_adicionales.map(function(p) {
+                        const icon = p.participa ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle-fill text-secondary"></i>';
+                        return '<div class="d-flex align-items-center gap-2 mb-1"><span class="small">' + icon + ' ' + p.nombre + ' (' + p.fecha_juego + ')' + '</span></div>';
+                    }).join("");
+                } else {
+                    premiosResumen.style.display = "none";
+                }
+                lookupMensaje.className = "alert alert-info mt-4 mb-0 py-2";
+                lookupMensaje.textContent = payload.cliente.nombre ? "Esta boleta ya tiene comprador; al guardar se actualizará." : "Boleta lista para registrar comprador.";
+
+                if (!nombre.value && payload.cliente.nombre) nombre.value = payload.cliente.nombre;
+                if (!telefono.value && payload.cliente.telefono) telefono.value = payload.cliente.telefono;
+                if (!direccion.value && payload.cliente.direccion) direccion.value = payload.cliente.direccion;
+            } catch (_error) {
+                limpiarResumen("No se pudo consultar la boleta.");
+                lookupMensaje.className = "alert alert-danger mt-4 mb-0 py-2";
+            }
+        };
+
+        metodo.addEventListener("change", toggle);
+        metodoCliente.addEventListener("change", toggleCliente);
+        boletaCliente.addEventListener("input", () => {
+            window.clearTimeout(boletaCliente._lookupTimer);
+            boletaCliente._lookupTimer = window.setTimeout(cargarBoleta, 180);
+        });
+        document.addEventListener("keydown", (event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                if (document.activeElement && document.activeElement.closest("#pagoRapido")) {
+                    boletas.form.requestSubmit();
+                } else {
+                    document.getElementById("clienteRapidoForm").requestSubmit();
+                }
+            }
+        });
+        toggle();
+        toggleCliente();
+        cargarBoleta();
+    })();
+</script>
+{% endblock %}

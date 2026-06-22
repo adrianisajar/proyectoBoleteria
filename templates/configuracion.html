@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}Configuración | Boletería Pro{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Parámetros y acceso</p>
+        <h1 class="h3 mb-0">Configuración</h1>
+    </div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('auditoria_panel') }}">Auditoría</a>
+</div>
+
+<div class="row g-4">
+    <form method="post" class="col-lg-5">
+        <div class="office-card bg-body p-3 p-md-4 h-100">
+            <h2 class="section-title mb-3">Rifa</h2>
+            <div class="row g-3">
+                <div class="col-12">
+                    <label for="nombre_rifa" class="form-label fw-semibold">Nombre</label>
+                    <input type="text" class="form-control" id="nombre_rifa" name="nombre_rifa" value="{{ config.nombre_rifa }}">
+                </div>
+                <div class="col-md-6">
+                    <label for="valor_boleta" class="form-label fw-semibold">Valor boleta</label>
+                    <div class="input-group">
+                        <span class="input-group-text">$</span>
+                        <input type="text" class="form-control" id="valor_boleta" name="valor_boleta" value="{{ config.valor_boleta }}">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Comisión</label>
+                    <div class="form-control-plaintext text-secondary small">Automática según ventas del vendedor</div>
+                </div>
+                <div class="col-12 d-grid">
+                    <button type="submit" class="btn btn-primary">Guardar configuración</button>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    <form method="post" class="col-lg-7 d-flex flex-column gap-3">
+        <div class="office-card bg-body p-3 p-md-4">
+            <h2 class="section-title mb-3">Premios adicionales</h2>
+            <p class="text-secondary small mb-3">Cada $20.000 abonados antes de la fecha del premio dan derecho a participar en un premio adicional. Configura los premios y sus fechas de juego.</p>
+            <div id="premiosContainer">
+                {% for premio in config.get('premios_adicionales', []) %}
+                <div class="row g-2 mb-2 premio-row">
+                    <div class="col-md-6">
+                        <input type="text" class="form-control" name="premio_nombre[]" value="{{ premio.nombre }}" placeholder="Nombre del premio">
+                    </div>
+                    <div class="col-md-4">
+                        <input type="date" class="form-control" name="premio_fecha[]" value="{{ premio.fecha_juego }}">
+                    </div>
+                    <div class="col-md-2 d-grid">
+                        <button type="button" class="btn btn-outline-danger" onclick="this.closest('.premio-row').remove()">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="agregarPremioBtn">
+                <i class="bi bi-plus-lg"></i> Agregar premio
+            </button>
+            <div class="mt-3 d-grid">
+                <button type="submit" class="btn btn-primary">Guardar premios</button>
+            </div>
+        </div>
+    </form>
+
+    <div class="col-lg-7 d-flex flex-column gap-3" style="margin-top: -1rem;">
+        <div class="office-card bg-body p-3 p-md-4 border border-primary">
+            <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">
+                <div>
+                    <h2 class="section-title mb-1">Importar asignaciones</h2>
+                    <p class="text-secondary mb-0">Actualiza solo las boletas asignadas a vendedores desde el Excel. No modifica compradores, abonos ni estados de pago.</p>
+                </div>
+                <span class="badge text-bg-primary align-self-start">XLSX</span>
+            </div>
+            <form action="{{ url_for('importar_rifa_excel') }}" method="post" enctype="multipart/form-data" class="row g-3 align-items-end">
+                <div class="col-12">
+                    <label for="archivo_rifa" class="form-label fw-semibold">Archivo de rifa</label>
+                    <input type="file" class="form-control" id="archivo_rifa" name="archivo_rifa" accept=".xlsx" required>
+                    <div class="form-text">Actualiza boletas ya asignadas a vendedores (no modifica boletas en LOCAL). Si dice LOCAL seguido de un nombre, se toma como vendedor.</div>
+                </div>
+                <div class="col-md-5">
+                    <label for="confirmacion_importacion" class="form-label fw-semibold">Confirmación</label>
+                    <input type="text" class="form-control" id="confirmacion_importacion" name="confirmacion_importacion" placeholder="Escriba IMPORTAR" required>
+                </div>
+                <div class="col-md-7 d-grid">
+                    <button type="submit" class="btn btn-primary d-inline-flex align-items-center justify-content-center gap-2">
+                        <i class="bi bi-upload"></i>
+                        Actualizar asignaciones
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+    <div class="row g-4 mt-1">
+        <div class="col-12">
+            <div class="office-card bg-body p-3 p-md-4 border border-warning">
+                <h2 class="section-title mb-3">Crear nueva rifa</h2>
+                <form action="{{ url_for('nueva_rifa') }}" method="post" class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label for="nombre_rifa_nueva" class="form-label fw-semibold">Nombre nueva rifa</label>
+                        <input type="text" class="form-control" id="nombre_rifa_nueva" name="nombre_rifa_nueva" placeholder="Nombre de la nueva rifa">
+                    </div>
+                <div class="col-md-2">
+                    <label for="valor_boleta_nueva" class="form-label fw-semibold">Valor boleta</label>
+                    <input type="text" inputmode="numeric" class="form-control" id="valor_boleta_nueva" name="valor_boleta_nueva" value="{{ config.valor_boleta }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label fw-semibold">Comisión</label>
+                    <div class="form-control-plaintext text-secondary small">Automática</div>
+                </div>
+                <div class="col-md-2">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="conservar_vendedores" name="conservar_vendedores" checked>
+                        <label class="form-check-label" for="conservar_vendedores">Conservar vendedores y asignaciones</label>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <label for="confirmacion" class="form-label fw-semibold">Confirmación</label>
+                    <input type="text" class="form-control" id="confirmacion" name="confirmacion" placeholder="Escriba NUEVA RIFA">
+                </div>
+                <div class="col-md-1 d-grid">
+                    <button type="submit" class="btn btn-warning">Crear</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById("agregarPremioBtn").addEventListener("click", function() {
+        const container = document.getElementById("premiosContainer");
+        const row = document.createElement("div");
+        row.className = "row g-2 mb-2 premio-row";
+        row.innerHTML = [
+            '<div class="col-md-6">',
+            '<input type="text" class="form-control" name="premio_nombre[]" placeholder="Nombre del premio">',
+            '</div>',
+            '<div class="col-md-4">',
+            '<input type="date" class="form-control" name="premio_fecha[]">',
+            '</div>',
+            '<div class="col-md-2 d-grid">',
+            '<button type="button" class="btn btn-outline-danger" onclick="this.closest(\'.premio-row\').remove()">',
+            '<i class="bi bi-trash"></i>',
+            '</button>',
+            '</div>',
+        ].join("");
+        container.appendChild(row);
+    });
+</script>
+{% endblock %}
