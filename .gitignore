@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Entorno
+.env
+.venv/
+venv/
+
+# Logs
+*.log
+flask-server.err.log
+flask-server.out.log

@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+{% block title %}Nueva factura de cliente — {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Facturaci&oacute;n</p>
+        <h1 class="h3 mb-0">Nueva factura de cliente</h1>
+    </div>
+    <a href="{{ url_for('facturas_cliente') }}" class="btn btn-outline-secondary d-inline-flex align-items-center gap-2">
+        <i class="bi bi-arrow-left"></i> Ver facturas
+    </a>
+</div>
+
+<form id="formFacturaCliente" method="post" class="row g-3" autocomplete="off">
+    <div class="col-lg-4">
+        <div class="office-card bg-body p-3 p-md-4">
+            <h2 class="section-title mb-3">Datos del cliente</h2>
+            <div class="row g-3">
+                <div class="col-12">
+                    <label for="nombre" class="form-label fw-semibold">Nombre</label>
+                    <input type="text" class="form-control text-uppercase" id="nombre" name="nombre" value="{{ form.nombre }}" required>
+                </div>
+                <div class="col-12">
+                    <label for="telefono" class="form-label fw-semibold">Tel&eacute;fono</label>
+                    <input type="tel" class="form-control" id="telefono" name="telefono" value="{{ form.telefono }}" placeholder="3001234567">
+                </div>
+                <div class="col-12">
+                    <label for="direccion" class="form-label fw-semibold">Direcci&oacute;n</label>
+                    <input type="text" class="form-control text-uppercase" id="direccion" name="direccion" value="{{ form.direccion }}" placeholder="Direcci&oacute;n">
+                </div>
+                <div class="col-12">
+                    <label for="fecha" class="form-label fw-semibold">Fecha del abono</label>
+                    <input type="date" class="form-control" id="fecha" name="fecha" value="{{ today }}" max="{{ today }}">
+                </div>
+                <div class="col-12">
+                    <div class="bg-light rounded p-3">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-secondary small">Boletas</span>
+                            <span class="fw-bold" id="resCantidad">0</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="text-secondary small">Total recibido</span>
+                            <span class="fw-bold text-success" id="resTotal">$0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="office-card bg-body p-3 p-md-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="section-title mb-0">Boletas y pagos</h2>
+                <button type="button" class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1" id="agregarFila">
+                    <i class="bi bi-plus-lg"></i> Agregar boleta
+                </button>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0" id="abonosTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:20%;">Boleta</th>
+                            <th style="width:20%;">Valor pago</th>
+                            <th style="width:15%;">M&eacute;todo</th>
+                            <th style="width:25%;">Referencia</th>
+                            <th style="width:1px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="abonosBody">
+                        <tr class="fila-abono">
+                            <td>
+                                <input type="text" class="form-control form-control-sm ticket-number boleta-input" name="boleta[]" placeholder="0001" inputmode="numeric" required>
+                            </td>
+                            <td>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text">$</span>
+                                    <input type="text" class="form-control monto-input" name="monto[]" placeholder="0" inputmode="numeric">
+                                </div>
+
+                            </td>
+                            <td>
+                                <select class="form-select form-select-sm" name="metodo[]">
+                                    <option value="efectivo">Efectivo</option>
+                                    <option value="transferencia">Transferencia</option>
+                                </select>
+                            </td>
+                            <td class="ref-cell">
+                                <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="TX-000">
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-danger eliminar-fila" title="Quitar">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <hr>
+            <div class="d-grid">
+                <button type="button" class="btn btn-success btn-lg d-inline-flex align-items-center justify-content-center gap-2" id="btnPreview">
+                    <i class="bi bi-file-earmark-pdf"></i>
+                    Generar factura e imprimir
+                </button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="office-card bg-body p-3 p-md-4 mt-3" id="previewEnVivo">
+    <h2 class="section-title mb-3">Vista previa del recibo</h2>
+    <div class="text-center text-secondary py-3" id="previewPlaceholder"><i class="bi bi-eye-slash me-2"></i>Complete los datos para ver la vista previa.</div>
+    <div id="previewContent" style="display:none;">
+        <div id="previewReceipt"></div>
+    </div>
+</div>
+
+<div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Resumen de factura</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body" id="previewBody">
+                <div class="text-center py-4 text-secondary">Procesando...</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success" id="btnConfirmar">
+                    <i class="bi bi-check-lg"></i> Confirmar e imprimir
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+    const money = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
+    const abonosBody = document.getElementById("abonosBody");
+    const agregarFila = document.getElementById("agregarFila");
+    const resCantidad = document.getElementById("resCantidad");
+    const resTotal = document.getElementById("resTotal");
+
+    const plantilla = abonosBody.querySelector(".fila-abono").cloneNode(true);
+
+    const previewPlaceholder = document.getElementById("previewPlaceholder");
+    const previewContent = document.getElementById("previewContent");
+    const previewReceipt = document.getElementById("previewReceipt");
+
+    const actualizarPreview = () => {
+        const nombre = document.getElementById("nombre").value.trim();
+
+        if (!nombre) {
+            previewContent.style.display = "none";
+            previewPlaceholder.style.display = "";
+            return;
+        }
+
+        const filas = abonosBody.querySelectorAll(".fila-abono");
+        const items = [];
+        let hayDatos = false;
+
+        filas.forEach(function(f) {
+            const raw = f.querySelector(".boleta-input").value.trim();
+            if (!/^\d{1,4}$/.test(raw)) return;
+            hayDatos = true;
+            const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
+            items.push({ boleta: parseInt(raw), monto: monto });
+        });
+
+        if (!hayDatos) {
+            previewContent.style.display = "none";
+            previewPlaceholder.style.display = "";
+            return;
+        }
+
+        previewPlaceholder.style.display = "none";
+        previewContent.style.display = "";
+
+        var h = "";
+        h += '<div class="mb-3 pb-3 border-bottom">';
+        h += '  <div class="text-secondary small fw-semibold">Cliente</div>';
+        h += '  <div class="fw-bold fs-5">' + nombre + '</div>';
+        h += '</div>';
+
+        h += '<h6 class="fw-bold mb-2">Boletas</h6>';
+        var totalGeneral = 0;
+        items.forEach(function(it) {
+            totalGeneral += it.monto;
+            h += '<div class="d-flex justify-content-between align-items-center p-2 mb-1 rounded" style="background:#f8f9fa;">';
+            h += '  <div><span class="fw-bold ticket-number">#' + ("0000" + it.boleta).slice(-4) + '</span>';
+            if (it.monto > 0) {
+                h += '    <span class="text-success ms-2">$' + it.monto.toLocaleString("es-CO") + '</span>';
+            } else {
+                h += '    <span class="text-secondary ms-2" style="font-size:.8rem;">Sin pago</span>';
+            }
+            h += '  </div>';
+            h += '</div>';
+        });
+
+        h += '<div class="mt-3 pt-2 border-top">';
+        h += '  <div class="d-flex justify-content-between"><span>Boletas</span><span class="fw-bold">' + items.length + '</span></div>';
+        if (totalGeneral > 0) {
+            h += '  <div class="d-flex justify-content-between fs-5 fw-bold border-top pt-2 mt-1"><span>Total recibido</span><span class="text-success">$' + totalGeneral.toLocaleString("es-CO") + '</span></div>';
+        }
+        h += '</div>';
+
+        previewReceipt.innerHTML = h;
+    };
+
+    const actualizarResumen = () => {
+        const filas = abonosBody.querySelectorAll(".fila-abono");
+        let total = 0;
+        let tickets = 0;
+        filas.forEach(function(f) {
+            const val = f.querySelector(".boleta-input").value.trim();
+            if (val) tickets++;
+            const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
+            total += monto;
+        });
+        resCantidad.textContent = tickets;
+        resTotal.textContent = money.format(total);
+        actualizarPreview();
+    };
+
+    const formatearMonto = (input) => {
+        const raw = input.value.replace(/[^0-9]/g, "");
+        if (raw) {
+            input.value = parseInt(raw).toLocaleString("es-CO");
+        }
+    };
+
+    const alternarReferencia = (fila) => {
+        const metodo = fila.querySelector("select[name='metodo[]']").value;
+        const refCell = fila.querySelector(".ref-cell");
+        refCell.style.display = metodo === "transferencia" ? "" : "none";
+        if (metodo !== "transferencia") {
+            fila.querySelector("input[name='referencia[]']").value = "";
+        }
+    };
+
+    let autoFillDone = false;
+    let autoFilledBoleta = null;
+
+    const autoFillCliente = async (boletaNum) => {
+        if (autoFillDone) return;
+        const nombreEl = document.getElementById("nombre");
+        if (nombreEl.value.trim()) return;
+        try {
+            const res = await fetch("/api/boletas/" + boletaNum);
+            const data = await res.json();
+            if (data.ok && data.cliente && data.cliente.nombre) {
+                nombreEl.value = data.cliente.nombre.toUpperCase();
+                document.getElementById("telefono").value = data.cliente.telefono || "";
+                document.getElementById("direccion").value = (data.cliente.direccion || "").toUpperCase();
+                autoFillDone = true;
+                autoFilledBoleta = boletaNum;
+                actualizarPreview();
+            }
+        } catch (_e) {}
+    };
+
+    let autoFillTimeout = null;
+
+    const initFila = (fila) => {
+        const boletaInput = fila.querySelector(".boleta-input");
+        const montoInput = fila.querySelector(".monto-input");
+        const metodoSelect = fila.querySelector("select[name='metodo[]']");
+        const esPrimera = fila === abonosBody.querySelector(".fila-abono");
+        boletaInput.addEventListener("input", function() {
+            actualizarResumen();
+            if (esPrimera) {
+                if (autoFillTimeout) clearTimeout(autoFillTimeout);
+                const raw = this.value.trim();
+                if (autoFillDone && autoFilledBoleta !== null) {
+                    const currentNum = parseInt(raw);
+                    if (isNaN(currentNum) || currentNum !== autoFilledBoleta || !/^\d{4}$/.test(raw)) {
+                        autoFillDone = false;
+                        autoFilledBoleta = null;
+                    }
+                }
+                if (/^\d{4}$/.test(raw)) {
+                    autoFillTimeout = setTimeout(function() { autoFillCliente(parseInt(raw)); }, 400);
+                }
+            }
+        });
+        montoInput.addEventListener("input", function() { formatearMonto(this); actualizarResumen(); });
+        metodoSelect.addEventListener("change", function() { alternarReferencia(fila); });
+        fila.querySelector(".eliminar-fila").addEventListener("click", function() {
+            if (abonosBody.querySelectorAll(".fila-abono").length > 1) {
+                fila.remove();
+                actualizarResumen();
+            }
+        });
+        alternarReferencia(fila);
+    };
+
+    abonosBody.querySelectorAll(".fila-abono").forEach(initFila);
+
+    document.getElementById("nombre").addEventListener("input", actualizarPreview);
+    document.getElementById("telefono").addEventListener("input", actualizarPreview);
+
+    agregarFila.addEventListener("click", function() {
+        const nueva = plantilla.cloneNode(true);
+        nueva.querySelectorAll("input").forEach(function(i) { i.value = ""; });
+        nueva.querySelector("select").value = "efectivo";
+        abonosBody.appendChild(nueva);
+        initFila(nueva);
+        nueva.querySelector(".boleta-input").focus();
+        actualizarResumen();
+    });
+
+    const armarPreview = function() {
+        const nombre = document.getElementById("nombre").value.trim();
+        if (!nombre) { alert("Ingrese el nombre del cliente."); return null; }
+
+        const filas = abonosBody.querySelectorAll(".fila-abono");
+        const items = [];
+        filas.forEach(function(f) {
+            const raw = f.querySelector(".boleta-input").value.trim();
+            if (!/^\d{1,4}$/.test(raw)) return;
+            const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
+            items.push({ boleta: parseInt(raw), monto: monto });
+        });
+
+        if (!items.length) { alert("Ingrese al menos una boleta v\u00e1lida."); return null; }
+
+        const totalGeneral = items.reduce(function(s, it) { return s + it.monto; }, 0);
+
+        var html = "";
+        html += '<div class="mb-3 pb-3 border-bottom">';
+        html += '  <div class="text-secondary small fw-semibold">Cliente</div>';
+        html += '  <div class="fw-bold fs-5">' + nombre + '</div>';
+        html += '</div>';
+
+        html += '<h6 class="fw-bold mb-2">Boletas</h6>';
+        items.forEach(function(it) {
+            html += '<div class="d-flex justify-content-between align-items-center p-2 mb-1 rounded" style="background:#f8f9fa;">';
+            html += '  <div><span class="fw-bold ticket-number">#' + ("0000" + it.boleta).slice(-4) + '</span>';
+            if (it.monto > 0) {
+                html += '    <span class="text-success ms-2">$' + it.monto.toLocaleString("es-CO") + '</span>';
+            } else {
+                html += '    <span class="text-secondary ms-2">Sin pago</span>';
+            }
+            html += '  </div>';
+            html += '</div>';
+        });
+
+        html += '<div class="mt-3 pt-2 border-top">';
+        html += '  <div class="d-flex justify-content-between"><span>Boletas</span><span class="fw-bold">' + items.length + '</span></div>';
+        if (totalGeneral > 0) {
+            html += '  <div class="d-flex justify-content-between fs-5 fw-bold border-top pt-2 mt-1"><span>Total recibido</span><span class="text-success">$' + totalGeneral.toLocaleString("es-CO") + '</span></div>';
+        }
+        html += '</div>';
+
+        return html;
+    };
+
+    document.getElementById("btnPreview").addEventListener("click", function() {
+        var html = armarPreview();
+        if (html !== null) {
+            document.getElementById("previewBody").innerHTML = html;
+            var modal = new bootstrap.Modal(document.getElementById("previewModal"));
+            modal.show();
+        }
+    });
+
+    document.getElementById("btnConfirmar").addEventListener("click", function() {
+        bootstrap.Modal.getInstance(document.getElementById("previewModal")).hide();
+        document.getElementById("formFacturaCliente").submit();
+    });
+
+    document.getElementById("formFacturaCliente").addEventListener("submit", function(e) {
+        const nombre = document.getElementById("nombre").value.trim();
+        if (!nombre) { e.preventDefault(); alert("Ingrese el nombre del cliente."); return; }
+        const filas = abonosBody.querySelectorAll(".fila-abono");
+        let hasTicket = false;
+        filas.forEach(function(f) {
+            if (/^\d{1,4}$/.test(f.querySelector(".boleta-input").value.trim())) hasTicket = true;
+        });
+        if (!hasTicket) {
+            e.preventDefault();
+            alert("Ingrese al menos una boleta v\u00e1lida.");
+        }
+    });
+})();
+</script>
+{% endblock %}

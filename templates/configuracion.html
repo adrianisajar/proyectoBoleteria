@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+
+{% block title %}Configuración — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Administración</p>
+        <h1 class="h3 mb-0">Configuración</h1>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-6 d-flex flex-column gap-3">
+        <div class="office-card bg-body p-3 p-md-4">
+            <h2 class="section-title mb-3">Rifa activa</h2>
+            {% if rifa %}
+            <div class="d-flex align-items-center gap-3 mb-3">
+                <div class="flex-grow-1">
+                    <div class="fw-bold h5 mb-0">{{ rifa.nombre }}</div>
+                    <div class="text-secondary small">{{ rifa.anio }} · ${{ "{:,}".format(rifa.valor_boleta) }} · {{ rifa.cantidad_boletas }} boletas</div>
+                </div>
+                <span class="badge bg-{{ 'success' if rifa.estado == 'activa' else 'secondary' }} fs-6">{{ rifa.estado }}</span>
+            </div>
+        </div>
+
+        <div class="office-card bg-body p-3 p-md-4">
+            <h2 class="section-title mb-3">Par&aacute;metros de la rifa</h2>
+            <form method="post">
+                <input type="hidden" name="action" value="guardar_config">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label for="nombre_rifa" class="form-label fw-semibold">Nombre de la rifa</label>
+                        <input type="text" class="form-control" id="nombre_rifa" name="nombre_rifa" value="{{ rifa.nombre }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="valor_boleta" class="form-label fw-semibold">Valor boleta</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="text" class="form-control" id="valor_boleta" name="valor_boleta" value="{{ rifa.valor_boleta }}">
+                        </div>
+                    </div>
+                    <div class="col-12 d-grid">
+                        <button type="submit" class="btn btn-primary">Guardar par&aacute;metros</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="office-card bg-body p-3 p-md-4">
+            <h2 class="section-title mb-3">Datos de la empresa</h2>
+            <form method="post">
+                <input type="hidden" name="action" value="guardar_empresa">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label for="nombre_empresa" class="form-label fw-semibold">Nombre comercial</label>
+                        <input type="text" class="form-control" id="nombre_empresa" name="nombre_empresa" value="{{ config.get('nombre_empresa', '') }}" placeholder="BOLETERÍA LA FORTUNA">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="telefono" class="form-label fw-semibold">Teléfono</label>
+                        <input type="text" class="form-control" id="telefono" name="telefono" value="{{ config.get('telefono', '') }}" placeholder="312 456 7890">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="ciudad" class="form-label fw-semibold">Ciudad</label>
+                        <input type="text" class="form-control" id="ciudad" name="ciudad" value="{{ config.get('ciudad', '') }}" placeholder="BOGOTÁ">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="direccion" class="form-label fw-semibold">Dirección</label>
+                        <input type="text" class="form-control" id="direccion" name="direccion" value="{{ config.get('direccion', '') }}" placeholder="Cra 10 #15-20">
+                    </div>
+                    <div class="col-12">
+                        <label for="footer_texto" class="form-label fw-semibold">Texto pie de factura</label>
+                        <textarea class="form-control" id="footer_texto" name="footer_texto" rows="2">{{ config.get('footer_texto', 'Documento interno, no tiene validez fiscal.') }}</textarea>
+                    </div>
+                    <div class="col-12">
+                        <label for="observaciones_recaudo" class="form-label fw-semibold">Observaciones (factura vendedor)</label>
+                        <textarea class="form-control" id="observaciones_recaudo" name="observaciones_recaudo" rows="3">{{ config.get('observaciones_recaudo', 'Todos los pagos fueron registrados correctamente.\nLas boletas actualizan automáticamente su saldo en el sistema.') }}</textarea>
+                    </div>
+                    <div class="col-12 d-grid">
+                        <button type="submit" class="btn btn-primary">Guardar datos empresa</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="office-card bg-body p-3 p-md-4">
+            <h2 class="section-title mb-3">Premios adicionales</h2>
+            <p class="text-secondary small mb-3">Cada ${{ "{:,}".format(rifa.valor_minimo_adicional) }} abonados antes de la fecha del premio dan derecho a participar.</p>
+            <form method="post">
+                <input type="hidden" name="guardar_premios" value="1">
+                <input type="hidden" name="rifa_id" value="{{ rifa._id }}">
+                <div id="premiosContainer">
+                    {% for premio in rifa.get('premios_adicionales', []) %}
+                    <div class="row g-2 mb-2 premio-row">
+                        <div class="col-md-6">
+                            <input type="text" class="form-control" name="premio_nombre[]" value="{{ premio.nombre }}" placeholder="Nombre del premio">
+                        </div>
+                        <div class="col-md-4">
+                            <input type="date" class="form-control" name="premio_fecha[]" value="{{ premio.fecha_juego }}">
+                        </div>
+                        <div class="col-md-2 d-grid">
+                            <button type="button" class="btn btn-outline-danger" onclick="this.closest('.premio-row').remove()">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="agregarPremioBtn">
+                    <i class="bi bi-plus-lg"></i> Agregar premio
+                </button>
+                <div class="mt-3 d-grid">
+                    <button type="submit" class="btn btn-primary">Guardar premios</button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-6 d-flex flex-column gap-3">
+        <div class="office-card bg-body p-3 p-md-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="section-title mb-0">Todas las rifas</h2>
+                <span class="badge bg-light border">{{ rifas_list|length }}</span>
+            </div>
+            {% if rifas_list %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Año</th>
+                            <th class="text-end">Valor</th>
+                            <th class="text-end">Boletas</th>
+                            <th>Estado</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rifas_list %}
+                        <tr class="{{ 'table-primary' if r._id == rifa._id else '' }}">
+                            <td class="fw-bold">{{ r.nombre }}</td>
+                            <td>{{ r.anio }}</td>
+                            <td class="text-end">${{ "{:,}".format(r.valor_boleta) }}</td>
+                            <td class="text-end ticket-number">{{ r.cantidad_boletas }}</td>
+                            <td>
+                                <span class="badge bg-{{ 'success' if r.estado == 'activa' else 'secondary' }}">{{ r.estado }}</span>
+                            </td>
+                            <td class="text-end"></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-secondary mb-0">No hay rifas creadas.</div>
+            {% endif %}
+        </div>
+
+        <div class="office-card bg-body p-3 p-md-4">
+            <h2 class="section-title mb-3">
+                <i class="bi bi-file-earmark-spreadsheet me-2"></i>Importar / Exportar asignaciones
+            </h2>
+            <p class="text-secondary small mb-3">
+                Descarga el modelo Excel, asigna los vendedores a cada boleta y vuelve a importarlo para actualizar la base de datos.
+            </p>
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                <a href="{{ url_for('exportar_modelo_rifa') }}" class="btn btn-outline-primary">
+                    <i class="bi bi-download me-1"></i>Descargar modelo
+                </a>
+                <form method="post" action="{{ url_for('sincronizar_estados') }}" class="d-inline">
+                    <button type="submit" class="btn btn-outline-warning d-inline-flex align-items-center gap-1">
+                        <i class="bi bi-arrow-clockwise"></i> Sincronizar estados
+                    </button>
+                </form>
+            </div>
+            <form method="post" action="{{ url_for('importar_rifa_excel') }}" enctype="multipart/form-data" class="border-top pt-3">
+                <div class="mb-3">
+                    <label for="archivo_rifa" class="form-label fw-semibold">Seleccionar archivo Excel (.xlsx)</label>
+                    <input type="file" class="form-control" id="archivo_rifa" name="archivo_rifa" accept=".xlsx" required>
+                </div>
+                <div class="mb-3">
+                    <label for="confirmacion_importacion" class="form-label fw-semibold">Confirmación</label>
+                    <input type="text" class="form-control" id="confirmacion_importacion" name="confirmacion_importacion" placeholder="Escribe IMPORTAR para confirmar" required>
+                </div>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-warning">
+                        <i class="bi bi-upload me-1"></i>Importar asignaciones
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div class="office-card bg-body p-3 p-md-4 border border-primary">
+            <h2 class="section-title mb-3">Crear nueva rifa</h2>
+            <form method="post" action="{{ url_for('nueva_rifa') }}" class="row g-3">
+                <div class="col-md-6">
+                    <label for="nombre" class="form-label fw-semibold">Nombre de la rifa</label>
+                    <input type="text" class="form-control" id="nombre" name="nombre_rifa_nueva" placeholder="Rifa 2026" required>
+                </div>
+                <div class="col-md-3">
+                    <label for="valor_boleta_nueva" class="form-label fw-semibold">Valor boleta</label>
+                    <input type="text" inputmode="numeric" class="form-control" id="valor_boleta_nueva" name="valor_boleta_nueva" value="{{ config.valor_boleta }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="cantidad_boletas" class="form-label fw-semibold">Cantidad</label>
+                    <input type="number" class="form-control" id="cantidad_boletas" name="cantidad_boletas" value="10000" min="1" max="100000">
+                </div>
+                <div class="col-md-6">
+                    <label for="premio_mayor" class="form-label fw-semibold">Premio mayor</label>
+                    <input type="text" class="form-control" id="premio_mayor" name="premio_mayor" placeholder="Opcional">
+                </div>
+                <div class="col-md-3">
+                    <label for="valor_min_adic" class="form-label fw-semibold">Valor m&iacute;nimo adicional</label>
+                    <input type="text" inputmode="numeric" class="form-control" id="valor_min_adic" name="valor_minimo_adicional" value="20000">
+                </div>
+                <div class="col-md-3">
+                    <label for="estado_nueva" class="form-label fw-semibold">Estado inicial</label>
+                    <input type="hidden" name="estado" value="activa">
+                    <div class="form-control-plaintext fw-semibold">Activa</div>
+                </div>
+                <div class="col-12">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="conservar_vendedores" name="conservar_vendedores">
+                        <label class="form-check-label fw-semibold" for="conservar_vendedores">Conservar asignaciones de vendedores actuales</label>
+                    </div>
+                    <div class="form-text">Se mantienen las boletas asignadas a cada vendedor. Las boletas se reinician a estado "disponible" sin abonos ni clientes.</div>
+                </div>
+                <div class="col-12">
+                    <label for="confirmacion_nueva" class="form-label fw-semibold">Escribe <code>NUEVA RIFA</code> para confirmar</label>
+                    <input type="text" class="form-control" id="confirmacion_nueva" name="confirmacion" placeholder="NUEVA RIFA" required>
+                </div>
+                <div class="col-12 d-grid">
+                    <button type="submit" class="btn btn-primary btn-lg d-inline-flex align-items-center justify-content-center gap-2">
+                        <i class="bi bi-plus-circle"></i>
+                        Crear rifa y generar boletas
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById("agregarPremioBtn").addEventListener("click", function() {
+        const container = document.getElementById("premiosContainer");
+        const row = document.createElement("div");
+        row.className = "row g-2 mb-2 premio-row";
+        row.innerHTML = [
+            '<div class="col-md-6">',
+            '<input type="text" class="form-control" name="premio_nombre[]" placeholder="Nombre del premio">',
+            '</div>',
+            '<div class="col-md-4">',
+            '<input type="date" class="form-control" name="premio_fecha[]">',
+            '</div>',
+            '<div class="col-md-2 d-grid">',
+            '<button type="button" class="btn btn-outline-danger" onclick="this.closest(\'.premio-row\').remove()">',
+            '<i class="bi bi-trash"></i>',
+            '</button>',
+            '</div>',
+        ].join("");
+        container.appendChild(row);
+    });
+
+
+</script>
+{% endblock %}

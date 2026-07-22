@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Buscar — {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Búsqueda global</p>
+        <h1 class="h3 mb-0">Resultados para "{{ q }}"</h1>
+    </div>
+    <form class="d-flex" action="{{ url_for('buscar') }}" method="get">
+        <div class="input-group">
+            <input type="text" class="form-control" name="q" value="{{ q }}" placeholder="Buscar..." autofocus>
+            <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i></button>
+        </div>
+    </form>
+</div>
+
+{% if results.facturas %}
+<h2 class="section-title mb-2">Facturas</h2>
+<div class="table-responsive mb-4">
+    <table class="table table-sm table-hover">
+        <thead class="table-light">
+            <tr><th>N°</th><th>Fecha</th><th>Tipo</th><th>Cliente/Vendedor</th><th>Total</th></tr>
+        </thead>
+        <tbody>
+            {% for f in results.facturas %}
+            <tr>
+                <td class="fw-bold"><a href="{{ url_for('ver_factura', factura_id=f._id) }}">{{ "%05d" % f._id }}</a></td>
+                <td>{{ f.fecha.strftime("%d/%m/%Y %H:%M") }}</td>
+                <td><span class="badge bg-{{ 'primary' if f.tipo == 'cliente' else 'success' }}">{{ f.tipo }}</span></td>
+                <td>{{ f.get("vendedor_nombre", "") or f.get("cliente", {}).get("nombre", "") }}</td>
+                <td class="fw-bold text-end">${{ "{:,}".format(f.valor_total) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if results.vendedores %}
+<h2 class="section-title mb-2">Vendedores</h2>
+<div class="table-responsive mb-4">
+    <table class="table table-sm table-hover">
+        <thead class="table-light">
+            <tr><th>ID</th><th>Nombre</th><th>Teléfono</th></tr>
+        </thead>
+        <tbody>
+            {% for v in results.vendedores %}
+            <tr>
+                <td class="fw-bold">{{ v._id }}</td>
+                <td>{{ v.nombre }}</td>
+                <td>{{ v.telefono or "" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if not results.facturas and not results.vendedores %}
+<div class="alert alert-secondary">No se encontraron resultados para "{{ q }}".</div>
+{% endif %}
+{% endblock %}

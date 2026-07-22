@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+
+{% block title %}Vendedores — {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Control de lotes físicos</p>
+        <h1 class="h3 mb-0">Vendedores</h1>
+    </div>
+    <a class="btn btn-outline-secondary d-inline-flex align-items-center gap-2" href="{{ url_for('consultas') }}">
+        <i class="bi bi-arrow-left"></i>
+        Consultas
+    </a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-primary);">
+            <div class="metric-label mb-2">Vendedores registrados</div>
+            <div class="metric-value ticket-number">{{ resumen.total_vendedores }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-info);">
+            <div class="metric-label mb-2">Boletas asignadas</div>
+            <div class="metric-value ticket-number">{{ resumen.total_asignadas }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-success);">
+            <div class="metric-label mb-2">Recaudado</div>
+            <div class="metric-value">{{ resumen.total_recaudado|cop }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-warning);">
+            <div class="metric-label mb-2">Comisiones</div>
+            <div class="metric-value">{{ resumen.total_comision|cop }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="office-card bg-body p-3 p-md-4 mb-4">
+    <form method="post" class="row g-3">
+        <div class="col-md-5">
+            <label for="nombre" class="form-label fw-semibold">Nombre del vendedor</label>
+            <input type="text" class="form-control text-uppercase" id="nombre" name="nombre" value="{{ form.nombre }}" placeholder="Nombre completo" required>
+            <div class="d-flex align-items-center gap-2 mt-1">
+                <span class="text-secondary small">ID:</span>
+                <span class="badge text-bg-light border fw-normal font-monospace" id="vendedorIdPreview">—</span>
+                <input type="hidden" id="vendedor_id" name="vendedor_id" value="{{ form.vendedor_id }}">
+            </div>
+        </div>
+        <div class="col-md-3">
+            <label for="telefono" class="form-label fw-semibold">Teléfono</label>
+            <input type="tel" class="form-control" id="telefono" name="telefono" value="{{ form.telefono }}" placeholder="Opcional">
+        </div>
+        <div class="col-md-2">
+            <label for="operacion" class="form-label fw-semibold">Operación</label>
+                <select class="form-select" id="operacion" name="operacion">
+                    <option value="guardar" {% if form.operacion == "guardar" %}selected{% endif %}>Guardar</option>
+                    <option value="asignar" {% if form.operacion == "asignar" %}selected{% endif %}>Asignar</option>
+                    <option value="quitar" {% if form.operacion == "quitar" %}selected{% endif %}>Quitar</option>
+                    <option value="eliminar" {% if form.operacion == "eliminar" %}selected{% endif %}>Eliminar vendedor</option>
+                </select>
+        </div>
+        <div class="col-md-2 d-grid align-self-end">
+            <button type="submit" class="btn btn-primary btn-lg d-inline-flex align-items-center justify-content-center gap-2">
+                <i class="bi bi-check2-circle"></i>
+                Aplicar
+            </button>
+        </div>
+
+        <div class="col-12">
+            <div class="d-flex flex-column flex-sm-row justify-content-between gap-2 mb-2">
+                <label for="boletas" class="form-label fw-semibold mb-0">Boletas a operar</label>
+                <span class="badge text-bg-light border align-self-start" id="contadorBoletas">0 detectadas</span>
+            </div>
+            <textarea
+                class="form-control ticket-number"
+                id="boletas"
+                name="boletas"
+                rows="5"
+                placeholder="1, 0050, 432, 9999"
+            >{{ form.boletas }}</textarea>
+        </div>
+    </form>
+</div>
+
+<div class="office-card bg-body overflow-hidden">
+    <div class="p-3 p-md-4 border-bottom d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+        <div class="d-flex align-items-center gap-3">
+            <h2 class="h5 mb-0">Listado de vendedores</h2>
+            <span class="badge text-bg-light border">{{ vendedores_lista|length }} registro(s)</span>
+        </div>
+        <div>
+            <input type="text" class="form-control form-control-sm" id="buscarVendedor" placeholder="Buscar vendedor…" style="min-width:220px;">
+        </div>
+    </div>
+
+    {% if vendedores_lista %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Vendedor</th>
+                        <th class="text-end">Boletas</th>
+                        <th class="text-end">Vendidas</th>
+                        <th class="text-end">Comisión /u</th>
+                        <th class="text-end">Comisión total</th>
+                        <th class="text-end">Recaudado</th>
+                        <th class="text-end"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vendedor in vendedores_lista %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="badge text-bg-secondary">{{ vendedor._id }}</span>
+                                    <span class="small text-secondary">{{ vendedor.nombre or "Sin nombre" }}</span>
+                                </div>
+                            </td>
+                            <td class="text-end fw-bold ticket-number">{{ vendedor.cantidad }}</td>
+                            <td class="text-end fw-bold ticket-number">{{ vendedor.vendidas }}</td>
+                            <td class="text-end">{{ vendedor.comision_por_boleta|cop }}</td>
+                            <td class="text-end fw-bold text-warning">{{ vendedor.comision|cop }}</td>
+                            <td class="text-end fw-bold text-success">{{ vendedor.recaudado|cop }}</td>
+                            <td class="text-end">
+                                <div class="d-flex gap-1 justify-content-end">
+                                    <button type="button" class="btn btn-sm btn-outline-info ver-boletas" data-vendedor="{{ vendedor._id }}" data-nombre="{{ vendedor.nombre }}" title="Ver boletas">
+                                        <i class="bi bi-list-ul"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-primary cargar-vendedor" data-nombre="{{ vendedor.nombre }}" data-telefono="{{ vendedor.telefono }}" title="Editar">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="p-4">
+            <div class="alert alert-secondary mb-0">No hay vendedores registrados.</div>
+        </div>
+    {% endif %}
+</div>
+
+<div class="modal fade" id="boletasModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Boletas de <span id="modalVendedorNombre"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="text-center p-4" id="modalLoading">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="mt-2">Cargando...</div>
+                </div>
+                <div class="table-responsive" id="modalContent" style="display:none;">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Boleta</th>
+                                <th>Estado</th>
+                                <th>Abonado</th>
+                                <th>Cliente</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalBoletasBody"></tbody>
+                    </table>
+                </div>
+                <div class="alert alert-secondary m-3" id="modalEmpty" style="display:none;">Sin boletas asignadas.</div>
+            </div>
+            <div class="modal-footer">
+                <span class="text-secondary small" id="modalTotalBoletas"></span>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="confirmTitle">Confirmar</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body" id="confirmBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="confirmActionBtn">Confirmar</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const nombre = document.getElementById("nombre");
+        const vendedorIdInput = document.getElementById("vendedor_id");
+        const vendedorIdPreview = document.getElementById("vendedorIdPreview");
+        const telefono = document.getElementById("telefono");
+        const operacion = document.getElementById("operacion");
+        const boletas = document.getElementById("boletas");
+
+        const generarId = (name) => {
+            return name.trim().replace(/\s+/g, "_").toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
+        };
+        const actualizarId = () => {
+            const raw = nombre.value;
+            const id = generarId(raw);
+            if (id && id.length >= 2) {
+                vendedorIdInput.value = id;
+                vendedorIdPreview.textContent = id;
+                vendedorIdPreview.className = "badge text-bg-primary fw-normal font-monospace";
+            } else {
+                vendedorIdInput.value = "";
+                vendedorIdPreview.textContent = "—";
+                vendedorIdPreview.className = "badge text-bg-light border fw-normal font-monospace";
+            }
+        };
+        nombre.addEventListener("input", actualizarId);
+        actualizarId();
+        const contador = document.getElementById("contadorBoletas");
+
+        const getUniqueNumbers = () => {
+            const partes = boletas.value.trim().split(/[\s,;]+/).filter(Boolean);
+            return new Set(partes.filter((item) => /^\d+$/.test(item)).map((item) => Number(item)));
+        };
+
+        const actualizarContador = () => {
+            const unicas = getUniqueNumbers();
+            contador.textContent = `${unicas.size} detectada${unicas.size === 1 ? "" : "s"}`;
+        };
+
+        document.querySelectorAll(".cargar-vendedor").forEach((button) => {
+            button.addEventListener("click", () => {
+                nombre.value = button.dataset.nombre || "";
+                telefono.value = button.dataset.telefono || "";
+                operacion.value = "guardar";
+                actualizarId();
+                nombre.focus();
+            });
+        });
+
+        boletas.addEventListener("input", () => {
+            const start = boletas.selectionStart;
+            const val = boletas.value;
+            const formatted = val.replace(/(\d{4})(?=\d)/g, "$1, ");
+            if (formatted !== val) {
+                boletas.value = formatted;
+                boletas.setSelectionRange(start + 2, start + 2);
+            }
+            actualizarContador();
+        });
+        actualizarContador();
+
+        const modal = document.getElementById("boletasModal");
+        const modalNombre = document.getElementById("modalVendedorNombre");
+        const modalLoading = document.getElementById("modalLoading");
+        const modalContent = document.getElementById("modalContent");
+        const modalEmpty = document.getElementById("modalEmpty");
+        const modalBody = document.getElementById("modalBoletasBody");
+        const modalTotal = document.getElementById("modalTotalBoletas");
+
+        document.querySelectorAll(".ver-boletas").forEach((button) => {
+            button.addEventListener("click", async () => {
+                const vendedorId = button.dataset.vendedor;
+                modalNombre.textContent = button.dataset.nombre || vendedorId;
+                modalLoading.style.display = "";
+                modalContent.style.display = "none";
+                modalEmpty.style.display = "none";
+                modalBody.innerHTML = "";
+                modalTotal.textContent = "";
+                const bsModal = new bootstrap.Modal(modal);
+                bsModal.show();
+
+                try {
+                    const res = await fetch(`/api/vendedores/${encodeURIComponent(vendedorId)}/boletas`);
+                    const data = await res.json();
+                    modalLoading.style.display = "none";
+                    if (!data.ok || !data.boletas || !data.boletas.length) {
+                        modalEmpty.style.display = "";
+                        modalTotal.textContent = "0 boletas";
+                        return;
+                    }
+                    modalContent.style.display = "";
+                    modalTotal.textContent = `${data.total} boleta(s)`;
+                    data.boletas.forEach((b) => {
+                        const tr = document.createElement("tr");
+                        const badgeClass = b.estado === "pagada" ? "text-bg-success" : b.estado === "abonando" ? "text-bg-warning" : b.estado === "asignada" ? "text-bg-primary" : b.estado === "separada" ? "text-bg-info" : "text-bg-secondary";
+                        tr.innerHTML = [
+                            '<td class="fw-bold ticket-number">#' + b.numero + '</td>',
+                            '<td><span class="badge rounded-pill ' + badgeClass + ' text-uppercase">' + b.estado + '</span></td>',
+                            '<td class="fw-bold text-success">$' + Number(b.abonado).toLocaleString("es-CO") + '</td>',
+                            '<td>' + (b.cliente || "Sin cliente") + '</td>',
+                        ].join("");
+                        modalBody.appendChild(tr);
+                    });
+                } catch (_e) {
+                    modalLoading.style.display = "none";
+                    modalEmpty.style.display = "";
+                    modalEmpty.textContent = "Error al cargar las boletas.";
+                }
+            });
+        });
+        const form = document.querySelector(".office-card form");
+        const confirmModal = document.getElementById("confirmModal");
+        const confirmTitle = document.getElementById("confirmTitle");
+        const confirmBody = document.getElementById("confirmBody");
+        const confirmBtn = document.getElementById("confirmActionBtn");
+        let pendingSubmit = null;
+        if (!form || !confirmModal || !confirmBtn) {
+            console.warn("Vendedores: elementos del modal no encontrados");
+        } else {
+        form.addEventListener("submit", async (e) => {
+            const op = operacion.value;
+            if (op !== "asignar" && op !== "quitar" && op !== "eliminar") return;
+            e.preventDefault();
+            const vName = nombre.value || "?";
+            const vId = vendedorIdInput.value || vName;
+
+            if (op === "eliminar") {
+                confirmTitle.textContent = "Eliminar vendedor";
+                confirmBody.innerHTML = `<div class="mb-3">
+                    <p class="mb-2">¿Está seguro de eliminar al vendedor?</p>
+                    <div class="p-3 bg-light rounded">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <span class="badge text-bg-secondary">${vId}</span>
+                            <span class="fw-semibold text-uppercase">${vName}</span>
+                        </div>
+                        <div class="small text-danger mt-2">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            Se eliminará el vendedor y todas sus boletas asignadas volverán a estar disponibles.
+                        </div>
+                    </div>
+                </div>`;
+                confirmBtn.className = "btn btn-danger";
+                confirmBtn.textContent = "Sí, eliminar";
+                confirmBtn.disabled = false;
+                pendingSubmit = () => form.submit();
+                bootstrap.Modal.getOrCreateInstance(confirmModal).show();
+                return;
+            }
+
+            const nums = [...getUniqueNumbers()];
+            if (!nums.length) return;
+            const opLabel = op === "asignar" ? "Asignar" : "Quitar";
+            confirmTitle.textContent = opLabel + " boletas";
+
+            confirmBody.innerHTML = `<p class="mb-1">Se ${op === "asignar" ? "asignarán" : "quitarán"} <strong>${nums.length}</strong> boleta(s) ${op === "asignar" ? "a" : "de"} <strong class="text-uppercase">${vName}</strong>.</p>
+                <div class="ticket-number small text-secondary">${nums.sort((a,b)=>a-b).map(n => "#" + String(n).padStart(4,"0")).join(" ")}</div>`;
+            confirmBtn.className = "btn " + (op === "quitar" ? "btn-danger" : "btn-primary");
+            confirmBtn.textContent = "Sí, " + opLabel.toLowerCase();
+            confirmBtn.disabled = false;
+            pendingSubmit = () => form.submit();
+            bootstrap.Modal.getOrCreateInstance(confirmModal).show();
+        });
+
+        confirmBtn.addEventListener("click", () => {
+            if (pendingSubmit) pendingSubmit();
+        });
+        }
+
+        const buscarInput = document.getElementById("buscarVendedor");
+        const tablaBody = document.querySelector(".office-card .table tbody");
+        if (buscarInput && tablaBody) {
+            buscarInput.addEventListener("input", () => {
+                const q = buscarInput.value.toLowerCase().trim();
+                for (const tr of tablaBody.querySelectorAll("tr")) {
+                    const txt = tr.textContent.toLowerCase();
+                    tr.style.display = !q || txt.includes(q) ? "" : "none";
+                }
+            });
+        }
+    })();
+</script>
+{% endblock %}

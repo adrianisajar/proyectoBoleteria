@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Factura Cliente FC-{{ "%05d" % factura._id }} — {{ super() }}{% endblock %}
+{% block head %}
+<style>
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff !important; }
+  .app-main { padding: 0 !important; margin: 0 !important; }
+  @page { margin: 0; size: 80mm auto; }
+}
+.recibo {
+  max-width: 340px; margin: 0 auto;
+  padding: 1rem 1rem;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+.recibo-header { text-align: center; margin-bottom: 0.8rem; }
+.recibo-empresa { font-size: 1.1rem; font-weight: 800; letter-spacing: 0.05em; }
+.recibo-titulo { font-size: 0.9rem; font-weight: 700; margin-top: 0.25rem; }
+.recibo-dir { font-size: 0.7rem; color: #555; }
+.recibo-linea { border: 0; border-top: 1px dashed #999; margin: 0.6rem 0; }
+.recibo-linea-doble { border: 0; border-top: 3px double #000; margin: 0.6rem 0; }
+.recibo-campo { display: flex; justify-content: space-between; }
+.recibo-label { color: #555; }
+.recibo-boleta { margin: 0.5rem 0; padding: 0.3rem 0; border-bottom: 1px dotted #ccc; }
+.recibo-boleta-num { font-size: 0.95rem; font-weight: 700; }
+.recibo-mov { margin: 0.25rem 0 0.25rem 0.4rem; }
+.recibo-mov-line { display: flex; justify-content: space-between; }
+.recibo-total { border-top: 2px solid #000; margin-top: 0.5rem; padding-top: 0.4rem; font-weight: 700; font-size: 0.85rem; }
+.recibo-footer { text-align: center; margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px dashed #999; font-size: 0.7rem; color: #555; }
+.recibo-historial { margin-top: 0.6rem; }
+.recibo-historial table { width: 100%; font-size: 0.7rem; }
+.recibo-historial th { border-bottom: 1px dotted #ccc; text-align: left; }
+.recibo-estado { font-size: 0.7rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="recibo">
+  <div class="text-end mb-1 no-print">
+    <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir</button>
+    <a href="{{ url_for('facturas_cliente') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
+  </div>
+
+  {% if factura.get("anulada") %}
+  <div class="alert alert-danger text-center fw-bold mb-2 no-print">ANULADA — {{ factura.get("motivo_anulacion", "") }}</div>
+  {% endif %}
+
+  <div class="recibo-header">
+    <div class="recibo-empresa">{{ config.get("nombre_empresa") or config.nombre_rifa or "BOLETERÍA" }}</div>
+    <div class="recibo-titulo">RECIBO DE PAGO / ABONO</div>
+    <div class="recibo-dir">
+      {{ config.get("direccion") }}{% if config.get("direccion") and config.get("ciudad") %}, {% endif %}{{ config.get("ciudad") }}
+      {% if config.get("telefono") %}{{ " - " + config.get("telefono") }}{% endif %}
+    </div>
+  </div>
+
+  <hr class="recibo-linea">
+
+  <div class="recibo-campo"><span class="recibo-label">FACTURA</span><span>FC-{{ "%05d" % factura._id }}</span></div>
+  <div class="recibo-campo"><span class="recibo-label">FECHA</span><span>{{ factura.fecha.strftime("%d/%m/%Y %I:%M %p") }}</span></div>
+  <div><span class="recibo-label">RIFA</span></div>
+  <div style="font-weight:600">{{ config.nombre_rifa or "Rifa" }}</div>
+
+  <hr class="recibo-linea">
+
+  <div class="recibo-label">CLIENTE</div>
+  <div style="font-size:0.8rem">{{ factura.cliente.nombre or "" }}</div>
+  {% if factura.cliente.telefono %}<div><span class="recibo-label">TEL</span> {{ factura.cliente.telefono }}</div>{% endif %}
+  {% if factura.cliente.direccion %}<div><span class="recibo-label">DIR</span> {{ factura.cliente.direccion }}</div>{% endif %}
+
+  {% if factura.get("vendedor_id") and factura.vendedor_id != "LOCAL" %}
+  <div class="recibo-label">VENDEDOR</div>
+  <div>{{ factura.get("vendedor_nombre", factura.vendedor_id) }}</div>
+  {% endif %}
+
+  <hr class="recibo-linea">
+
+  {% set ns = namespace(total_pagado_hoy=0, total_saldo=0) %}
+
+  {% for bid in factura.boletas %}
+  {% set info = boletas_info.get(bid, {}) %}
+  {% set total_abonado = info.get("total_abonado", 0) %}
+  {% set saldo = info.get("saldo_pendiente", 0) %}
+  {% set valor_b = info.get("valor_boleta", config.valor_boleta or 10000) %}
+  {% set invoice_pago = factura.detalle | selectattr("boleta", "equalto", bid) | map(attribute="valor") | sum %}
+
+  {% if invoice_pago == 0 %}
+    {% set mov_label = "SEPARACIÓN" %}
+    {% set mov_cls = "" %}
+  {% elif total_abonado >= valor_b %}
+    {% set mov_label = "PAGO TOTAL" %}
+    {% set mov_cls = "" %}
+  {% else %}
+    {% set mov_label = "ABONO" %}
+    {% set mov_cls = "" %}
+  {% endif %}
+
+  {% set ns.total_pagado_hoy = ns.total_pagado_hoy + invoice_pago %}
+  {% set ns.total_saldo = ns.total_saldo + saldo %}
+
+  <div class="recibo-boleta">
+    <div class="recibo-campo">
+      <span class="recibo-boleta-num">#{{ "%04d" % bid }}</span>
+      <span>${{ "{:,}".format(valor_b) }}</span>
+    </div>
+    <div class="recibo-estado">{{ mov_label }}</div>
+    {% set vend_id = info.get("vendedor_id", "LOCAL") %}
+    {% if vend_id and vend_id != "LOCAL" %}
+    <div class="recibo-mov-line" style="font-size:0.65rem"><span class="recibo-label">Vendedor</span><span>{{ info.get("vendedor_nombre", vend_id) }}</span></div>
+    {% endif %}
+    <div class="recibo-mov">
+      <div class="recibo-mov-line"><span>{{ mov_label }}</span><span>${{ "{:,}".format(invoice_pago) }}</span></div>
+      {% if mov_label == "ABONO" %}
+      <div class="recibo-mov-line"><span class="recibo-label">Abonado</span><span>${{ "{:,}".format(total_abonado) }}</span></div>
+      <div class="recibo-mov-line"><span class="recibo-label">Saldo</span><span>${{ "{:,}".format(saldo) }}</span></div>
+      {% elif mov_label == "PAGO TOTAL" %}
+      <div class="recibo-mov-line"><span class="recibo-label">Saldo</span><span>$0</span></div>
+      {% elif mov_label == "SEPARACIÓN" %}
+      <div class="recibo-mov-line"><span class="recibo-label">Saldo</span><span>${{ "{:,}".format(valor_b) }}</span></div>
+      {% endif %}
+    </div>
+
+    {% if premios_config %}
+    {% for premio in info.get("premios_adicionales", []) %}
+    <div class="recibo-mov-line" style="font-size:0.6rem">
+      <span>{{ premio.nombre }} ({{ premio.fecha_juego }})</span>
+      <span>{{ "PARTICIPA" if premio.participa else "NO PARTICIPA" }}</span>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+  </div>
+  {% endfor %}
+
+  <hr class="recibo-linea-doble">
+
+  <div class="recibo-total">
+    <div class="recibo-mov-line"><span>Total pagado hoy</span><span>${{ "{:,}".format(ns.total_pagado_hoy) }}</span></div>
+    <div class="recibo-mov-line"><span>Saldo pendiente</span><span>${{ "{:,}".format(ns.total_saldo) }}</span></div>
+  </div>
+
+  {% if factura.detalle %}
+  <div class="recibo-historial">
+    <hr class="recibo-linea">
+    <div class="recibo-label">PAGOS DE ESTA FACTURA</div>
+    <table>
+      <thead><tr><th>FECHA</th><th>BOLETA</th><th>VALOR</th></tr></thead>
+      <tbody>
+      {% for p in factura.detalle %}
+        <tr><td>{{ p.fecha }}</td><td>{{ "%04d" % p.boleta }}</td><td>${{ "{:,}".format(p.valor) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="recibo-footer">
+    <div>Gracias por confiar en nosotros.</div>
+    <div>Conserve este comprobante.</div>
+    <div class="fw-bold" style="font-size:0.75rem">FC-{{ "%05d" % factura._id }}</div>
+    <div>{{ config.get("footer_texto") or "Documento interno, no tiene validez fiscal." }}</div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{% if imprimir %}
+<script>window.addEventListener("load", function(){ window.print(); });</script>
+{% endif %}
+{% endblock %}

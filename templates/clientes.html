@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Compradores — {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Gesti&oacute;n de compradores</p>
+        <h1 class="h3 mb-0">Compradores</h1>
+    </div>
+    <a href="{{ url_for('consultas') }}" class="btn btn-outline-secondary d-inline-flex align-items-center gap-2">
+        <i class="bi bi-arrow-left"></i> Consultas
+    </a>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="office-card bg-body p-3 p-md-4">
+            <h2 class="section-title mb-3">Buscar boleta</h2>
+            <form method="get" class="row g-2">
+                <div class="col-8">
+                    <input type="text" class="form-control ticket-number" id="busqueda" name="busqueda"
+                           value="{{ busqueda }}" placeholder="0000" inputmode="numeric" maxlength="4"
+                           autofocus>
+                </div>
+                <div class="col-4 d-grid">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i> Buscar</button>
+                </div>
+            </form>
+
+            {% if boleta %}
+            <hr>
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <span class="fs-4 fw-bold ticket-number">#{{ boleta.numero }}</span>
+                {% set badge_class = "text-bg-success" if boleta.estado == "pagada"
+                    else "text-bg-warning" if boleta.estado == "abonando"
+                    else "text-bg-primary" if boleta.estado == "asignada"
+                    else "text-bg-info" if boleta.estado == "separada"
+                    else "text-bg-secondary" %}
+                <span class="badge rounded-pill {{ badge_class }} text-uppercase">{{ boleta.estado }}</span>
+            </div>
+
+            <div class="small text-secondary mb-3">
+                <div>Vendedor: <strong>{{ boleta.vendedor_nombre }}</strong></div>
+                {% if boleta.total_abonado > 0 %}
+                <div>Total abonado: <strong class="text-success">{{ boleta.total_abonado|cop }}</strong>
+                    / {{ boleta.valor_boleta|cop }}</div>
+                {% endif %}
+            </div>
+
+            <form method="post" action="{{ url_for('clientes_guardar') }}" class="row g-3">
+                <input type="hidden" name="boleta_id" value="{{ boleta.numero|int }}">
+                <div class="col-12">
+                    <label for="nombre" class="form-label fw-semibold">Nombre</label>
+                    <input type="text" class="form-control text-uppercase" id="nombre" name="nombre"
+                           value="{{ boleta.cliente.nombre }}" placeholder="Nombre del comprador">
+                </div>
+                <div class="col-12">
+                    <label for="telefono" class="form-label fw-semibold">Tel&eacute;fono</label>
+                    <input type="tel" class="form-control" id="telefono" name="telefono"
+                           value="{{ boleta.cliente.telefono }}" placeholder="3001234567">
+                </div>
+                <div class="col-12">
+                    <label for="direccion" class="form-label fw-semibold">Direcci&oacute;n</label>
+                    <input type="text" class="form-control text-uppercase" id="direccion" name="direccion"
+                           value="{{ boleta.cliente.direccion }}" placeholder="Direcci&oacute;n">
+                </div>
+                <div class="col-6 d-grid">
+                    <button type="submit" class="btn btn-success d-inline-flex align-items-center justify-content-center gap-2">
+                        <i class="bi bi-check-lg"></i> Guardar
+                    </button>
+                </div>
+                <div class="col-6 d-grid">
+                    <button type="button" class="btn btn-outline-danger d-inline-flex align-items-center justify-content-center gap-2"
+                            data-bs-toggle="modal" data-bs-target="#confirmModal"
+                            data-boleta="{{ boleta.numero }}">
+                        <i class="bi bi-trash3"></i> Limpiar
+                    </button>
+                </div>
+            </form>
+
+            {% if boleta.historial_pagos %}
+            <hr>
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <h3 class="h6 fw-bold mb-0">Pagos registrados</h3>
+                <span class="badge text-bg-light border">{{ boleta.historial_pagos|length }}</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-2">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Valor</th>
+                            <th>M&eacute;todo</th>
+                            <th>Factura</th>
+                            <th style="width:1px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in boleta.historial_pagos %}
+                        <tr>
+                            <td class="small text-secondary">{{ p.idx + 1 }}</td>
+                            <td class="fw-bold">{{ p.valor|cop }}</td>
+                            <td class="small text-uppercase">{{ p.metodo }}</td>
+                            <td>
+                                {% if p.factura_id %}
+                                <a href="{{ url_for('ver_factura', factura_id=p.factura_id) }}" class="small">#{{ '%05d'|format(p.factura_id) }}</a>
+                                {% else %}
+                                <span class="text-secondary small">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-danger eliminar-pago"
+                                        data-boleta="{{ boleta.numero|int }}" data-idx="{{ p.idx }}"
+                                        data-valor="{{ p.valor|cop }}" title="Eliminar pago">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="d-flex justify-content-end">
+                <form method="post" action="{{ url_for('clientes_recalcular', boleta_id=boleta.numero|int) }}">
+                    <button type="submit" class="btn btn-sm btn-outline-warning d-inline-flex align-items-center gap-1">
+                        <i class="bi bi-arrow-clockwise"></i> Recalcular estado
+                    </button>
+                </form>
+            </div>
+            {% endif %}
+            {% elif busqueda and not boleta %}
+            <hr>
+            <div class="alert alert-warning mb-0">No se encontr&oacute; la boleta <strong>#{{ busqueda }}</strong>.</div>
+            {% endif %}
+        </div>
+    </div>
+
+
+</div>
+
+<div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Limpiar datos del comprador</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p>Se eliminar&aacute;n los datos del comprador de la boleta <strong id="confirmBoleta">#0000</strong>.</p>
+                <p class="text-danger small mb-0"><i class="bi bi-exclamation-triangle"></i> Esta acci&oacute;n no se puede deshacer.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form method="post" action="" id="formLimpiar">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash3"></i> Limpiar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="pagoModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Eliminar pago</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p>Se eliminar&aacute; el pago de <strong id="pagoValor">$0</strong>
+                    de la boleta <strong id="pagoBoleta">#0000</strong>.</p>
+                <p class="text-danger small mb-0"><i class="bi bi-exclamation-triangle"></i> Esta acci&oacute;n no se puede deshacer.
+                    El total abonado y el estado se recalcular&aacute;n autom&aacute;ticamente.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form method="post" action="" id="formPago">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash3"></i> Eliminar pago
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    const modal = document.getElementById("confirmModal");
+    const confirmBoleta = document.getElementById("confirmBoleta");
+    const formLimpiar = document.getElementById("formLimpiar");
+
+    modal.addEventListener("show.bs.modal", function (ev) {
+        const btn = ev.relatedTarget;
+        const boleta = btn.dataset.boleta;
+        confirmBoleta.textContent = "#" + String(boleta).padStart(4, "0");
+        formLimpiar.action = "{{ url_for('clientes_limpiar', boleta_id=0) }}".replace("0", boleta);
+    });
+
+    const pagoModal = document.getElementById("pagoModal");
+    const pagoValor = document.getElementById("pagoValor");
+    const pagoBoleta = document.getElementById("pagoBoleta");
+    const formPago = document.getElementById("formPago");
+
+    document.querySelectorAll(".eliminar-pago").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            const boleta = btn.dataset.boleta;
+            const idx = btn.dataset.idx;
+            const valor = btn.dataset.valor;
+            pagoValor.textContent = valor;
+            pagoBoleta.textContent = "#" + String(boleta).padStart(4, "0");
+            formPago.action = "{{ url_for('clientes_eliminar_pago', boleta_id=0, idx=0) }}"
+                .replace("boleta_id=0", "boleta_id=" + boleta)
+                .replace("idx=0", "idx=" + idx);
+            bootstrap.Modal.getOrCreateInstance(pagoModal).show();
+        });
+    });
+
+
+})();
+</script>
+{% endblock %}

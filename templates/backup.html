@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Copia de seguridad — {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Administración del sistema</p>
+        <h1 class="h3 mb-0">Copia de seguridad</h1>
+    </div>
+    <a href="{{ url_for('configuracion_panel') }}" class="btn btn-outline-secondary d-inline-flex align-items-center gap-2">
+        <i class="bi bi-arrow-left"></i> Configuración
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="office-card bg-body p-3 p-md-4">
+            <h2 class="section-title mb-3">Exportar base de datos</h2>
+            <p class="text-secondary small mb-3">Descarga un archivo ZIP con todos los datos del sistema en formato JSON. Incluye boletas, vendedores, facturas y configuración.</p>
+            <form method="post">
+                <input type="hidden" name="accion" value="exportar">
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary btn-lg d-inline-flex align-items-center justify-content-center gap-2">
+                        <i class="bi bi-download"></i>
+                        Descargar respaldo
+                    </button>
+                </div>
+            </form>
+            <hr class="my-4">
+            <h2 class="section-title mb-3">Importar base de datos</h2>
+            <p class="text-secondary small mb-3">Suba un archivo ZIP de respaldo para restaurar los datos. <strong class="text-danger">Esto reemplazará todos los datos actuales.</strong></p>
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="accion" value="importar">
+                <div class="mb-3">
+                    <input type="file" class="form-control" name="archivo" accept=".zip" required>
+                </div>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-warning btn-lg d-inline-flex align-items-center justify-content-center gap-2">
+                        <i class="bi bi-upload"></i>
+                        Restaurar respaldo
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

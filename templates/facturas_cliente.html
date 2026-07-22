@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Facturas de Cliente — {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Documentos emitidos</p>
+        <h1 class="h3 mb-0">Facturas de Cliente</h1>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('facturas_list') }}" class="btn btn-outline-secondary d-inline-flex align-items-center gap-2">
+            <i class="bi bi-list-ul"></i> Todas
+        </a>
+        <a href="{{ url_for('nueva_factura_cliente') }}" class="btn btn-primary d-inline-flex align-items-center gap-2">
+            <i class="bi bi-plus-lg"></i> Nueva
+        </a>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-bordered table-hover table-sm align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>N°</th>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Boletas</th>
+                <th class="text-end">Total</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in facturas %}
+            <tr>
+                <td class="fw-bold">{{ "%05d" % f._id }}</td>
+                <td>{{ f.fecha.strftime("%d/%m/%Y %H:%M") }}</td>
+                <td>
+                    {{ f.cliente.nombre }} {{ f.cliente.apellido }}
+                    {% if f.get("anulada") %}
+                    <span class="badge text-bg-danger ms-1">Anulada</span>
+                    {% endif %}
+                </td>
+                <td class="ticket-number">{{ f.boletas|length }}</td>
+                <td class="text-end">{{ "{:,}".format(f.valor_total) }}</td>
+                <td><a href="{{ url_for('ver_factura', factura_id=f._id) }}" class="btn btn-sm btn-outline-primary">Ver</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center text-secondary py-4">No hay facturas de cliente</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

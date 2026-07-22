@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Facturas — {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Documentos emitidos</p>
+        <h1 class="h3 mb-0">Facturas</h1>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('nueva_factura_cliente') }}" class="btn btn-primary d-inline-flex align-items-center gap-2">
+            <i class="bi bi-person"></i> Factura de cliente
+        </a>
+        <a href="{{ url_for('nueva_factura_vendedor') }}" class="btn btn-success d-inline-flex align-items-center gap-2">
+            <i class="bi bi-person-badge"></i> Factura de vendedor
+        </a>
+    </div>
+</div>
+
+<form class="row g-2 mb-3" action="{{ url_for('facturas_list') }}" method="get">
+    <div class="col-sm-6 col-md-4">
+        <div class="input-group">
+            <input type="text" class="form-control" name="q" value="{{ q }}" placeholder="Número, cliente o vendedor…">
+            <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i></button>
+            {% if q %}
+            <a href="{{ url_for('facturas_list') }}" class="btn btn-outline-secondary">Limpiar</a>
+            {% endif %}
+        </div>
+    </div>
+</form>
+
+<div class="table-responsive">
+    <table class="table table-bordered table-hover table-sm align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>N°</th>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Cliente / Vendedor</th>
+                <th>Boletas</th>
+                <th class="text-end">Total</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in facturas %}
+            <tr>
+                <td class="fw-bold">{{ "%05d" % f._id }}</td>
+                <td>{{ f.fecha.strftime("%d/%m/%Y %H:%M") }}</td>
+                <td><span class="badge bg-{{ 'primary' if f.tipo == 'cliente' else 'success' }}">{{ f.tipo }}</span></td>
+                <td>
+                    {% if f.tipo == "cliente" %}
+                        {{ f.cliente.nombre }} {{ f.cliente.apellido }}
+                    {% else %}
+                        {{ f.vendedor_nombre or f.vendedor_id }}
+                    {% endif %}
+                    {% if f.get("anulada") %}
+                    <span class="badge text-bg-danger ms-1">Anulada</span>
+                    {% endif %}
+                </td>
+                <td class="ticket-number">{{ f.boletas|length }}</td>
+                <td class="text-end">{{ "{:,}".format(f.valor_total) }}</td>
+                <td><a href="{{ url_for('ver_factura', factura_id=f._id) }}" class="btn btn-sm btn-outline-primary">Ver</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-secondary py-4">No hay facturas emitidas</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
