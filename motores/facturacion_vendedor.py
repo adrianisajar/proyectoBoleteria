@@ -42,8 +42,9 @@ def _build_form_data(vendedor_id, fecha, boletas_raw, montos_raw, metodos, refer
     }
 
 
-def _render_vendedor_form(form_data):
-    vendedores_list = list(vendedores.find().sort("_id", 1))
+def _render_vendedor_form(form_data, vendedores_list=None):
+    if vendedores_list is None:
+        vendedores_list = list(vendedores.find().sort("_id", 1))
     today = now_local().strftime("%Y-%m-%d")
     _cfg = get_config()
     _vb = int(_cfg.get("valor_boleta", 10000) or 10000)
@@ -66,13 +67,14 @@ def register_routes(app):
             bancos = request.form.getlist("banco[]")
 
             form_data = _build_form_data(vendedor_id, fecha, boletas_raw, montos_raw, metodos, referencias, bancos)
+            _vendedores_list = list(vendedores.find().sort("_id", 1))
 
             if not vendedor_id:
                 flash("Debe seleccionar un vendedor.", "danger")
-                return _render_vendedor_form(form_data)
+                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
             if not fecha:
                 flash("Debe indicar la fecha del abono.", "danger")
-                return _render_vendedor_form(form_data)
+                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
             _cfg = get_config()
             _vb = int(_cfg.get("valor_boleta", 10000) or 10000)
@@ -126,11 +128,11 @@ def register_routes(app):
             if errors:
                 for e in errors:
                     flash(e, "danger")
-                return _render_vendedor_form(form_data)
+                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
             if not rows:
                 flash("Debe incluir al menos una boleta con un abono v\u00e1lido.", "danger")
-                return _render_vendedor_form(form_data)
+                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
             seen = set()
             deduped = []
@@ -145,7 +147,7 @@ def register_routes(app):
             if len(docs_map) != len(boleta_ids):
                 missing = [b for b in boleta_ids if b not in docs_map]
                 flash(f"Boletas no encontradas: {', '.join(f'{b:04d}' for b in missing)}", "danger")
-                return _render_vendedor_form(form_data)
+                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
             ajenas = [b for b in boleta_ids if docs_map[b].get("vendedor_id", "") != vendedor_id]
             if ajenas:
@@ -160,12 +162,12 @@ def register_routes(app):
                             actual_nombre = vd.get("nombre", actual)
                     detalles.append(f"#{b:04d} ({actual_nombre})")
                 flash(f"Boletas que no pertenecen a este vendedor: {', '.join(detalles)}", "danger")
-                return _render_vendedor_form(form_data)
+                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
             pagadas = [b for b in boleta_ids if docs_map[b].get("estado") == "pagada"]
             if pagadas:
                 flash(f"Boletas ya pagadas: {', '.join(f'{b:04d}' for b in pagadas)}", "danger")
-                return _render_vendedor_form(form_data)
+                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
             factura_id = None
             valor_boleta = None
@@ -240,7 +242,7 @@ def register_routes(app):
                 if factura_id is not None:
                     rollback_pagos_por_factura(factura_id, valor_boleta)
                 flash(f"Error al generar la factura: {exc}", "danger")
-                return _render_vendedor_form(form_data)
+                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
         vendedores_list = list(vendedores.find().sort("_id", 1))
         today = now_local().strftime("%Y-%m-%d")
