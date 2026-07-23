@@ -107,9 +107,11 @@
                         <th>Vendedor</th>
                         <th class="text-end">Boletas</th>
                         <th class="text-end">Vendidas</th>
+                        <th class="text-end">Pendientes</th>
                         <th class="text-end">Comisión /u</th>
                         <th class="text-end">Comisión total</th>
                         <th class="text-end">Recaudado</th>
+                        <th class="text-end">Saldo pendiente</th>
                         <th class="text-end"></th>
                     </tr>
                 </thead>
@@ -124,9 +126,23 @@
                             </td>
                             <td class="text-end fw-bold ticket-number">{{ vendedor.cantidad }}</td>
                             <td class="text-end fw-bold ticket-number">{{ vendedor.vendidas }}</td>
+                            <td class="text-end">
+                                {% if vendedor.pendientes_fisicas > 0 %}
+                                    <span class="badge text-bg-warning">{{ vendedor.pendientes_fisicas }}</span>
+                                {% else %}
+                                    <span class="badge text-bg-success">0</span>
+                                {% endif %}
+                            </td>
                             <td class="text-end">{{ vendedor.comision_por_boleta|cop }}</td>
                             <td class="text-end fw-bold text-warning">{{ vendedor.comision|cop }}</td>
                             <td class="text-end fw-bold text-success">{{ vendedor.recaudado|cop }}</td>
+                            <td class="text-end">
+                                {% if vendedor.saldo_pendiente > 0 %}
+                                    <span class="badge text-bg-danger">{{ vendedor.saldo_pendiente|cop }}</span>
+                                {% else %}
+                                    <span class="badge text-bg-secondary">$0</span>
+                                {% endif %}
+                            </td>
                             <td class="text-end">
                                 <div class="d-flex gap-1 justify-content-end">
                                     <button type="button" class="btn btn-sm btn-outline-info ver-boletas" data-vendedor="{{ vendedor._id }}" data-nombre="{{ vendedor.nombre }}" title="Ver boletas">

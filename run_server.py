@@ -24,7 +24,9 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
 
-    abrir_navegador(host, port)
+    browser_host = "127.0.0.1" if host == '0.0.0.0' else host
+    abrir_navegador(browser_host, port)
+    print(f"Servidor iniciado en http://{browser_host}:{port}")
 
     if debug:
         app.run(host=host, port=port, debug=True, threaded=True)

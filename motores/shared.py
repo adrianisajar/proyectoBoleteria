@@ -687,6 +687,7 @@ def validar_form_abono(form):
         "fecha": form.get("fecha", "").strip() or now_local().date().isoformat(),
         "metodo": form.get("metodo", "").strip().lower() or METODO_EFECTIVO,
         "referencia": form.get("referencia", "").strip(),
+        "banco": form.get("banco", "").strip(),
         "boletas": form.get("boletas", "").strip(),
     }
     errors = []
@@ -717,7 +718,7 @@ def validar_form_abono(form):
     return form_data, valor_abono, boleta_ids, duplicadas, errors
 
 
-def build_abono_preview(form):
+def build_abono_preview(form, factura_id=None):
     require_collections()
     config = get_config()
     valor_boleta = int(config["valor_boleta"])
@@ -747,13 +748,16 @@ def build_abono_preview(form):
     preview["inexistentes"] = [number for number in boleta_ids if number not in docs_by_id]
 
     if form_data["metodo"] == METODO_TRANSFERENCIA:
+        ref = form_data["referencia"]
+        elem_match = {"metodo": METODO_TRANSFERENCIA, "referencia": ref}
+        banco = form_data.get("banco", "").strip()
+        if banco:
+            elem_match["banco"] = banco
+        if factura_id is not None:
+            elem_match["factura_id"] = {"$ne": factura_id}
         used_refs = list(
             boletas.find(
-                {
-                    "historial_pagos": {
-                        "$elemMatch": {"metodo": METODO_TRANSFERENCIA, "referencia": form_data["referencia"]}
-                    }
-                },
+                {"historial_pagos": {"$elemMatch": elem_match}},
                 {"_id": 1},
             ).limit(10)
         )
@@ -791,14 +795,42 @@ def build_abono_preview(form):
 def registrar_abono_lote(boleta_ids, form_data, valor_abono, factura_id=None):
     config = get_config()
     valor_boleta = int(config["valor_boleta"])
-    pago = {
-        "fecha": form_data["fecha"],
-        "valor": valor_abono,
-        "metodo": form_data["metodo"],
-        "referencia": form_data["referencia"] if form_data["metodo"] == METODO_TRANSFERENCIA else REFERENCIA_N_A,
-        "registrado_en": now_local(),
-        "usuario": (current_user() or {}).get("username", USUARIO_SISTEMA),
-    }
+
+    if form_data["metodo"] == METODO_TRANSFERENCIA:
+        ref = form_data.get("referencia", "").strip()
+        if not ref:
+            raise ValueError("La referencia bancaria es obligatoria para transferencias.")
+        banco = form_data.get("banco", "").strip()
+        elem_match = {"metodo": METODO_TRANSFERENCIA, "referencia": ref}
+        if banco:
+            elem_match["banco"] = banco
+        if factura_id is not None:
+            elem_match["factura_id"] = {"$ne": factura_id}
+        duplicado = boletas.find_one({"historial_pagos": {"$elemMatch": elem_match}}, {"_id": 1})
+        if duplicado:
+            msg = f"Ya existe un pago por transferencia con referencia {ref}"
+            if banco:
+                msg += f" y banco {banco}"
+            msg += f" (boleta #{duplicado['_id']:04d})."
+            raise ValueError(msg)
+        pago = {
+            "fecha": form_data["fecha"],
+            "valor": valor_abono,
+            "metodo": METODO_TRANSFERENCIA,
+            "referencia": ref,
+            "registrado_en": now_local(),
+            "usuario": (current_user() or {}).get("username", USUARIO_SISTEMA),
+        }
+        if banco:
+            pago["banco"] = banco
+    else:
+        pago = {
+            "fecha": form_data["fecha"],
+            "valor": valor_abono,
+            "metodo": METODO_EFECTIVO,
+            "registrado_en": now_local(),
+            "usuario": (current_user() or {}).get("username", USUARIO_SISTEMA),
+        }
     if factura_id is not None:
         pago["factura_id"] = factura_id
     result = boletas.update_many(
@@ -812,18 +844,44 @@ def registrar_abono_lote(boleta_ids, form_data, valor_abono, factura_id=None):
             },
             {
                 "$set": {
-                    "estado": {
-                        "$cond": [
-                            {"$gte": ["$total_abonado", valor_boleta]},
-                            "pagada",
-                            "abonando",
-                        ]
-                    }
+                    "estado": estado_pipeline_expr(valor_boleta)
                 }
             },
         ],
     )
     return result
+
+
+def rollback_pagos_por_factura(factura_id, valor_boleta):
+    pipeline = [
+        {
+            "$set": {
+                "historial_pagos": {
+                    "$filter": {
+                        "input": {"$ifNull": ["$historial_pagos", []]},
+                        "cond": {"$ne": ["$$this.factura_id", factura_id]},
+                    }
+                }
+            }
+        },
+        {
+            "$set": {
+                "total_abonado": {
+                    "$reduce": {
+                        "input": {"$ifNull": ["$historial_pagos", []]},
+                        "initialValue": 0,
+                        "in": {"$add": ["$$value", "$$this.valor"]},
+                    }
+                }
+            }
+        },
+    ]
+    if valor_boleta is not None:
+        pipeline.append({"$set": {"estado": estado_pipeline_expr(valor_boleta)}})
+    boletas.update_many(
+        {"historial_pagos.factura_id": factura_id},
+        pipeline,
+    )
 
 
 def safe_vendedores_snapshot():
@@ -1062,15 +1120,7 @@ def importar_modelo_rifa(file_obj):
             boletas.update_many(
                 {"_id": {"$in": unique_ids}},
                 [{"$set": {
-                    "estado": {
-                        "$switch": {
-                            "branches": [
-                                {"case": {"$gte": ["$total_abonado", {"$literal": valor_boleta}]}, "then": "pagada"},
-                                {"case": {"$gt": ["$total_abonado", 0]}, "then": "abonando"},
-                            ],
-                            "default": "asignada",
-                        }
-                    }
+                    "estado": estado_pipeline_expr(valor_boleta)
                 }}],
             )
 

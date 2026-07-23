@@ -17,17 +17,24 @@
             <h2 class="section-title mb-3">Datos del vendedor</h2>
             <div class="row g-3">
                 <div class="col-12">
-                    <label for="vendedor_id" class="form-label fw-semibold">Vendedor</label>
-                    <select class="form-select" id="vendedor_id" name="vendedor_id" required>
-                        <option value="">&mdash; Seleccione &mdash;</option>
-                        {% for v in vendedores %}
-                        <option value="{{ v._id }}" data-nombre="{{ v.nombre or v._id }}">{{ v.nombre or v._id }}</option>
-                        {% endfor %}
-                    </select>
+                    <label for="vendedorSearch" class="form-label fw-semibold">Vendedor</label>
+                    <div class="position-relative">
+                        <input type="text" class="form-control" id="vendedorSearch"
+                               placeholder="Buscar vendedor..." autocomplete="off" required
+                               value="{{ form_data.vendedor_nombre or '' }}">
+                        <select class="d-none" id="vendedor_id" name="vendedor_id" required>
+                            <option value="">&mdash; Seleccione &mdash;</option>
+                            {% for v in vendedores %}
+                            <option value="{{ v._id }}" data-nombre="{{ v.nombre or v._id }}" {% if form_data and form_data.vendedor_id == v._id %}selected{% endif %}>{{ v.nombre or v._id }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="list-group position-absolute w-100 shadow-sm rounded-2"
+                             id="vendedorSugerencias" style="display:none; z-index:1050; max-height:200px; overflow-y:auto;"></div>
+                    </div>
                 </div>
                 <div class="col-12">
                     <label for="fecha" class="form-label fw-semibold">Fecha del abono</label>
-                    <input type="date" class="form-control" id="fecha" name="fecha" value="{{ today }}" max="{{ today }}">
+                    <input type="date" class="form-control" id="fecha" name="fecha" value="{{ form_data.fecha or today }}" max="{{ today }}">
                 </div>
                 <div class="col-12">
                     <div class="bg-light rounded p-3">
@@ -63,13 +70,14 @@
                             <th style="width:25%;">Valor abono</th>
                             <th style="width:15%;">M&eacute;todo</th>
                             <th style="width:15%;">Referencia</th>
+                            <th style="width:10%;">Banco</th>
                             <th style="width:1px;"></th>
                         </tr>
                     </thead>
                     <tbody id="abonosBody">
                         <tr class="fila-abono">
                             <td>
-                                <input type="text" class="form-control form-control-sm ticket-number boleta-input" name="boleta[]" placeholder="0001, 0002, 0003" inputmode="numeric" required disabled>
+                                <input type="text" class="form-control form-control-sm ticket-number boleta-input" name="boleta[]" placeholder="0001, 0002, 0003" inputmode="numeric" required disabled autocomplete="off">
                                 <div class="boleta-warnings text-danger small mt-1"></div>
                                 <div class="boleta-info text-secondary small mt-1" style="font-size:.65rem;"></div>
                             </td>
@@ -79,7 +87,7 @@
                             <td>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text">$</span>
-                                    <input type="text" class="form-control monto-input" name="monto[]" placeholder="0" inputmode="numeric" required>
+                                    <input type="text" class="form-control monto-input" name="monto[]" placeholder="0" inputmode="numeric" required autocomplete="off">
                                 </div>
                             </td>
                             <td>
@@ -89,7 +97,10 @@
                                 </select>
                             </td>
                             <td class="ref-cell">
-                                <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="TX-000">
+                                <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="TX-000" autocomplete="off">
+                            </td>
+                            <td class="banco-cell">
+                                <input type="text" class="form-control form-control-sm" name="banco[]" placeholder="Banco" list="listaBancos" autocomplete="off">
                             </td>
                             <td>
                                 <button type="button" class="btn btn-sm btn-outline-danger eliminar-fila" title="Quitar">
@@ -100,6 +111,24 @@
                     </tbody>
                 </table>
             </div>
+
+            <datalist id="listaBancos">
+                <option value="Bancolombia">
+                <option value="Davivienda">
+                <option value="Banco de Bogotá">
+                <option value="Banco Popular">
+                <option value="BBVA Colombia">
+                <option value="ScotiaColpatria">
+                <option value="Itaú Colombia">
+                <option value="Banco Agrario">
+                <option value="Banco AV Villas">
+                <option value="Banco Caja Social">
+                <option value="Banco Falabella">
+                <option value="Banco de Occidente">
+                <option value="Nequi">
+                <option value="DaviPlata">
+                <option value="Movii">
+            </datalist>
 
             <hr>
             <div class="d-grid">
@@ -151,18 +180,79 @@
 
         const plantilla = abonosBody.querySelector(".fila-abono").cloneNode(true);
         const previewBtn = document.getElementById("btnPreview");
+        const vendedorSearch = document.getElementById("vendedorSearch");
+        const vendedorSelect = document.getElementById("vendedor_id");
+        const sugerencias = document.getElementById("vendedorSugerencias");
+
+        const vendedores = [
+            {% for v in vendedores %}
+            { id: {{ v._id | tojson }}, nombre: {{ (v.nombre or v._id) | tojson }} },
+            {% endfor %}
+        ];
+        let selectedVendedor = null;
+        {% if form_data and form_data.vendedor_id %}
+        selectedVendedor = { id: {{ form_data.vendedor_id | tojson }}, nombre: {{ form_data.vendedor_nombre | tojson }} };
+        vendedorSelect.value = {{ form_data.vendedor_id | tojson }};
+        {% endif %}
+
+        const mostrarSugerencias = (filtro) => {
+            const q = filtro.toLowerCase();
+            const opts = vendedores.filter(function(v) {
+                return v.id.toLowerCase().includes(q) || v.nombre.toLowerCase().includes(q);
+            });
+            if (!q || !opts.length) { sugerencias.style.display = "none"; return; }
+            sugerencias.innerHTML = opts.map(function(v) {
+                var active = selectedVendedor && selectedVendedor.id === v.id ? " active" : "";
+                return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + v.id + '" data-nombre="' + v.nombre + '">' + v.nombre + ' <small class="text-secondary">(' + v.id + ')</small></button>';
+            }).join("");
+            sugerencias.style.display = "";
+        };
+
+        const seleccionarVendedor = (id, nombre) => {
+            selectedVendedor = { id: id, nombre: nombre };
+            vendedorSearch.value = nombre;
+            vendedorSelect.value = id;
+            sugerencias.style.display = "none";
+            vendedorSearch.dispatchEvent(new Event("change"));
+        };
+
+        vendedorSearch.addEventListener("input", function() {
+            if (selectedVendedor && selectedVendedor.nombre !== this.value) {
+                selectedVendedor = null;
+                vendedorSelect.value = "";
+            }
+            mostrarSugerencias(this.value);
+        });
+
+        sugerencias.addEventListener("click", function(e) {
+            var btn = e.target.closest("button");
+            if (btn) seleccionarVendedor(btn.dataset.id, btn.dataset.nombre);
+        });
+
+        vendedorSearch.addEventListener("blur", function() {
+            setTimeout(function() { sugerencias.style.display = "none"; }, 200);
+        });
+
+        vendedorSearch.addEventListener("focus", function() {
+            if (this.value) mostrarSugerencias(this.value);
+        });
 
         let boletaCache = {};
 
-        const getVendedorId = () => document.getElementById("vendedor_id").value;
+        const getVendedorId = () => vendedorSelect.value;
+        const getVendedorNombre = () => selectedVendedor ? selectedVendedor.nombre : "";
 
-        const verificarBoleta = async (numero, warningsEl) => {
+        const verificarBoleta = async (numero) => {
             if (boletaCache[numero] !== undefined) return boletaCache[numero];
             try {
                 const res = await fetch("/api/boletas/" + numero);
                 const data = await res.json();
                 if (data.ok) {
-                    boletaCache[numero] = { ok: true, vendedor_id: data.vendedor_id || "", vendedor_nombre: data.vendedor_nombre || "" };
+                    boletaCache[numero] = {
+                        ok: true, estado: data.estado || "",
+                        vendedor_id: data.vendedor_id || "", vendedor_nombre: data.vendedor_nombre || "",
+                        total_abonado: data.total_abonado || 0,
+                    };
                 } else {
                     boletaCache[numero] = { ok: false };
                 }
@@ -180,7 +270,7 @@
             }
 
             const filas = abonosBody.querySelectorAll(".fila-abono");
-            let hasWarnings = false;
+            let hasErrors = false;
 
             for (const f of filas) {
                 const raw = f.querySelector(".boleta-input").value;
@@ -192,33 +282,38 @@
 
                 if (!parts.length) continue;
 
-                var warns = [];
+                var errors = [];
+                var warnings = [];
                 var validCount = 0;
-                var totalWarn = 0;
 
                 for (const p of parts) {
                     const num = parseInt(p);
-                    const result = await verificarBoleta(num, warningsEl);
-                    if (result.ok) {
-                        if (result.vendedor_id !== vId) {
-                            var who = result.vendedor_nombre || result.vendedor_id || "sin asignar";
-                            warns.push("#" + ("0000" + num).slice(-4) + " → " + who);
-                            totalWarn++;
-                        } else {
-                            validCount++;
-                        }
+                    const result = await verificarBoleta(num);
+                    if (!result.ok) {
+                        errors.push('#' + ("0000" + num).slice(-4) + ' <span class="text-danger">No existe</span>');
+                    } else if (result.estado === "pagada") {
+                        errors.push('#' + ("0000" + num).slice(-4) + ' <span class="text-danger">Pagada</span>');
+                    } else if (result.vendedor_id !== vId) {
+                        var who = result.vendedor_nombre || result.vendedor_id || "sin asignar";
+                        warnings.push('#' + ("0000" + num).slice(-4) + ' → ' + who);
+                    } else {
+                        validCount++;
                     }
                 }
 
-                if (warns.length) {
-                    warningsEl.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>' + warns.join("<br>");
-                    hasWarnings = true;
-                } else if (validCount > 0) {
+                if (errors.length) {
+                    warningsEl.innerHTML = '<i class="bi bi-x-circle me-1"></i>' + errors.join("<br>");
+                    hasErrors = true;
+                } else if (warnings.length) {
+                    warningsEl.innerHTML = '<i class="bi bi-exclamation-triangle text-warning me-1"></i>' + warnings.join("<br>") + '<br><span class="text-secondary small">Puede continuar, se validar\u00e1 en el servidor.</span>';
+                }
+
+                if (validCount > 0 && !errors.length) {
                     infoEl.textContent = validCount + " boleta(s) verificada(s)";
                 }
             }
 
-            previewBtn.disabled = hasWarnings;
+            previewBtn.disabled = hasErrors;
         };
 
         let validarTimeout = null;
@@ -243,9 +338,8 @@
         const previewReceipt = document.getElementById("previewReceipt");
 
         const actualizarPreview = () => {
-            const vId = document.getElementById("vendedor_id");
-            const vNombre = vId.options[vId.selectedIndex]?.getAttribute("data-nombre") || "";
-            const vValue = vId.value;
+            const vValue = getVendedorId();
+            const vNombre = getVendedorNombre();
             const fechaEl = document.getElementById("fecha");
             const fecha = fechaEl ? fechaEl.value : "";
 
@@ -347,9 +441,13 @@
         const alternarReferencia = (fila) => {
             const metodo = fila.querySelector("select[name='metodo[]']").value;
             const refCell = fila.querySelector(".ref-cell");
-            refCell.style.display = metodo === "transferencia" ? "" : "none";
-            if (metodo !== "transferencia") {
+            const bancoCell = fila.querySelector(".banco-cell");
+            const mostrar = metodo === "transferencia";
+            refCell.style.display = mostrar ? "" : "none";
+            bancoCell.style.display = mostrar ? "" : "none";
+            if (!mostrar) {
                 fila.querySelector("input[name='referencia[]']").value = "";
+                fila.querySelector("input[name='banco[]']").value = "";
             }
         };
 
@@ -392,7 +490,32 @@
         abonosBody.querySelectorAll(".fila-abono").forEach(initFila);
         actualizarEstadoBoletaInputs();
 
-        document.getElementById("vendedor_id").addEventListener("change", function() {
+        {% if form_data and form_data.form_rows %}
+        (function() {
+            abonosBody.querySelectorAll(".fila-abono").forEach(function(r) { r.remove(); });
+            var rows = {{ form_data.form_rows | tojson }};
+            rows.forEach(function(row) {
+                var nueva = plantilla.cloneNode(true);
+                nueva.querySelectorAll("input").forEach(function(i) { i.value = ""; });
+                nueva.querySelector("select").value = row.metodo || "efectivo";
+                var boletaInput = nueva.querySelector(".boleta-input");
+                if (boletaInput) boletaInput.value = row.boleta || "";
+                var montoInput = nueva.querySelector(".monto-input");
+                if (montoInput) montoInput.value = row.monto || "";
+                var refInput = nueva.querySelector("input[name='referencia[]']");
+                if (refInput) refInput.value = row.referencia || "";
+                var bancoInput = nueva.querySelector("input[name='banco[]']");
+                if (bancoInput) bancoInput.value = row.banco || "";
+                abonosBody.appendChild(nueva);
+                initFila(nueva);
+                actualizarEstadoBoletaInputs();
+            });
+            actualizarResumen();
+            programarValidacion();
+        })();
+        {% endif %}
+
+        vendedorSearch.addEventListener("change", function() {
             boletaCache = {};
             actualizarEstadoBoletaInputs();
             abonosBody.querySelectorAll(".boleta-input").forEach(function(el) {
@@ -415,9 +538,9 @@
         });
 
         const armarPreview = function() {
-            const vId = document.getElementById("vendedor_id");
-            const vNombre = vId.options[vId.selectedIndex]?.getAttribute("data-nombre") || "";
-            if (!vId.value) { alert("Seleccione un vendedor."); return null; }
+            const vIdValue = getVendedorId();
+            const vNombre = getVendedorNombre();
+            if (!vIdValue) { alert("Seleccione un vendedor."); return null; }
 
             const filas = abonosBody.querySelectorAll(".fila-abono");
             const grupos = {};
@@ -485,6 +608,16 @@
         });
 
         document.getElementById("formFacturaVendedor").addEventListener("submit", function(e) {
+            if (!getVendedorId()) {
+                e.preventDefault();
+                alert("Seleccione un vendedor.");
+                return;
+            }
+            if (previewBtn.disabled) {
+                e.preventDefault();
+                alert("Corrija los errores antes de generar la factura.");
+                return;
+            }
             const filas = abonosBody.querySelectorAll(".fila-abono");
             let totalTickets = 0;
             filas.forEach(function(f) {

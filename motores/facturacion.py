@@ -1,17 +1,26 @@
+import hashlib
 import re
 from datetime import datetime
 
-from motores.constants import METODO_TRANSFERENCIA, REFERENCIA_N_A, USUARIO_SISTEMA
+from flask import current_app
+
+from motores.constants import METODO_TRANSFERENCIA, REFERENCIA_N_A, USUARIO_SISTEMA, VENDEDOR_LOCAL
 from motores.fechas import now_local
 
 from motores.shared import (
     boletas, vendedores, facturas,
     request, flash, redirect, render_template, url_for, abort,
     require_collections, role_required,
-    get_config,
+    current_user, get_config,
     calcular_premios_adicionales,
     estado_pipeline_expr,
+    rollback_pagos_por_factura,
 )
+
+
+def _anulacion_hash(factura_id, anulada, secret):
+    raw = f"{factura_id}:{anulada}:{secret}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
 def register_routes(app):
@@ -58,6 +67,14 @@ def register_routes(app):
 
         ctx = {"factura": factura, "config": get_config(), "imprimir": request.args.get("imprimir")}
 
+        hoy = now_local().date()
+        fecha_f = factura["fecha"]
+        if isinstance(fecha_f, datetime):
+            if fecha_f.date() == hoy:
+                factura["fecha_display"] = fecha_f.strftime("%d/%m/%Y %I:%M %p")
+            else:
+                factura["fecha_display"] = fecha_f.strftime("%d/%m/%Y") + " 12:00 PM"
+
         if factura.get("tipo") == "cliente":
             boletas_ids = factura.get("boletas", [])
             docs = list(boletas.find({"_id": {"$in": boletas_ids}}))
@@ -86,12 +103,10 @@ def register_routes(app):
                 bid = doc["_id"]
                 historial_completo = doc.get("historial_pagos") or []
                 # Todos los pagos hasta la fecha de la factura (para total_abonado, saldo e historial)
-                fecha_factura_dt = factura["fecha"]
-                if not isinstance(fecha_factura_dt, datetime):
-                    fecha_factura_dt = datetime.strptime(str(fecha_factura_dt)[:19], "%Y-%m-%d %H:%M:%S")
+                fecha_factura_str = factura["fecha"].strftime("%Y-%m-%d") if isinstance(factura["fecha"], datetime) else str(factura["fecha"])[:10]
                 historial_hasta_factura = [
                     p for p in historial_completo
-                    if p.get("registrado_en", fecha_factura_dt) <= fecha_factura_dt
+                    if str(p.get("fecha", ""))[:10] <= fecha_factura_str
                 ]
                 # Pagos de esta factura (para tabla "PAGOS DE ESTA FACTURA")
                 historial_esta_factura = [
@@ -100,10 +115,20 @@ def register_routes(app):
                 ]
                 total_hasta_factura = sum(int(p.get("valor", 0) or 0) for p in historial_hasta_factura)
                 saldo_hasta_factura = max(valor_boleta - total_hasta_factura, 0)
+                if total_hasta_factura >= valor_boleta:
+                    estado_historico = "pagada"
+                elif total_hasta_factura > 0:
+                    estado_historico = "abonando"
+                elif doc.get("vendedor_id") == VENDEDOR_LOCAL:
+                    estado_historico = "separada"
+                elif doc.get("vendedor_id"):
+                    estado_historico = "asignada"
+                else:
+                    estado_historico = "disponible"
                 boletas_info[bid] = {
                     "total_abonado": total_hasta_factura,
                     "saldo_pendiente": saldo_hasta_factura,
-                    "estado": doc.get("estado", "disponible"),
+                    "estado": estado_historico,
                     "valor_boleta": valor_boleta,
                     "vendedor_id": doc.get("vendedor_id", "LOCAL"),
                     "vendedor_nombre": vid_cache.get(doc.get("vendedor_id", "LOCAL"), "LOCAL"),
@@ -113,23 +138,27 @@ def register_routes(app):
                 }
             ctx["boletas_info"] = boletas_info
 
+        if factura.get("tipo") == "cliente":
+            for d in factura.get("detalle") or []:
+                d["grupo_pago"] = str(d.get("valor", 0))
+                if d.get("metodo") == "transferencia":
+                    d["grupo_transferencia"] = f"{d.get('banco','')}|{d.get('referencia','')}"
+
         if factura.get("tipo") == "vendedor":
             total_efectivo = 0
             total_transferencia = 0
-            referencias = []
             for d in factura.get("detalle") or []:
                 valor = int(d.get("valor", 0) or 0)
+                d["grupo_pago"] = str(valor)
                 if d.get("metodo") == METODO_TRANSFERENCIA:
                     total_transferencia += valor
-                    ref = d.get("referencia", "").strip()
-                    if ref and ref.upper() not in (REFERENCIA_N_A, "", "NINGUNA") and ref not in referencias:
-                        referencias.append(ref)
+                    d["grupo_transferencia"] = f"{d.get('banco','')}|{d.get('referencia','')}"
                 else:
                     total_efectivo += valor
             ctx["total_efectivo"] = total_efectivo
             ctx["total_transferencia"] = total_transferencia
-            ctx["referencias_transferencia"] = referencias
 
+        ctx["anulacion_hash"] = _anulacion_hash(factura_id, bool(factura.get("anulada")), current_app.secret_key)
         template_map = {"cliente": "factura_cliente.html", "vendedor": "factura_vendedor.html"}
         template = template_map.get(factura.get("tipo", ""), "factura_cliente.html")
         return render_template(template, **ctx)
@@ -145,6 +174,12 @@ def register_routes(app):
             flash("La factura ya fue anulada.", "warning")
             return redirect(url_for("ver_factura", factura_id=factura_id))
 
+        submitted_hash = request.form.get("anulacion_hash", "")
+        expected_hash = _anulacion_hash(factura_id, False, current_app.secret_key)
+        if not submitted_hash or submitted_hash != expected_hash:
+            flash("La factura fue modificada por otro usuario. Recargue la p\u00e1gina.", "danger")
+            return redirect(url_for("ver_factura", factura_id=factura_id))
+
         motivo = request.form.get("motivo", "").strip()
         if not motivo:
             flash("Debe indicar el motivo de la anulaci\u00f3n.", "danger")
@@ -155,48 +190,54 @@ def register_routes(app):
         config_local = get_config()
         valor_boleta_local = int(config_local["valor_boleta"])
 
-        for boleta_id in factura.get("boletas", []):
-            boletas.update_one(
-                {"_id": boleta_id},
-                [
-                    {
-                        "$set": {
-                            "historial_pagos": {
-                                "$filter": {
-                                    "input": {"$ifNull": ["$historial_pagos", []]},
-                                    "cond": {"$ne": ["$$this.factura_id", factura_id]},
+        try:
+            for boleta_id in factura.get("boletas", []):
+                boletas.update_one(
+                    {"_id": boleta_id},
+                    [
+                        {
+                            "$set": {
+                                "historial_pagos": {
+                                    "$filter": {
+                                        "input": {"$ifNull": ["$historial_pagos", []]},
+                                        "cond": {"$ne": ["$$this.factura_id", factura_id]},
+                                    }
                                 }
                             }
-                        }
-                    },
-                    {
-                        "$set": {
-                            "total_abonado": {
-                                "$reduce": {
-                                    "input": {"$ifNull": ["$historial_pagos", []]},
-                                    "initialValue": 0,
-                                    "in": {"$add": ["$$value", "$$this.valor"]},
+                        },
+                        {
+                            "$set": {
+                                "total_abonado": {
+                                    "$reduce": {
+                                        "input": {"$ifNull": ["$historial_pagos", []]},
+                                        "initialValue": 0,
+                                        "in": {"$add": ["$$value", "$$this.valor"]},
+                                    }
                                 }
                             }
-                        }
-                    },
-                    {
-                        "$set": {
-                            "estado": estado_pipeline_expr(valor_boleta_local)
-                        }
-                    },
-                ],
-            )
+                        },
+                        {
+                            "$set": {
+                                "estado": estado_pipeline_expr(valor_boleta_local)
+                            }
+                        },
+                    ],
+                )
 
-        facturas.update_one(
-            {"_id": factura_id},
-            {"$set": {
-                "anulada": True,
-                "anulada_en": now_local(),
-                "anulada_por": user,
-                "motivo_anulacion": motivo,
-            }},
-        )
+            facturas.update_one(
+                {"_id": factura_id},
+                {"$set": {
+                    "anulada": True,
+                    "anulada_en": now_local(),
+                    "anulada_por": user,
+                    "motivo_anulacion": motivo,
+                }},
+            )
+        except Exception:
+            rollback_pagos_por_factura(factura_id, valor_boleta_local)
+            flash(f"Error al anular la factura N\u00b0 {factura_id:05d}. Los cambios fueron revertidos.", "danger")
+            return redirect(url_for("ver_factura", factura_id=factura_id))
+
         flash(f"Factura N\u00b0 {factura_id:05d} anulada.", "success")
         return redirect(url_for("ver_factura", factura_id=factura_id))
 

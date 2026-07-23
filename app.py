@@ -19,6 +19,7 @@ if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
 else:
     app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "clave_desarrollo_boleteria")
+app.jinja_env.auto_reload = True
 
 register_template_filters(app)
 register_before_request(app)

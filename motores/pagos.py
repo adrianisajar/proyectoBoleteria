@@ -1,3 +1,5 @@
+import re
+
 from motores.validacion import parse_boletas
 from motores.constants import OPERACIONES_VENDEDOR, BOLETA_MIN, BOLETA_MAX
 
@@ -186,6 +188,20 @@ def register_routes(app):
             return redirect(url_for("vendedores_panel"))
 
         return _render_vendedores(form_data)
+
+    @app.route("/api/vendedores")
+    @role_required("admin", "cajero", "consulta")
+    def api_vendedores():
+        require_collections()
+        q = request.args.get("q", "").strip()
+        query = {}
+        if q:
+            query["$or"] = [
+                {"_id": {"$regex": re.escape(q), "$options": "i"}},
+                {"nombre": {"$regex": re.escape(q), "$options": "i"}},
+            ]
+        docs = list(vendedores.find(query, {"nombre": 1, "telefono": 1}).sort("_id", 1).limit(20))
+        return jsonify([{"_id": d["_id"], "nombre": d.get("nombre", ""), "telefono": d.get("telefono", "")} for d in docs])
 
     @app.route("/api/vendedores/<vendedor_id>/boletas")
     @role_required("admin", "cajero", "consulta")

@@ -18,39 +18,52 @@
     <div class="col-6 col-lg-2">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-dark);">
             <div class="metric-label mb-2">Total</div>
-            <div class="metric-value ticket-number">{{ total }}</div>
+            <div class="metric-value ticket-number">{{ filtered_counts.total if filtered_counts else total }}</div>
         </div>
     </div>
     <div class="col-6 col-lg-2">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-secondary);">
             <div class="metric-label mb-2">Disponibles</div>
-            <div class="metric-value ticket-number">{{ disponibles }}</div>
+            <div class="metric-value ticket-number">{{ filtered_counts.disponibles if filtered_counts else disponibles }}</div>
         </div>
     </div>
     <div class="col-6 col-lg-2">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-primary);">
             <div class="metric-label mb-2">Asignadas</div>
-            <div class="metric-value ticket-number">{{ asignadas }}</div>
+            <div class="metric-value ticket-number">{{ filtered_counts.asignadas if filtered_counts else asignadas }}</div>
         </div>
     </div>
     <div class="col-6 col-lg-2">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-info);">
             <div class="metric-label mb-2">Separadas</div>
-            <div class="metric-value ticket-number">{{ separadas }}</div>
+            <div class="metric-value ticket-number">{{ filtered_counts.separadas if filtered_counts else separadas }}</div>
         </div>
     </div>
     <div class="col-6 col-lg-2">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-warning);">
             <div class="metric-label mb-2">Abonando</div>
-            <div class="metric-value ticket-number">{{ abonando }}</div>
+            <div class="metric-value ticket-number">{{ filtered_counts.abonando if filtered_counts else abonando }}</div>
         </div>
     </div>
     <div class="col-6 col-lg-2">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-success);">
             <div class="metric-label mb-2">Pagadas</div>
-            <div class="metric-value ticket-number">{{ pagadas }}</div>
+            <div class="metric-value ticket-number">{{ filtered_counts.pagadas if filtered_counts else pagadas }}</div>
         </div>
     </div>
+</div>
+{% if filtered_counts %}
+    <div class="small text-muted mb-3"><i class="bi bi-funnel me-1"></i>Estadísticas filtradas — mostrando {{ filtered_counts.total }} de {{ total }} boletas</div>
+{% endif %}
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <a href="{{ url_for('consultas') }}" class="btn btn-sm {% if not filters.estado %}btn-dark{% else %}btn-outline-secondary{% endif %}">Todas</a>
+    <a href="{{ url_for('consultas', estado='disponible') }}" class="btn btn-sm {% if filters.estado == 'disponible' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">Disponibles</a>
+    <a href="{{ url_for('consultas', estado='asignada') }}" class="btn btn-sm {% if filters.estado == 'asignada' %}btn-primary{% else %}btn-outline-primary{% endif %}">Asignadas</a>
+    <a href="{{ url_for('consultas', estado='separada') }}" class="btn btn-sm {% if filters.estado == 'separada' %}btn-info{% else %}btn-outline-info{% endif %}">Separadas</a>
+    <a href="{{ url_for('consultas', estado='abonando') }}" class="btn btn-sm {% if filters.estado == 'abonando' %}btn-warning{% else %}btn-outline-warning{% endif %}">Abonando</a>
+    <a href="{{ url_for('consultas', estado='pagada') }}" class="btn btn-sm {% if filters.estado == 'pagada' %}btn-success{% else %}btn-outline-success{% endif %}">Pagadas</a>
+    <a href="{{ url_for('consultas', cliente_estado='sin_cliente') }}" class="btn btn-sm {% if filters.cliente_estado == 'sin_cliente' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">Sin cliente</a>
 </div>
 
 <div class="office-card bg-body p-3 p-md-4 mb-4">
@@ -60,17 +73,24 @@
             <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="numero" name="numero" value="{{ filters.numero }}" placeholder="0001">
         </div>
         <div class="col-sm-6 col-lg-3">
-            <label for="vendedor_id" class="form-label fw-semibold">Vendedor</label>
-            <select class="form-select" id="vendedor_id" name="vendedor_id">
-                <option value="">Todos</option>
-                <option value="__" {% if filters.vendedor_id == "__" %}selected{% endif %}>Sin asignar</option>
-                <option value="LOCAL" {% if filters.vendedor_id == "LOCAL" %}selected{% endif %}>LOCAL</option>
-                {% for vendedor in vendedor_options %}
-                    <option value="{{ vendedor._id }}" {% if filters.vendedor_id == vendedor._id %}selected{% endif %}>
-                        {{ vendedor._id }}{% if vendedor.nombre %} - {{ vendedor.nombre }}{% endif %}
-                    </option>
-                {% endfor %}
-            </select>
+            <label for="vendedorSearch" class="form-label fw-semibold">Vendedor</label>
+            <div class="position-relative">
+                <input type="text" class="form-control" id="vendedorSearch"
+                       placeholder="Buscar vendedor..." autocomplete="off"
+                       value="{{ vendedor_label }}">
+                <select class="d-none" id="vendedor_id" name="vendedor_id">
+                    <option value="">Todos</option>
+                    <option value="__" {% if filters.vendedor_id == "__" %}selected{% endif %}>Sin asignar</option>
+                    <option value="LOCAL" {% if filters.vendedor_id == "LOCAL" %}selected{% endif %}>LOCAL</option>
+                    {% for vendedor in vendedor_options %}
+                        <option value="{{ vendedor._id }}" {% if filters.vendedor_id == vendedor._id %}selected{% endif %}>
+                            {{ vendedor._id }}{% if vendedor.nombre %} - {{ vendedor.nombre }}{% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+                <div class="list-group position-absolute w-100 shadow-sm rounded-2"
+                     id="vendedorSugerencias" style="display:none; z-index:1050; max-height:200px; overflow-y:auto;"></div>
+            </div>
         </div>
         <div class="col-sm-6 col-lg-2">
             <label for="estado" class="form-label fw-semibold">Estado</label>
@@ -174,6 +194,9 @@
             <a class="btn btn-outline-secondary btn-sm {% if not next_url %}disabled{% endif %}" href="{{ next_url or '#' }}" aria-label="Página siguiente">
                 <i class="bi bi-chevron-right"></i>
             </a>
+            <a class="btn btn-outline-success btn-sm" href="/consultas/exportar{{ '?' + request.query_string.decode() if request.query_string else '' }}">
+                <i class="bi bi-download me-1"></i>CSV
+            </a>
         </div>
     </div>
 
@@ -182,12 +205,12 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>Boleta</th>
-                        <th>Estado</th>
-                        <th>Vendedor</th>
-                        <th>Cliente</th>
+                        <th data-sort="_id" class="sortable"><i class="bi bi-arrow-down-up me-1"></i>Boleta</th>
+                        <th data-sort="estado" class="sortable">Estado</th>
+                        <th data-sort="vendedor_id" class="sortable">Vendedor</th>
+                        <th data-sort="cliente.nombre" class="sortable">Cliente</th>
                         <th>Teléfono</th>
-                        <th class="text-end">Abonado</th>
+                        <th data-sort="total_abonado" class="sortable text-end">Abonado</th>
                         <th>Último pago</th>
                         <th class="text-end">Acción</th>
                     </tr>
@@ -214,10 +237,39 @@
                                 {% endif %}
                             </td>
                             <td class="text-end">
-                                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('consultas', numero='%04d'|format(item._id)) }}">
-                                    <i class="bi bi-box-arrow-up-right"></i>
-                                    Abrir
-                                </a>
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
+                                        <i class="bi bi-gear"></i>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li>
+                                            <a class="dropdown-item" href="{{ url_for('consultas', numero='%04d'|format(item._id)) }}">
+                                                <i class="bi bi-box-arrow-up-right me-2"></i>Ver detalle
+                                            </a>
+                                        </li>
+                                        {% if item.estado == 'pagada' %}
+                                        <li>
+                                            <a class="dropdown-item" href="{{ url_for('facturas_cliente') }}?boleta={{ '%04d'|format(item._id) }}">
+                                                <i class="bi bi-file-text me-2"></i>Ver factura
+                                            </a>
+                                        </li>
+                                        {% endif %}
+                                        {% if item.estado in ('asignada', 'separada', 'abonando') %}
+                                        <li>
+                                            <a class="dropdown-item" href="{{ url_for('nueva_factura_cliente') }}?boletas={{ '%04d'|format(item._id) }}">
+                                                <i class="bi bi-credit-card me-2"></i>Registrar pago
+                                            </a>
+                                        </li>
+                                        {% endif %}
+                                        {% if item.estado in ('disponible', 'asignada') %}
+                                        <li>
+                                            <a class="dropdown-item" href="{{ url_for('nueva_factura_cliente') }}?boletas={{ '%04d'|format(item._id) }}">
+                                                <i class="bi bi-person-plus me-2"></i>Separar / Asignar
+                                            </a>
+                                        </li>
+                                        {% endif %}
+                                    </ul>
+                                </div>
                             </td>
                         </tr>
                     {% endfor %}
@@ -353,24 +405,168 @@
 {% block scripts %}
 <script>
     (() => {
-        const input = document.getElementById("cliente");
-        const list = document.getElementById("clientesSugeridos");
-        if (!input || !list) return;
+        /* ── Cliente autocomplete (con teléfono) ── */
+        const clienteInput = document.getElementById("cliente");
+        const telefonoInput = document.getElementById("telefono");
+        const clienteList = document.getElementById("clientesSugeridos");
+        if (clienteInput && clienteList) {
+            let timer = null;
+            clienteInput.addEventListener("input", () => {
+                window.clearTimeout(timer);
+                const query = clienteInput.value.trim();
+                if (query.length < 2) {
+                    clienteList.innerHTML = "";
+                    return;
+                }
+                timer = window.setTimeout(async () => {
+                    const response = await fetch(`/api/clientes?q=${encodeURIComponent(query)}`);
+                    const items = await response.json();
+                    clienteList.innerHTML = items.map((item) =>
+                        `<option value="${item.nombre}" data-telefono="${item.telefono}">${item.label}</option>`
+                    ).join("");
+                }, 180);
+            });
+            clienteInput.addEventListener("change", function() {
+                const selected = clienteList.querySelector(`option[value="${CSS.escape(this.value)}"]`);
+                if (selected && telefonoInput) {
+                    telefonoInput.value = selected.getAttribute("data-telefono") || "";
+                }
+            });
+        }
 
-        let timer = null;
-        input.addEventListener("input", () => {
-            window.clearTimeout(timer);
-            const query = input.value.trim();
-            if (query.length < 2) {
-                list.innerHTML = "";
-                return;
+        /* ── Vendedor autocomplete ── */
+        const vSearch = document.getElementById("vendedorSearch");
+        const vSelect = document.getElementById("vendedor_id");
+        const vSug = document.getElementById("vendedorSugerencias");
+
+        if (vSearch && vSelect && vSug) {
+            const vendedores = [
+                { id: "", nombre: "Todos" },
+                { id: "__", nombre: "Sin asignar" },
+                { id: "LOCAL", nombre: "LOCAL" },
+                {% for v in vendedor_options %}
+                { id: {{ v._id | tojson }}, nombre: {{ (v.nombre or v._id) | tojson }} },
+                {% endfor %}
+            ];
+            let selectedV = null;
+            {% if filters.vendedor_id %}
+            selectedV = vendedores.find(function(v) { return v.id === {{ filters.vendedor_id | tojson }}; }) || null;
+            {% endif %}
+
+            const mostrarSugerencias = (filtro) => {
+                const q = filtro.toLowerCase();
+                const opts = vendedores.filter(function(v) {
+                    return v.id === "" || v.id.toLowerCase().includes(q) || v.nombre.toLowerCase().includes(q);
+                });
+                if (!q || !opts.length) { vSug.style.display = "none"; return; }
+                vSug.innerHTML = opts.map(function(v) {
+                    var active = selectedV && selectedV.id === v.id ? " active" : "";
+                    var label = v.nombre;
+                    if (v.id && v.id !== v.nombre) label += ' <small class="text-secondary">(' + v.id + ')</small>';
+                    return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + v.id + '" data-nombre="' + v.nombre + '">' + label + '</button>';
+                }).join("");
+                vSug.style.display = "";
+            };
+
+            const seleccionarVendedor = (id, nombre) => {
+                selectedV = { id: id, nombre: nombre };
+                vSearch.value = id === "" ? "" : nombre;
+                vSelect.value = id;
+                vSug.style.display = "none";
+            };
+
+            vSearch.addEventListener("input", function() {
+                if (selectedV && selectedV.nombre !== this.value) {
+                    selectedV = null;
+                    vSelect.value = "";
+                }
+                mostrarSugerencias(this.value);
+            });
+
+            vSug.addEventListener("click", function(e) {
+                var btn = e.target.closest("button");
+                if (btn) seleccionarVendedor(btn.dataset.id, btn.dataset.nombre);
+            });
+
+            vSearch.addEventListener("blur", function() {
+                setTimeout(function() { vSug.style.display = "none"; }, 200);
+            });
+
+            vSearch.addEventListener("focus", function() {
+                if (this.value) mostrarSugerencias(this.value);
+            });
+        }
+
+        /* ── Auto-search cuando se escriben exactamente 4 dígitos en Número ── */
+        const numInput = document.getElementById("numero");
+        if (numInput) {
+            let numTimer = null;
+            numInput.addEventListener("input", function() {
+                window.clearTimeout(numTimer);
+                if (/^\d{4}$/.test(this.value.trim())) {
+                    numTimer = window.setTimeout(function() {
+                        document.querySelector("form [type='submit']").click();
+                    }, 350);
+                }
+            });
+        }
+
+        /* ── Loading state en submit ── */
+        const form = document.querySelector("form");
+        const submitBtn = form ? form.querySelector("[type='submit']") : null;
+        if (form && submitBtn) {
+            form.addEventListener("submit", function() {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Buscando...';
+            });
+        }
+
+        /* ── Enter en inputs del formulario envía ── */
+        if (form) {
+            form.querySelectorAll("input, select").forEach(function(el) {
+                el.addEventListener("keydown", function(e) {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        if (!submitBtn.disabled) form.requestSubmit(submitBtn);
+                    }
+                });
+            });
+        }
+
+        /* ── Ordenar columnas ── */
+        window.ordenar = function(col) {
+            const params = new URLSearchParams(window.location.search);
+            const currentSort = params.get('sort_by') || '_id';
+            const currentDir = params.get('sort_dir') || 'asc';
+            if (col === currentSort) {
+                params.set('sort_dir', currentDir === 'asc' ? 'desc' : 'asc');
+            } else {
+                params.set('sort_by', col);
+                params.set('sort_dir', 'asc');
             }
-            timer = window.setTimeout(async () => {
-                const response = await fetch(`/api/clientes?q=${encodeURIComponent(query)}`);
-                const items = await response.json();
-                list.innerHTML = items.map((item) => `<option value="${item.nombre}">${item.label}</option>`).join("");
-            }, 180);
+            params.delete('page');
+            window.location.search = params.toString();
+        };
+
+        document.querySelectorAll('th.sortable').forEach(function(th) {
+            th.style.cursor = 'pointer';
+            var col = th.getAttribute('data-sort');
+            var params = new URLSearchParams(window.location.search);
+            var currentSort = params.get('sort_by') || '_id';
+            var currentDir = params.get('sort_dir') || 'asc';
+            if (col === currentSort) {
+                th.classList.add('sorted-' + currentDir);
+                var icon = document.createElement('i');
+                icon.className = 'bi bi-caret-' + (currentDir === 'asc' ? 'up' : 'down') + '-fill ms-1';
+                th.appendChild(icon);
+            }
+            th.addEventListener('click', function() { ordenar(col); });
         });
     })();
 </script>
+<style>
+    th.sortable { user-select: none; }
+    th.sortable:hover { background: #e9ecef; }
+    .list-group-item.active { z-index: 0; }
+</style>
 {% endblock %}

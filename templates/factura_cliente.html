@@ -40,6 +40,9 @@
   <div class="text-end mb-1 no-print">
     <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir</button>
     <a href="{{ url_for('facturas_cliente') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
+    {% if not factura.get("anulada") and current_user and current_user.role == "admin" %}
+    <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#anularModal"><i class="bi bi-x-circle"></i> Anular</button>
+    {% endif %}
   </div>
 
   {% if factura.get("anulada") %}
@@ -58,7 +61,7 @@
   <hr class="recibo-linea">
 
   <div class="recibo-campo"><span class="recibo-label">FACTURA</span><span>FC-{{ "%05d" % factura._id }}</span></div>
-  <div class="recibo-campo"><span class="recibo-label">FECHA</span><span>{{ factura.fecha.strftime("%d/%m/%Y %I:%M %p") }}</span></div>
+  <div class="recibo-campo"><span class="recibo-label">FECHA</span><span>{{ factura.get("fecha_display", factura.fecha.strftime("%d/%m/%Y %I:%M %p")) }}</span></div>
   <div><span class="recibo-label">RIFA</span></div>
   <div style="font-weight:600">{{ config.nombre_rifa or "Rifa" }}</div>
 
@@ -76,90 +79,72 @@
 
   <hr class="recibo-linea">
 
-  {% set ns = namespace(total_pagado_hoy=0, total_saldo=0) %}
+  {% set valor_boleta = config.valor_boleta or 10000 %}
+  {% set ns = namespace(total=0) %}
 
   {% for bid in factura.boletas %}
   {% set info = boletas_info.get(bid, {}) %}
-  {% set total_abonado = info.get("total_abonado", 0) %}
-  {% set saldo = info.get("saldo_pendiente", 0) %}
-  {% set valor_b = info.get("valor_boleta", config.valor_boleta or 10000) %}
-  {% set invoice_pago = factura.detalle | selectattr("boleta", "equalto", bid) | map(attribute="valor") | sum %}
-
-  {% if invoice_pago == 0 %}
-    {% set mov_label = "SEPARACIÓN" %}
-    {% set mov_cls = "" %}
-  {% elif total_abonado >= valor_b %}
-    {% set mov_label = "PAGO TOTAL" %}
-    {% set mov_cls = "" %}
-  {% else %}
-    {% set mov_label = "ABONO" %}
-    {% set mov_cls = "" %}
-  {% endif %}
-
-  {% set ns.total_pagado_hoy = ns.total_pagado_hoy + invoice_pago %}
-  {% set ns.total_saldo = ns.total_saldo + saldo %}
+  {% set boleta_pagos = factura.detalle | selectattr("boleta", "equalto", bid) | list %}
+  {% set invoice_pago = boleta_pagos | sum(attribute="valor") %}
+  {% set ns.total = ns.total + invoice_pago %}
 
   <div class="recibo-boleta">
-    <div class="recibo-campo">
-      <span class="recibo-boleta-num">#{{ "%04d" % bid }}</span>
-      <span>${{ "{:,}".format(valor_b) }}</span>
-    </div>
-    <div class="recibo-estado">{{ mov_label }}</div>
-    {% set vend_id = info.get("vendedor_id", "LOCAL") %}
-    {% if vend_id and vend_id != "LOCAL" %}
-    <div class="recibo-mov-line" style="font-size:0.65rem"><span class="recibo-label">Vendedor</span><span>{{ info.get("vendedor_nombre", vend_id) }}</span></div>
-    {% endif %}
+    <div class="recibo-boleta-num">#{{ "%04d" % bid }}</div>
+    <div class="recibo-mov-line"><span class="recibo-label">Valor de la boleta</span><span>${{ "{:,}".format(info.get("valor_boleta", valor_boleta)) }}</span></div>
     <div class="recibo-mov">
-      <div class="recibo-mov-line"><span>{{ mov_label }}</span><span>${{ "{:,}".format(invoice_pago) }}</span></div>
-      {% if mov_label == "ABONO" %}
-      <div class="recibo-mov-line"><span class="recibo-label">Abonado</span><span>${{ "{:,}".format(total_abonado) }}</span></div>
-      <div class="recibo-mov-line"><span class="recibo-label">Saldo</span><span>${{ "{:,}".format(saldo) }}</span></div>
-      {% elif mov_label == "PAGO TOTAL" %}
-      <div class="recibo-mov-line"><span class="recibo-label">Saldo</span><span>$0</span></div>
-      {% elif mov_label == "SEPARACIÓN" %}
-      <div class="recibo-mov-line"><span class="recibo-label">Saldo</span><span>${{ "{:,}".format(valor_b) }}</span></div>
+      <div class="recibo-mov-line"><span class="recibo-label">Pago realizado</span><span>${{ "{:,}".format(invoice_pago) }}</span></div>
+      {% for p in boleta_pagos %}
+      <div class="recibo-mov-line"><span class="recibo-label">Método</span><span>{{ "Transferencia" if p.metodo == "transferencia" else "Efectivo" }}</span></div>
+      {% if p.metodo == "transferencia" %}
+        {% if p.get("banco") %}<div class="recibo-mov-line"><span class="recibo-label">Banco</span> {{ p.banco }}</div>{% endif %}
+        {% if p.get("referencia") %}<div class="recibo-mov-line"><span class="recibo-label">Referencia</span> {{ p.referencia }}</div>{% endif %}
       {% endif %}
+      {% endfor %}
+      <div class="recibo-mov-line"><span class="recibo-label">Total abonado</span><span>${{ "{:,}".format(info.get("total_abonado", 0)) }}</span></div>
+      <div class="recibo-mov-line"><span class="recibo-label">Saldo pendiente</span><span>${{ "{:,}".format(info.get("saldo_pendiente", 0)) }}</span></div>
+      <div class="recibo-mov-line" style="font-size:0.7rem;"><span class="recibo-label">Estado</span><span>{{ info.get("estado", "disponible") | capitalize }}</span></div>
     </div>
-
-    {% if premios_config %}
-    {% for premio in info.get("premios_adicionales", []) %}
-    <div class="recibo-mov-line" style="font-size:0.6rem">
-      <span>{{ premio.nombre }} ({{ premio.fecha_juego }})</span>
-      <span>{{ "PARTICIPA" if premio.participa else "NO PARTICIPA" }}</span>
-    </div>
-    {% endfor %}
-    {% endif %}
-
   </div>
+  <hr class="recibo-linea">
   {% endfor %}
 
-  <hr class="recibo-linea-doble">
-
   <div class="recibo-total">
-    <div class="recibo-mov-line"><span>Total pagado hoy</span><span>${{ "{:,}".format(ns.total_pagado_hoy) }}</span></div>
-    <div class="recibo-mov-line"><span>Saldo pendiente</span><span>${{ "{:,}".format(ns.total_saldo) }}</span></div>
+    <div class="recibo-mov-line"><span>Total pagado</span><span>${{ "{:,}".format(ns.total) }}</span></div>
   </div>
-
-  {% if factura.detalle %}
-  <div class="recibo-historial">
-    <hr class="recibo-linea">
-    <div class="recibo-label">PAGOS DE ESTA FACTURA</div>
-    <table>
-      <thead><tr><th>FECHA</th><th>BOLETA</th><th>VALOR</th></tr></thead>
-      <tbody>
-      {% for p in factura.detalle %}
-        <tr><td>{{ p.fecha }}</td><td>{{ "%04d" % p.boleta }}</td><td>${{ "{:,}".format(p.valor) }}</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
 
   <div class="recibo-footer">
     <div>Gracias por confiar en nosotros.</div>
     <div>Conserve este comprobante.</div>
     <div class="fw-bold" style="font-size:0.75rem">FC-{{ "%05d" % factura._id }}</div>
     <div>{{ config.get("footer_texto") or "Documento interno, no tiene validez fiscal." }}</div>
+  </div>
+</div>
+
+<div class="modal fade" id="anularModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('anular_factura', factura_id=factura._id) }}">
+          <input type="hidden" name="anulacion_hash" value="{{ anulacion_hash }}">
+          <div class="modal-header">
+          <h5 class="modal-title text-danger">Anular factura</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-warning mb-3">
+            <i class="bi bi-exclamation-triangle"></i>
+            Esta acci&oacute;n reversar&aacute; los pagos asociados a esta factura y no se puede deshacer.
+          </div>
+          <div class="mb-3">
+            <label for="motivo" class="form-label fw-semibold">Motivo de anulaci&oacute;n</label>
+            <textarea class="form-control" id="motivo" name="motivo" rows="2" required placeholder="Describa el motivo"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-danger">Anular factura</button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}

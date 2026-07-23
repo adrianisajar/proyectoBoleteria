@@ -65,7 +65,7 @@
   <hr class="recibo-linea">
 
   <div class="recibo-campo"><span class="recibo-label">FACTURA</span><span>FV-{{ "%05d" % factura._id }}</span></div>
-  <div class="recibo-campo"><span class="recibo-label">FECHA</span><span>{{ factura.fecha.strftime("%d/%m/%Y %I:%M %p") }}</span></div>
+  <div class="recibo-campo"><span class="recibo-label">FECHA</span><span>{{ factura.get("fecha_display", factura.fecha.strftime("%d/%m/%Y %I:%M %p")) }}</span></div>
   <div><span class="recibo-label">RIFA</span></div>
   <div style="font-weight:600">{{ config.nombre_rifa or "Rifa" }}</div>
 
@@ -73,58 +73,62 @@
 
   <div class="recibo-label">VENDEDOR</div>
   <div style="font-size:0.8rem">{{ factura.vendedor_nombre or factura.vendedor_id }}</div>
-  <div class="recibo-dir">{{ factura.vendedor_id }}</div>
   {% if factura.get("vendedor_telefono") %}
   <div><span class="recibo-label">TEL</span> {{ factura.vendedor_telefono }}</div>
   {% endif %}
 
   <hr class="recibo-linea">
 
-  <div class="recibo-label">DETALLE DE PAGOS</div>
+  {% set efvo = factura.detalle | selectattr("metodo", "equalto", "efectivo") | list %}
+  {% set transf = factura.detalle | selectattr("metodo", "equalto", "transferencia") | list %}
 
-  {% set grupos = factura.detalle | sort(attribute='valor') | groupby('valor') %}
-  {% for grouper, items in grupos %}
+  {% set valor_boleta = config.valor_boleta or 10000 %}
+  {% if efvo %}
+  <div class="recibo-label">EFECTIVO</div>
+  {% set efvo_por_valor = efvo | groupby("grupo_pago") %}
+  {% for _vk, vitems in efvo_por_valor %}
+  {% set es_pago = vitems[0].valor >= valor_boleta %}
+  {% set cant = vitems | length %}
+  {% set etiqueta = ("Pagos" if cant > 1 else "Pago") if es_pago else ("Abonos" if cant > 1 else "Abono") %}
   <div class="grupo">
-    <div class="recibo-campo">
-      <span class="grupo-valor">${{ "{:,}".format(grouper) }}</span>
-      <span class="recibo-dir">{{ items | length }} boleta{% if items | length != 1 %}s{% endif %}</span>
-    </div>
-    <div class="boletas-grid">
-    {% for item in items %}
-      <span>{{ "%04d" % item.boleta }}</span>
-    {% endfor %}
-    </div>
-    <div class="grupo-sub">Subtotal: ${{ "{:,}".format(grouper * (items | length)) }}</div>
+    <div class="grupo-valor">{{ etiqueta }} de ${{ "{:,}".format(vitems[0].valor) }}</div>
+    <div class="recibo-label">Boletas:</div>
+    <div class="boletas-grid">{% for item in vitems %}<span>{{ "%04d" % item.boleta }}</span>{% endfor %}</div>
+    <div style="text-align:right;font-weight:600;">Subtotal: ${{ "{:,}".format(vitems | sum(attribute="valor")) }}</div>
   </div>
   {% endfor %}
-
-  <div class="resumen">
-    <div class="resumen-row"><span>Boletas</span><span>{{ factura.boletas | length }}</span></div>
-    {% if total_efectivo > 0 and total_transferencia > 0 %}
-    <div class="resumen-row"><span>Efectivo</span><span>${{ "{:,}".format(total_efectivo) }}</span></div>
-    <div class="resumen-row">
-      <span>Transferencia{% if referencias_transferencia %} ({{ referencias_transferencia | join(", ") }}){% endif %}</span>
-      <span>${{ "{:,}".format(total_transferencia) }}</span>
-    </div>
-    {% elif total_transferencia > 0 %}
-    <div class="resumen-row">
-      <span>Transferencia{% if referencias_transferencia %} ({{ referencias_transferencia | join(", ") }}){% endif %}</span>
-      <span>${{ "{:,}".format(total_transferencia) }}</span>
-    </div>
-    {% else %}
-    <div class="resumen-row"><span>Efectivo</span><span>${{ "{:,}".format(total_efectivo) }}</span></div>
-    {% endif %}
-    <div class="resumen-row total-row"><span>Total recibido</span><span>${{ "{:,}".format(factura.valor_total) }}</span></div>
-  </div>
-
-  {% if factura.get("total_comision", 0) > 0 %}
-  <div class="comision">
-    <div class="resumen-row">
-      <span>Comisión ({{ factura.get("total_vendidas", 0) }} &times; ${{ "{:,}".format(factura.get("comision_por_boleta", 0)) }})</span>
-      <span>${{ "{:,}".format(factura.get("total_comision", 0)) }}</span>
-    </div>
-  </div>
+  <div class="resumen-row" style="border-top:1px dotted #ccc;padding-top:0.2rem;"><span>Total recibido en efectivo</span><span>${{ "{:,}".format(efvo | sum(attribute="valor")) }}</span></div>
+  <hr class="recibo-linea">
   {% endif %}
+
+  {% if transf %}
+  <div class="recibo-label">TRANSFERENCIAS</div>
+  {% set transf_por_cuenta = transf | groupby("grupo_transferencia") %}
+  {% for _tk, titems in transf_por_cuenta %}
+  <div class="grupo">
+    {% set banco_t = titems[0].get("banco", "") %}
+    {% if banco_t %}<div><span class="recibo-label">Banco</span> {{ banco_t }}</div>{% endif %}
+    {% set ref_t = titems[0].get("referencia", "") %}
+    {% if ref_t %}<div><span class="recibo-label">Referencia</span> {{ ref_t }}</div>{% endif %}
+    {% set trans_por_valor = titems | groupby("grupo_pago") %}
+    {% for _vk2, vitems2 in trans_por_valor %}
+    {% set es_pago2 = vitems2[0].valor >= valor_boleta %}
+    {% set cant2 = vitems2 | length %}
+    {% set etiqueta2 = ("Pagos" if cant2 > 1 else "Pago") if es_pago2 else ("Abonos" if cant2 > 1 else "Abono") %}
+    <div style="margin:0.3rem 0 0.3rem 0.4rem;">
+      <div class="grupo-valor">{{ etiqueta2 }} de ${{ "{:,}".format(vitems2[0].valor) }}</div>
+      <div class="recibo-label">Boletas:</div>
+      <div class="boletas-grid">{% for item in vitems2 %}<span>{{ "%04d" % item.boleta }}</span>{% endfor %}</div>
+      <div style="text-align:right;font-weight:600;">Subtotal: ${{ "{:,}".format(vitems2 | sum(attribute="valor")) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  <div class="resumen-row" style="border-top:1px solid #000;padding-top:0.2rem;font-weight:700;"><span>TOTAL TRANSFERENCIAS</span><span>${{ "{:,}".format(transf | sum(attribute="valor")) }}</span></div>
+  <hr class="recibo-linea">
+  {% endif %}
+
+  <div class="resumen-row" style="font-size:0.9rem;font-weight:800;border-top:3px double #000;padding-top:0.35rem;"><span>TOTAL RECIBIDO</span><span>${{ "{:,}".format(factura.valor_total) }}</span></div>
 
   <div class="obs">
     <strong>Observaciones</strong><br>
@@ -152,7 +156,8 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <form method="post" action="{{ url_for('anular_factura', factura_id=factura._id) }}">
-        <div class="modal-header">
+          <input type="hidden" name="anulacion_hash" value="{{ anulacion_hash }}">
+          <div class="modal-header">
           <h5 class="modal-title text-danger">Anular factura</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
         </div>
