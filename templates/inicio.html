@@ -8,10 +8,6 @@
         <p class="text-uppercase text-secondary fw-bold mb-1 small">Consulta operativa</p>
         <h1 class="h3 mb-0">Consultas</h1>
     </div>
-    <a class="btn btn-primary d-inline-flex align-items-center gap-2" href="{{ url_for('clientes') }}">
-        <i class="bi bi-people"></i>
-        Compradores
-    </a>
 </div>
 
 <div class="row g-3 mb-4">
@@ -284,7 +280,7 @@
 </div>
 
 {% if boleta %}
-<div class="office-card bg-body overflow-hidden mb-4">
+<div class="office-card bg-body mb-4">
     <div class="d-flex flex-column flex-md-row justify-content-between gap-3 p-3 p-md-4 border-bottom">
         <div>
             <p class="text-secondary fw-bold text-uppercase small mb-1">Detalle</p>
@@ -313,23 +309,44 @@
             </div>
         </div>
 
-        <form action="{{ url_for('actualizar_cliente', boleta_id=boleta._id) }}" method="post" class="row g-3 align-items-end bg-body-tertiary border rounded p-3 mb-4">
+        <form action="{{ url_for('guardar_boleta', boleta_id=boleta._id) }}" method="post" class="row g-3 align-items-end bg-body-tertiary border rounded p-3 mb-4">
             <div class="col-lg-3">
-                <label for="cliente_nombre" class="form-label fw-semibold">Nombre cliente</label>
-                <input type="text" class="form-control" id="cliente_nombre" name="nombre" value="{{ boleta.cliente.nombre }}" placeholder="Nombre completo">
+                <label for="detalleNombre" class="form-label fw-semibold">Nombre cliente</label>
+                <input type="text" class="form-control text-uppercase" id="detalleNombre" name="nombre" value="{{ boleta.cliente.nombre }}" placeholder="Nombre completo">
+            </div>
+            <div class="col-lg-2">
+                <label for="detalleTelefono" class="form-label fw-semibold">Teléfono</label>
+                <input type="tel" class="form-control" id="detalleTelefono" name="telefono" value="{{ boleta.cliente.telefono }}" placeholder="3001234567">
+            </div>
+            <div class="col-lg-2">
+                <label for="detalleDireccion" class="form-label fw-semibold">Dirección</label>
+                <input type="text" class="form-control text-uppercase" id="detalleDireccion" name="direccion" value="{{ boleta.cliente.direccion }}" placeholder="Dirección">
             </div>
             <div class="col-lg-3">
-                <label for="cliente_telefono" class="form-label fw-semibold">Teléfono</label>
-                <input type="tel" class="form-control" id="cliente_telefono" name="telefono" value="{{ boleta.cliente.telefono }}" placeholder="3001234567">
+                <label for="detalleVendedorSearch" class="form-label fw-semibold">Vendedor</label>
+                <div class="position-relative">
+                    <input type="text" class="form-control" id="detalleVendedorSearch"
+                           placeholder="Buscar vendedor..." autocomplete="off"
+                           value="{{ boleta.vendedor_nombre or boleta.vendedor_id }}">
+                    <select class="d-none" id="detalleVendedorId" name="vendedor_id">
+                        <option value="">-- Sin cambio --</option>
+                        {% for v in vendedor_options %}
+                        <option value="{{ v._id }}" {% if v._id == boleta.vendedor_id %}selected{% endif %}>{{ v.nombre or v._id }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="list-group position-absolute w-100 shadow-sm rounded-2"
+                         id="detalleVendedorSugerencias" style="display:none; z-index:1050; max-height:200px; overflow-y:auto;"></div>
+                </div>
             </div>
-            <div class="col-lg-4">
-                <label for="cliente_direccion" class="form-label fw-semibold">Dirección</label>
-                <input type="text" class="form-control" id="cliente_direccion" name="direccion" value="{{ boleta.cliente.direccion }}" placeholder="Dirección">
-            </div>
-            <div class="col-lg-2 d-grid">
+            <div class="col-lg-2 d-grid gap-2">
                 <button type="submit" class="btn btn-outline-primary d-inline-flex align-items-center justify-content-center gap-2">
-                    <i class="bi bi-person-check"></i>
+                    <i class="bi bi-check-lg"></i>
                     Guardar
+                </button>
+                <button type="button" class="btn btn-outline-danger d-inline-flex align-items-center justify-content-center gap-2"
+                        data-bs-toggle="modal" data-bs-target="#limpiarModal"
+                        data-boleta="{{ boleta._id }}">
+                    <i class="bi bi-trash3"></i> Limpiar
                 </button>
             </div>
         </form>
@@ -344,23 +361,48 @@
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
+                            <th>#</th>
                             <th>Fecha</th>
                             <th>Método</th>
                             <th>Referencia</th>
                             <th class="text-end">Valor</th>
+                            <th>Factura</th>
+                            <th style="width:1px;"></th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for pago in boleta.historial_pagos %}
-                            <tr>
-                                <td>{{ pago.fecha }}</td>
-                                <td class="text-uppercase"><small>{{ pago.metodo }}</small></td>
-                                <td><code>{{ pago.referencia }}</code></td>
-                                <td class="text-end fw-bold text-success">{{ pago.valor|cop }}</td>
-                            </tr>
+                        <tr>
+                            <td class="small text-secondary">{{ loop.index }}</td>
+                            <td>{{ pago.fecha }}</td>
+                            <td class="text-uppercase"><small>{{ pago.metodo }}</small></td>
+                            <td><code>{{ pago.referencia or "—" }}</code></td>
+                            <td class="text-end fw-bold text-success">{{ pago.valor|cop }}</td>
+                            <td>
+                                {% if pago.factura_id %}
+                                <a href="{{ url_for('ver_factura', factura_id=pago.factura_id) }}" class="small">#{{ '%05d'|format(pago.factura_id) }}</a>
+                                {% else %}
+                                <span class="text-secondary small">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-danger eliminar-pago-boleta"
+                                        data-boleta="{{ boleta._id }}" data-idx="{{ loop.index0 }}"
+                                        data-valor="{{ pago.valor|cop }}" title="Eliminar pago">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </td>
+                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>
+            </div>
+            <div class="d-flex justify-content-end mt-2">
+                <form method="post" action="{{ url_for('recalcular_boleta', boleta_id=boleta._id) }}">
+                    <button type="submit" class="btn btn-sm btn-outline-warning d-inline-flex align-items-center gap-1">
+                        <i class="bi bi-arrow-clockwise"></i> Recalcular estado
+                    </button>
+                </form>
             </div>
         {% else %}
             <div class="alert alert-secondary mb-0">Esta boleta no registra abonos.</div>
@@ -400,6 +442,53 @@
     </div>
 </div>
 {% endif %}
+<div class="modal fade" id="limpiarModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Limpiar datos del cliente</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p>Se eliminar&aacute;n los datos del cliente de la boleta <strong id="limpiarBoleta">#0000</strong>.</p>
+                <p class="text-danger small mb-0"><i class="bi bi-exclamation-triangle"></i> Esta acci&oacute;n no se puede deshacer.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form method="post" action="" id="formLimpiar">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash3"></i> Limpiar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="pagoModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Eliminar pago</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <p>Se eliminar&aacute; el pago de <strong id="pagoValor">$0</strong>
+                    de la boleta <strong id="pagoBoleta">#0000</strong>.</p>
+                <p class="text-danger small mb-0"><i class="bi bi-exclamation-triangle"></i> Esta acci&oacute;n no se puede deshacer.
+                    El total abonado y el estado se recalcular&aacute;n autom&aacute;ticamente.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form method="post" action="" id="formPago">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash3"></i> Eliminar pago
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -562,6 +651,94 @@
             }
             th.addEventListener('click', function() { ordenar(col); });
         });
+
+        /* ── Detalle: Vendedor autocomplete ── */
+        const dvSearch = document.getElementById("detalleVendedorSearch");
+        const dvSelect = document.getElementById("detalleVendedorId");
+        const dvSug = document.getElementById("detalleVendedorSugerencias");
+        if (dvSearch && dvSelect && dvSug) {
+            const dvendedores = [
+                {% for v in vendedor_options %}
+                { id: {{ v._id | tojson }}, nombre: {{ (v.nombre or v._id) | tojson }} },
+                {% endfor %}
+            ];
+            let selectedDV = { id: dvSelect.value, nombre: dvSearch.value };
+
+            const mostrarDVSug = (filtro) => {
+                const q = filtro.toLowerCase();
+                const opts = dvendedores.filter(function(v) {
+                    return v.id.toLowerCase().includes(q) || v.nombre.toLowerCase().includes(q);
+                });
+                if (!q || !opts.length) { dvSug.style.display = "none"; return; }
+                dvSug.innerHTML = opts.map(function(v) {
+                    var active = selectedDV && selectedDV.id === v.id ? " active" : "";
+                    return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + v.id + '" data-nombre="' + v.nombre + '">' + v.nombre + ' <small class="text-secondary">(' + v.id + ')</small></button>';
+                }).join("");
+                dvSug.style.display = "";
+            };
+
+            const seleccionarDV = (id, nombre) => {
+                selectedDV = { id: id, nombre: nombre };
+                dvSearch.value = nombre;
+                dvSelect.value = id;
+                dvSug.style.display = "none";
+            };
+
+            dvSearch.addEventListener("input", function() {
+                if (selectedDV && selectedDV.nombre !== this.value) {
+                    selectedDV = null;
+                    dvSelect.value = "";
+                }
+                mostrarDVSug(this.value);
+            });
+
+            dvSug.addEventListener("click", function(e) {
+                var btn = e.target.closest("button");
+                if (btn) seleccionarDV(btn.dataset.id, btn.dataset.nombre);
+            });
+
+            dvSearch.addEventListener("blur", function() {
+                setTimeout(function() { dvSug.style.display = "none"; }, 200);
+            });
+
+            dvSearch.addEventListener("focus", function() {
+                if (this.value) mostrarDVSug(this.value);
+            });
+        }
+
+        /* ── Limpiar modal ── */
+        const limpiarModal = document.getElementById("limpiarModal");
+        const limpiarBoleta = document.getElementById("limpiarBoleta");
+        const formLimpiar = document.getElementById("formLimpiar");
+        if (limpiarModal) {
+            limpiarModal.addEventListener("show.bs.modal", function (ev) {
+                const btn = ev.relatedTarget;
+                const boleta = btn.dataset.boleta;
+                limpiarBoleta.textContent = "#" + String(boleta).padStart(4, "0");
+                formLimpiar.action = "{{ url_for('limpiar_boleta', boleta_id=0) }}".replace("0", boleta);
+            });
+        }
+
+        /* ── Eliminar pago modal ── */
+        const pagoModal = document.getElementById("pagoModal");
+        const pagoValor = document.getElementById("pagoValor");
+        const pagoBoleta = document.getElementById("pagoBoleta");
+        const formPago = document.getElementById("formPago");
+        if (pagoModal) {
+            document.querySelectorAll(".eliminar-pago-boleta").forEach(function(btn) {
+                btn.addEventListener("click", function() {
+                    const boleta = btn.dataset.boleta;
+                    const idx = btn.dataset.idx;
+                    const valor = btn.dataset.valor;
+                    pagoValor.textContent = valor;
+                    pagoBoleta.textContent = "#" + String(boleta).padStart(4, "0");
+                    formPago.action = "{{ url_for('eliminar_pago_boleta', boleta_id=0, idx=0) }}"
+                        .replace("boleta_id=0", "boleta_id=" + boleta)
+                        .replace("idx=0", "idx=" + idx);
+                    bootstrap.Modal.getOrCreateInstance(pagoModal).show();
+                });
+            });
+        }
     })();
 </script>
 <style>

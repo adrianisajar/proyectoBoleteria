@@ -21,7 +21,6 @@ def register_routes(app):
         require_collections()
         config = get_config()
         rifa = get_rifa_activa()
-        rifas_list = list(rifas.find().sort("anio", -1))
         if request.method == "POST":
             action = request.form.get("action", "")
 
@@ -90,7 +89,7 @@ def register_routes(app):
                     flash("Parámetros de la rifa guardados.", "success")
                     return redirect(url_for("configuracion_panel"))
 
-        return render_template("configuracion.html", config=config, rifa=rifa, rifas_list=rifas_list)
+        return render_template("configuracion.html", config=config, rifa=rifa)
 
     @app.route("/rifas/nueva", methods=["POST"])
     @role_required("admin")

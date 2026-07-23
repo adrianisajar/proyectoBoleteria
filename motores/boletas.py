@@ -7,12 +7,13 @@ from flask import Response
 from motores.constants import BOLETA_MIN, BOLETA_MAX, VENDEDOR_LOCAL
 
 from motores.shared import (
-    boletas, vendedores,
+    boletas, vendedores, facturas,
     request, flash, redirect, render_template, url_for, jsonify,
     get_config, require_collections, role_required,
     calcular_premios_adicionales,
     build_consulta_context, build_page_url,
     get_dashboard_counts, get_vendedor_options,
+    estado_pipeline_expr,
 )
 
 SORT_WHITELIST = {"_id", "vendedor_id", "estado", "total_abonado", "cliente.nombre"}
@@ -188,27 +189,200 @@ def register_routes(app):
     @app.route("/boletas/<int:boleta_id>/cliente", methods=["POST"])
     @role_required("admin", "cajero")
     def actualizar_cliente(boleta_id):
-        if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
-            flash("El n├║mero de boleta debe estar entre 0000 y 9999.", "warning")
-            return redirect(url_for("consultas"))
+        return redirect(url_for("guardar_boleta", boleta_id=boleta_id), code=307)
 
-        cliente = {
-            "nombre": request.form.get("nombre", "").strip(),
-            "telefono": request.form.get("telefono", "").strip(),
-            "direccion": request.form.get("direccion", "").strip(),
-        }
+    @app.route("/boletas/<int:boleta_id>/guardar", methods=["POST"])
+    @role_required("admin", "cajero")
+    def guardar_boleta(boleta_id):
+        if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
+            flash("El n\u00famero de boleta debe estar entre 0000 y 9999.", "warning")
+            return redirect(url_for("consultas"))
 
         try:
             require_collections()
-            result = boletas.update_one({"_id": boleta_id}, {"$set": {"cliente": cliente}})
-        except Exception as exc:
-            flash(f"No se pudieron guardar los datos del cliente: {exc}", "danger")
-            return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
 
-        if result.matched_count:
-            flash(f"Cliente actualizado para la boleta #{boleta_id:04d}.", "success")
-        else:
-            flash(f"No existe la boleta #{boleta_id:04d}.", "warning")
+            nombre = request.form.get("nombre", "").strip().upper()
+            telefono = request.form.get("telefono", "").strip()
+            direccion = request.form.get("direccion", "").strip().upper()
+            vendedor_id = request.form.get("vendedor_id", "").strip()
+
+            set_fields = {
+                "cliente": {"nombre": nombre, "telefono": telefono, "direccion": direccion}
+            }
+
+            if vendedor_id:
+                v_exists = vendedores.find_one({"_id": vendedor_id}, {"_id": 1})
+                if v_exists:
+                    set_fields["vendedor_id"] = vendedor_id
+
+            boletas.update_one({"_id": boleta_id}, {"$set": set_fields})
+
+            if nombre and not vendedor_id:
+                boletas.update_one(
+                    {
+                        "_id": boleta_id,
+                        "$or": [{"vendedor_id": {"$in": ["", None]}}, {"vendedor_id": VENDEDOR_LOCAL}],
+                        "total_abonado": 0,
+                        "estado": {"$nin": ["pagada", "abonando"]},
+                    },
+                    {"$set": {"vendedor_id": VENDEDOR_LOCAL}},
+                )
+
+            config_local = get_config()
+            valor_boleta_local = int(config_local.get("valor_boleta", 10000) or 10000)
+            boletas.update_one(
+                {"_id": boleta_id},
+                [{"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}}],
+            )
+
+            flash(f"Datos guardados para #{boleta_id:04d}.", "success")
+        except Exception as exc:
+            flash(f"Error al guardar: {exc}", "danger")
+
+        return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
+
+    @app.route("/boletas/<int:boleta_id>/pago/<int:idx>/eliminar", methods=["POST"])
+    @role_required("admin", "cajero")
+    def eliminar_pago_boleta(boleta_id, idx):
+        if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
+            flash("N\u00famero de boleta inv\u00e1lido.", "warning")
+            return redirect(url_for("consultas"))
+
+        try:
+            require_collections()
+            doc = boletas.find_one({"_id": boleta_id}, {"historial_pagos": 1})
+            if not doc:
+                flash(f"No existe la boleta #{boleta_id:04d}.", "warning")
+                return redirect(url_for("consultas"))
+
+            pagos = doc.get("historial_pagos") or []
+            if idx < 0 or idx >= len(pagos):
+                flash(f"\u00cdndice de pago inv\u00e1lido.", "danger")
+                return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
+
+            pago = pagos[idx]
+            factura_id = pago.get("factura_id")
+            valor = int(pago.get("valor", 0) or 0)
+
+            config_local = get_config()
+            valor_boleta_local = int(config_local.get("valor_boleta", 10000) or 10000)
+
+            boletas.update_one(
+                {"_id": boleta_id},
+                [
+                    {
+                        "$set": {
+                            "historial_pagos": {
+                                "$concatArrays": [
+                                    {"$slice": ["$historial_pagos", idx]},
+                                    {"$slice": ["$historial_pagos", {"$add": [idx, 1]}, {"$size": "$historial_pagos"}]},
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "$set": {
+                            "total_abonado": {
+                                "$reduce": {
+                                    "input": {"$ifNull": ["$historial_pagos", []]},
+                                    "initialValue": 0,
+                                    "in": {"$add": ["$$value", "$$this.valor"]},
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "$set": {
+                            "estado": estado_pipeline_expr(valor_boleta_local)
+                        }
+                    },
+                ],
+            )
+
+            if factura_id:
+                facturas.update_one(
+                    {"_id": factura_id},
+                    {"$pull": {"detalle": {"boleta": boleta_id, "valor": valor}}},
+                )
+                factura_doc = facturas.find_one({"_id": factura_id}, {"detalle": 1})
+                if factura_doc:
+                    nuevo_total = sum(d.get("valor", 0) or 0 for d in (factura_doc.get("detalle") or []))
+                    facturas.update_one({"_id": factura_id}, {"$set": {"valor_total": nuevo_total}})
+
+            flash(f"Pago eliminado de #{boleta_id:04d}.", "success")
+        except Exception as exc:
+            flash(f"Error al eliminar pago: {exc}", "danger")
+
+        return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
+
+    @app.route("/boletas/<int:boleta_id>/recalcular", methods=["POST"])
+    @role_required("admin", "cajero")
+    def recalcular_boleta(boleta_id):
+        if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
+            flash("N\u00famero de boleta inv\u00e1lido.", "warning")
+            return redirect(url_for("consultas"))
+
+        try:
+            require_collections()
+            if not boletas.find_one({"_id": boleta_id}, {"_id": 1}):
+                flash(f"No existe la boleta #{boleta_id:04d}.", "warning")
+                return redirect(url_for("consultas"))
+
+            config_local = get_config()
+            valor_boleta_local = int(config_local.get("valor_boleta", 10000) or 10000)
+
+            result = boletas.update_one(
+                {"_id": boleta_id},
+                [
+                    {
+                        "$set": {
+                            "total_abonado": {
+                                "$reduce": {
+                                    "input": {"$ifNull": ["$historial_pagos", []]},
+                                    "initialValue": 0,
+                                    "in": {"$add": ["$$value", "$$this.valor"]},
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "$set": {
+                            "estado": estado_pipeline_expr(valor_boleta_local)
+                        }
+                    },
+                ],
+            )
+
+            if result.modified_count:
+                flash(f"#{boleta_id:04d} recalcular: OK.", "success")
+            else:
+                flash(f"#{boleta_id:04d} sin cambios.", "info")
+        except Exception as exc:
+            flash(f"Error al recalcular: {exc}", "danger")
+
+        return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
+
+    @app.route("/boletas/<int:boleta_id>/limpiar", methods=["POST"])
+    @role_required("admin", "cajero")
+    def limpiar_boleta(boleta_id):
+        if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
+            flash("N\u00famero de boleta inv\u00e1lido.", "warning")
+            return redirect(url_for("consultas"))
+
+        try:
+            require_collections()
+            if not boletas.find_one({"_id": boleta_id}, {"_id": 1}):
+                flash(f"No existe la boleta #{boleta_id:04d}.", "warning")
+                return redirect(url_for("consultas"))
+
+            boletas.update_one(
+                {"_id": boleta_id},
+                {"$set": {"cliente": {"nombre": "", "telefono": "", "direccion": ""}}},
+            )
+
+            flash(f"Datos del cliente eliminados de #{boleta_id:04d}.", "success")
+        except Exception as exc:
+            flash(f"Error al limpiar cliente: {exc}", "danger")
 
         return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
 
@@ -234,6 +408,43 @@ def register_routes(app):
                 seen.add(label)
                 items.append({"label": label, "nombre": cliente.get("nombre", ""), "telefono": cliente.get("telefono", "")})
         return jsonify(items)
+
+    @app.route("/clientes")
+    @app.route("/base-datos")
+    @role_required("admin", "cajero", "consulta")
+    def redirect_old_clientes():
+        return redirect(url_for("consultas"))
+
+    @app.route("/clientes/guardar", methods=["POST"])
+    @app.route("/base-datos/guardar", methods=["POST"])
+    @role_required("admin", "cajero")
+    def redirect_old_clientes_guardar():
+        flash("La p\u00e1gina de Base de Datos fue integrada a Consultas.", "info")
+        return redirect(url_for("consultas"))
+
+    @app.route("/clientes/<int:boleta_id>/pago/<int:idx>/eliminar", methods=["POST"])
+    @app.route("/base-datos/<int:boleta_id>/pago/<int:idx>/eliminar", methods=["POST"])
+    @role_required("admin", "cajero")
+    def redirect_old_eliminar_pago(boleta_id, idx):
+        return redirect(url_for("eliminar_pago_boleta", boleta_id=boleta_id, idx=idx), code=307)
+
+    @app.route("/clientes/<int:boleta_id>/recalcular", methods=["POST"])
+    @app.route("/base-datos/<int:boleta_id>/recalcular", methods=["POST"])
+    @role_required("admin", "cajero")
+    def redirect_old_recalcular(boleta_id):
+        return redirect(url_for("recalcular_boleta", boleta_id=boleta_id), code=307)
+
+    @app.route("/clientes/<int:boleta_id>/limpiar", methods=["POST"])
+    @app.route("/base-datos/<int:boleta_id>/limpiar", methods=["POST"])
+    @role_required("admin", "cajero")
+    def redirect_old_limpiar(boleta_id):
+        return redirect(url_for("limpiar_boleta", boleta_id=boleta_id), code=307)
+
+    @app.route("/base-datos/<int:boleta_id>/vendedor", methods=["POST"])
+    @role_required("admin", "cajero")
+    def redirect_old_vendedor(boleta_id):
+        flash("La p\u00e1gina de Base de Datos fue integrada a Consultas.", "info")
+        return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
 
     @app.route("/api/boletas/<int:boleta_id>")
     @role_required("admin", "cajero", "consulta")

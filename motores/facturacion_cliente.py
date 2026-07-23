@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from motores.constants import VENDEDOR_LOCAL, METODO_EFECTIVO, METODO_TRANSFERENCIA, ESTADO_SEPARADA
+from motores.constants import VENDEDOR_LOCAL, METODO_EFECTIVO, METODO_TRANSFERENCIA
 from motores.fechas import now_local
 from motores.validacion import parse_money
 
@@ -201,8 +201,12 @@ def register_routes(app):
                     {"$set": {"cliente": cliente_data}},
                 )
                 boletas.update_many(
-                    {"_id": {"$in": boleta_ids}, "vendedor_id": {"$in": ["", None, VENDEDOR_LOCAL]}, "total_abonado": {"$in": [0, None]}},
-                    {"$set": {"vendedor_id": VENDEDOR_LOCAL, "estado": ESTADO_SEPARADA}},
+                    {"_id": {"$in": boleta_ids}, "vendedor_id": {"$in": ["", None, VENDEDOR_LOCAL]}},
+                    {"$set": {"vendedor_id": VENDEDOR_LOCAL}},
+                )
+                boletas.update_many(
+                    {"_id": {"$in": boleta_ids}},
+                    [{"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}}],
                 )
 
                 flash(f"Factura de cliente generada con {len(boleta_ids)} boleta(s).", "success")

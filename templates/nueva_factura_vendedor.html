@@ -177,6 +177,7 @@
         const agregarFila = document.getElementById("agregarFila");
         const resCantidad = document.getElementById("resCantidad");
         const resTotal = document.getElementById("resTotal");
+        const VALOR_BOLETA = {{ valor_boleta | tojson }};
 
         const plantilla = abonosBody.querySelector(".fila-abono").cloneNode(true);
         const previewBtn = document.getElementById("btnPreview");
@@ -298,6 +299,17 @@
                         warnings.push('#' + ("0000" + num).slice(-4) + ' → ' + who);
                     } else {
                         validCount++;
+                    }
+                }
+
+                var montoInput = f.querySelector(".monto-input");
+                if (montoInput) {
+                    var montoVal = parseInt(montoInput.value.replace(/[^0-9]/g, "")) || 0;
+                    if (montoVal > 0 && parts.length > 0) {
+                        var perTicket = montoVal / parts.length;
+                        if (perTicket > VALOR_BOLETA) {
+                            warnings.push('Monto por boleta ($' + Math.round(perTicket).toLocaleString("es-CO") + ') excede el valor de la boleta ($' + VALOR_BOLETA.toLocaleString("es-CO") + ')');
+                        }
                     }
                 }
 

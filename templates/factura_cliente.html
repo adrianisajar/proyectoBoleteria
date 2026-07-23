@@ -88,8 +88,11 @@
   {% set invoice_pago = boleta_pagos | sum(attribute="valor") %}
   {% set ns.total = ns.total + invoice_pago %}
 
-  <div class="recibo-boleta">
+    <div class="recibo-boleta">
     <div class="recibo-boleta-num">#{{ "%04d" % bid }}</div>
+    {% if info.get("vendedor_id") and info.vendedor_id != "LOCAL" %}
+    <div class="recibo-mov-line"><span class="recibo-label">Vendedor</span><span>{{ info.get("vendedor_nombre", info.vendedor_id) }}</span></div>
+    {% endif %}
     <div class="recibo-mov-line"><span class="recibo-label">Valor de la boleta</span><span>${{ "{:,}".format(info.get("valor_boleta", valor_boleta)) }}</span></div>
     <div class="recibo-mov">
       <div class="recibo-mov-line"><span class="recibo-label">Pago realizado</span><span>${{ "{:,}".format(invoice_pago) }}</span></div>

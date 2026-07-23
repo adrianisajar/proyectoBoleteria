@@ -119,45 +119,6 @@
 
     <div class="col-lg-6 d-flex flex-column gap-3">
         <div class="office-card bg-body p-3 p-md-4">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h2 class="section-title mb-0">Todas las rifas</h2>
-                <span class="badge bg-light border">{{ rifas_list|length }}</span>
-            </div>
-            {% if rifas_list %}
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Nombre</th>
-                            <th>Año</th>
-                            <th class="text-end">Valor</th>
-                            <th class="text-end">Boletas</th>
-                            <th>Estado</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for r in rifas_list %}
-                        <tr class="{{ 'table-primary' if r._id == rifa._id else '' }}">
-                            <td class="fw-bold">{{ r.nombre }}</td>
-                            <td>{{ r.anio }}</td>
-                            <td class="text-end">${{ "{:,}".format(r.valor_boleta) }}</td>
-                            <td class="text-end ticket-number">{{ r.cantidad_boletas }}</td>
-                            <td>
-                                <span class="badge bg-{{ 'success' if r.estado == 'activa' else 'secondary' }}">{{ r.estado }}</span>
-                            </td>
-                            <td class="text-end"></td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="alert alert-secondary mb-0">No hay rifas creadas.</div>
-            {% endif %}
-        </div>
-
-        <div class="office-card bg-body p-3 p-md-4">
             <h2 class="section-title mb-3">
                 <i class="bi bi-file-earmark-spreadsheet me-2"></i>Importar / Exportar asignaciones
             </h2>

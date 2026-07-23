@@ -1,5 +1,7 @@
 import re
 
+from datetime import datetime
+
 from motores.constants import COMISION_DEFAULT_TIERS, VENDEDOR_LOCAL, METODO_EFECTIVO, METODO_TRANSFERENCIA
 from motores.fechas import now_local
 from motores.validacion import parse_money
@@ -43,7 +45,9 @@ def _build_form_data(vendedor_id, fecha, boletas_raw, montos_raw, metodos, refer
 def _render_vendedor_form(form_data):
     vendedores_list = list(vendedores.find().sort("_id", 1))
     today = now_local().strftime("%Y-%m-%d")
-    return render_template("nueva_factura_vendedor.html", vendedores=vendedores_list, today=today, form_data=form_data)
+    _cfg = get_config()
+    _vb = int(_cfg.get("valor_boleta", 10000) or 10000)
+    return render_template("nueva_factura_vendedor.html", vendedores=vendedores_list, today=today, form_data=form_data, valor_boleta=_vb)
 
 
 def register_routes(app):
@@ -70,6 +74,10 @@ def register_routes(app):
                 flash("Debe indicar la fecha del abono.", "danger")
                 return _render_vendedor_form(form_data)
 
+            _cfg = get_config()
+            _vb = int(_cfg.get("valor_boleta", 10000) or 10000)
+
+            errors = []
             rows = []
             for i in range(len(boletas_raw)):
                 parts = [p.strip() for p in re.split(r"[\s,;]+", boletas_raw[i]) if p.strip().isdigit()]
@@ -77,6 +85,9 @@ def register_routes(app):
                     continue
                 m = parse_money(montos_raw[i]) if i < len(montos_raw) else 0
                 if m <= 0:
+                    continue
+                if m > _vb * len(parts):
+                    errors.append(f"El monto ${m:,} para {len(parts)} boleta(s) supera el m\u00e1ximo de ${_vb * len(parts):,}.")
                     continue
                 meta = metodos[i] if i < len(metodos) else METODO_EFECTIVO
                 ref = referencias[i].strip() if i < len(referencias) else ""
@@ -90,7 +101,6 @@ def register_routes(app):
                         "banco": banco_val,
                     })
 
-            errors = []
             for r in rows:
                 if r["metodo"] == METODO_TRANSFERENCIA:
                     if not r.get("referencia", "").strip():
@@ -211,7 +221,7 @@ def register_routes(app):
                 factura = {
                     "_id": factura_id,
                     "tipo": "vendedor",
-                    "fecha": now_local(),
+                    "fecha": datetime.strptime(fecha, "%Y-%m-%d"),
                     "boletas": sorted(boleta_ids),
                     "detalle": detalle,
                     "valor_total": valor_total,
@@ -224,7 +234,7 @@ def register_routes(app):
                 }
                 facturas.insert_one(factura)
                 flash(f"Factura de vendedor N\u00b0 {factura['_id']:05d} generada.", "success")
-                return redirect(url_for("ver_factura", factura_id=factura["_id"]))
+                return redirect(url_for("ver_factura", factura_id=factura["_id"], imprimir=1))
 
             except Exception as exc:
                 if factura_id is not None:
@@ -234,4 +244,6 @@ def register_routes(app):
 
         vendedores_list = list(vendedores.find().sort("_id", 1))
         today = now_local().strftime("%Y-%m-%d")
-        return render_template("nueva_factura_vendedor.html", vendedores=vendedores_list, today=today, form_data={})
+        _cfg = get_config()
+        _vb = int(_cfg.get("valor_boleta", 10000) or 10000)
+        return render_template("nueva_factura_vendedor.html", vendedores=vendedores_list, today=today, form_data={}, valor_boleta=_vb)
