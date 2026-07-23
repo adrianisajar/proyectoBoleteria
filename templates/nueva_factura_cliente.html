@@ -170,6 +170,7 @@
     const agregarFila = document.getElementById("agregarFila");
     const resCantidad = document.getElementById("resCantidad");
     const resTotal = document.getElementById("resTotal");
+    const VALOR_BOLETA = {{ valor_boleta | tojson }};
 
     const plantilla = abonosBody.querySelector(".fila-abono").cloneNode(true);
 
@@ -341,6 +342,10 @@
                 infoParts.push("Vend: " + (result.vendedor_nombre || "LOCAL"));
                 if (result.total_abonado > 0) infoParts.push("Abonado: $" + result.total_abonado.toLocaleString("es-CO"));
                 infoEl.textContent = infoParts.join(" | ");
+                var montoVal = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
+                if (montoVal > VALOR_BOLETA) {
+                    warningsEl.innerHTML = '<i class="bi bi-exclamation-triangle text-warning me-1"></i>Monto excede el valor de la boleta ($' + VALOR_BOLETA.toLocaleString("es-CO") + ')';
+                }
             }
         }
 
@@ -475,9 +480,30 @@
     };
 
     document.getElementById("btnPreview").addEventListener("click", function() {
+        var txErrors = [];
+        abonosBody.querySelectorAll(".fila-abono").forEach(function(f) {
+            if (f.querySelector("select[name='metodo[]']").value !== "transferencia") return;
+            var raw = f.querySelector(".boleta-input").value.trim();
+            var ref = f.querySelector("input[name='referencia[]']").value.trim();
+            var banco = f.querySelector("input[name='banco[]']").value.trim();
+            var missing = [];
+            if (!ref) missing.push("referencia");
+            if (!banco) missing.push("banco");
+            if (missing.length) {
+                txErrors.push("Transferencia en <strong>" + raw + "</strong>: falta " + missing.join(" y "));
+            }
+        });
+        if (txErrors.length) {
+            document.getElementById("previewBody").innerHTML = '<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>' + txErrors.join("<br>") + '</div>';
+            document.getElementById("btnConfirmar").disabled = true;
+            var modal = new bootstrap.Modal(document.getElementById("previewModal"));
+            modal.show();
+            return;
+        }
         var html = armarPreview();
         if (html !== null) {
             document.getElementById("previewBody").innerHTML = html;
+            document.getElementById("btnConfirmar").disabled = false;
             var modal = new bootstrap.Modal(document.getElementById("previewModal"));
             modal.show();
         }

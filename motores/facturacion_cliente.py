@@ -36,7 +36,9 @@ def _render_cliente_form(form, form_rows, today):
         "fecha": form.get("fecha", ""),
         "form_rows": form_rows,
     }
-    return render_template("nueva_factura_cliente.html", form=form, today=today, form_data=form_data)
+    _cfg_cliente = get_config()
+    _vb_cliente = int(_cfg_cliente.get("valor_boleta", 10000) or 10000)
+    return render_template("nueva_factura_cliente.html", form=form, today=today, form_data=form_data, valor_boleta=_vb_cliente)
 
 
 def register_routes(app):
@@ -70,6 +72,9 @@ def register_routes(app):
             if not fecha_str:
                 errors.append("Debe indicar la fecha del abono.")
 
+            _cfg_cliente = get_config()
+            _vb_cliente = int(_cfg_cliente.get("valor_boleta", 10000) or 10000)
+
             rows = []
             for i in range(len(boletas_raw)):
                 raw = boletas_raw[i].strip()
@@ -84,6 +89,9 @@ def register_routes(app):
                     errors.append(f"#{num:04d} est\u00e1 fuera del rango 0000-9999.")
                     continue
                 m = parse_money(montos_raw[i]) if i < len(montos_raw) else 0
+                if m > _vb_cliente:
+                    errors.append(f"El monto ${m:,} para la boleta #{num:04d} supera el valor de la boleta (${_vb_cliente:,}).")
+                    continue
                 meta = metodos[i].strip().lower() if i < len(metodos) else METODO_EFECTIVO
                 ref = referencias[i].strip() if i < len(referencias) else ""
                 banco_val = bancos[i].strip() if i < len(bancos) else ""
@@ -193,7 +201,6 @@ def register_routes(app):
                     "vendedor_id": VENDEDOR_LOCAL,
                     "vendedor_nombre": VENDEDOR_LOCAL,
                 }
-                facturas.insert_one(factura)
 
                 cliente_data = {"nombre": nombre, "telefono": telefono, "direccion": direccion}
                 boletas.update_many(
@@ -208,6 +215,8 @@ def register_routes(app):
                     {"_id": {"$in": boleta_ids}},
                     [{"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}}],
                 )
+
+                facturas.insert_one(factura)
 
                 flash(f"Factura de cliente generada con {len(boleta_ids)} boleta(s).", "success")
                 return redirect(url_for("ver_factura", factura_id=factura["_id"], imprimir=1))
