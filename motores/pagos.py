@@ -1,7 +1,7 @@
 import re
 
 from motores.validacion import parse_boletas
-from motores.constants import OPERACIONES_VENDEDOR, BOLETA_MIN, BOLETA_MAX
+from motores.constants import OPERACIONES_VENDEDOR, BOLETA_MIN, BOLETA_MAX, VENDEDOR_SIN_ASIGNAR
 
 from motores.shared import (
     boletas, vendedores,
@@ -9,7 +9,7 @@ from motores.shared import (
     get_config, require_collections, role_required,
     safe_vendedores_snapshot,
     normalize_vendedor_id, existing_boleta_ids,
-    estado_pipeline_expr,
+    estado_pipeline_expr, invalidate_dashboard_cache,
 )
 
 
@@ -56,16 +56,27 @@ def _validar_form_vendedor(form_data):
 
 
 def _procesar_guardar(vendedor_id, perfil_update):
+    existe = vendedores.find_one({"_id": vendedor_id}, {"_id": 1})
     vendedores.update_one({"_id": vendedor_id}, perfil_update, upsert=True)
-    flash(f"Vendedor {vendedor_id} guardado.", "success")
+    if existe:
+        flash(f"Vendedor {vendedor_id} actualizado.", "info")
+    else:
+        flash(f"Vendedor {vendedor_id} creado.", "success")
 
 
 def _procesar_asignar(vendedor_id, boleta_ids, perfil_update, valor_boleta):
     existentes = existing_boleta_ids(boleta_ids)
     faltantes = len(boleta_ids) - len(existentes)
-    vendedores.update_one({"_id": vendedor_id}, perfil_update, upsert=True)
 
     if existentes:
+        con_pagos = list(boletas.find({"_id": {"$in": existentes}, "total_abonado": {"$gt": 0}}, {"_id": 1}))
+        if con_pagos:
+            ids_con_pago = ", ".join(f"#{b['_id']:04d}" for b in con_pagos)
+            raise ValueError(f"No se pueden asignar boletas con pagos registrados: {ids_con_pago}")
+
+    if not vendedores.find_one({"_id": vendedor_id}, {"_id": 1}):
+        vendedores.insert_one({"_id": vendedor_id, **perfil_update["$set"], "boletas_asignadas": []})
+    else:
         vendedores.update_many(
             {"_id": {"$ne": vendedor_id}},
             {"$pull": {"boletas_asignadas": {"$in": existentes}}},
@@ -76,6 +87,7 @@ def _procesar_asignar(vendedor_id, boleta_ids, perfil_update, valor_boleta):
         )
         _actualizar_estado_boletas({"_id": {"$in": existentes}}, vendedor_id, valor_boleta)
 
+    invalidate_dashboard_cache()
     mensaje = f"{len(existentes)} boleta(s) asignada(s) a {vendedor_id}."
     if faltantes:
         mensaje += f" {faltantes} no exist\u00edan en la colecci\u00f3n boletas."
@@ -85,17 +97,20 @@ def _procesar_asignar(vendedor_id, boleta_ids, perfil_update, valor_boleta):
 def _procesar_quitar(vendedor_id, boleta_ids, perfil_update, valor_boleta):
     existentes = existing_boleta_ids(boleta_ids)
     faltantes = len(boleta_ids) - len(existentes)
-    vendedores.update_one({"_id": vendedor_id}, perfil_update, upsert=True)
+    if not vendedores.find_one({"_id": vendedor_id}, {"_id": 1}):
+        flash(f"El vendedor {vendedor_id} no existe.", "danger")
+        return
     vendedores.update_one({"_id": vendedor_id}, {"$pull": {"boletas_asignadas": {"$in": existentes}}})
     if existentes:
-        _actualizar_estado_boletas({"_id": {"$in": existentes}, "vendedor_id": vendedor_id}, "", valor_boleta)
+        _actualizar_estado_boletas({"_id": {"$in": existentes}, "vendedor_id": vendedor_id}, VENDEDOR_SIN_ASIGNAR, valor_boleta)
+    invalidate_dashboard_cache()
     mensaje = f"{len(existentes)} boleta(s) quitada(s) de {vendedor_id}."
     if faltantes:
         mensaje += f" {faltantes} no exist\u00edan en la colecci\u00f3n boletas."
     flash(mensaje, "success" if existentes else "warning")
 
 
-def _procesar_reemplazar(vendedor_id, boleta_ids, perfil_set, valor_boleta):
+def _procesar_reemplazar(vendedor_id, boleta_ids, perfil_update, valor_boleta):
     existentes = existing_boleta_ids(boleta_ids)
     faltantes = len(boleta_ids) - len(existentes)
     vendedores.update_many(
@@ -104,12 +119,13 @@ def _procesar_reemplazar(vendedor_id, boleta_ids, perfil_set, valor_boleta):
     )
     vendedores.update_one(
         {"_id": vendedor_id},
-        {"$set": {**perfil_set, "boletas_asignadas": existentes}},
+        {"$set": {"boletas_asignadas": existentes}, "$setOnInsert": perfil_update.get("$setOnInsert", {})},
         upsert=True,
     )
-    _actualizar_estado_boletas({"vendedor_id": vendedor_id, "_id": {"$nin": existentes}}, "", valor_boleta)
+    _actualizar_estado_boletas({"vendedor_id": vendedor_id, "_id": {"$nin": existentes}}, VENDEDOR_SIN_ASIGNAR, valor_boleta)
     if existentes:
         _actualizar_estado_boletas({"_id": {"$in": existentes}}, vendedor_id, valor_boleta)
+    invalidate_dashboard_cache()
     mensaje = f"Lista de {vendedor_id} reemplazada con {len(existentes)} boleta(s)."
     if faltantes:
         mensaje += f" {faltantes} no exist\u00edan en la colecci\u00f3n boletas."
@@ -126,8 +142,9 @@ def _procesar_eliminar(vendedor_id, valor_boleta):
         if isinstance(num, int) and BOLETA_MIN <= num <= BOLETA_MAX
     ]
     if boletas_ids_vendor:
-        _actualizar_estado_boletas({"_id": {"$in": boletas_ids_vendor}}, "", valor_boleta)
+        _actualizar_estado_boletas({"_id": {"$in": boletas_ids_vendor}, "vendedor_id": vendedor_id}, VENDEDOR_SIN_ASIGNAR, valor_boleta)
     vendedores.delete_one({"_id": vendedor_id})
+    invalidate_dashboard_cache()
     flash(f"Vendedor {vendedor_id} ({vendedor_doc.get('nombre', '')}) eliminado con {len(boletas_ids_vendor)} boleta(s) liberada(s).", "success")
 
 
@@ -178,7 +195,7 @@ def register_routes(app):
                 elif operacion == "quitar":
                     _procesar_quitar(vendedor_id, boleta_ids, perfil_update, valor_boleta)
                 elif operacion == "reemplazar":
-                    _procesar_reemplazar(vendedor_id, boleta_ids, perfil_set, valor_boleta)
+                    _procesar_reemplazar(vendedor_id, boleta_ids, perfil_update, valor_boleta)
                 elif operacion == "eliminar":
                     _procesar_eliminar(vendedor_id, valor_boleta)
             except Exception as exc:

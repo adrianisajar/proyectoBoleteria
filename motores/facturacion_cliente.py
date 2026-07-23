@@ -71,6 +71,13 @@ def register_routes(app):
                 errors.append("El nombre del cliente es obligatorio.")
             if not fecha_str:
                 errors.append("Debe indicar la fecha del abono.")
+            else:
+                try:
+                    fecha_dt = datetime.strptime(fecha_str, "%Y-%m-%d")
+                    if fecha_dt.date() > now_local().date():
+                        errors.append("La fecha no puede ser posterior a hoy.")
+                except ValueError:
+                    errors.append("Formato de fecha inv\u00e1lido.")
 
             _cfg_cliente = get_config()
             _vb_cliente = int(_cfg_cliente.get("valor_boleta", 10000) or 10000)
@@ -136,6 +143,8 @@ def register_routes(app):
                 if r["boleta"] not in seen:
                     seen.add(r["boleta"])
                     deduped.append(r)
+            if len(deduped) < len(rows):
+                flash(f"{len(rows) - len(deduped)} boleta(s) duplicada(s) ignorada(s).", "warning")
             rows = deduped
 
             boleta_ids = [r["boleta"] for r in rows]
@@ -225,10 +234,6 @@ def register_routes(app):
                 if factura_id is not None:
                     rollback_pagos_por_factura(factura_id, valor_boleta_local)
                     try:
-                        boletas.update_many(
-                            {"_id": {"$in": boleta_ids}},
-                            {"$set": {"cliente": {"nombre": "", "telefono": "", "direccion": ""}}},
-                        )
                         boletas.update_many(
                             {"_id": {"$in": boleta_ids}, "vendedor_id": VENDEDOR_LOCAL, "total_abonado": 0},
                             {"$set": {"vendedor_id": ""}},

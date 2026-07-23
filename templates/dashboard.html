@@ -78,6 +78,15 @@
             <div class="metric-subtext">Boletas abonando no pagadas</div>
         </div>
     </div>
+    {% if stats.pagos_otros %}
+    <div class="col-6 col-md-4">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-secondary);">
+            <div class="metric-label mb-2">Otros pagos</div>
+            <div class="metric-value">{{ stats.pagos_otros|cop }}</div>
+            <div class="metric-subtext">Métodos de pago no clasificados</div>
+        </div>
+    </div>
+    {% endif %}
     <div class="col-6 col-md-4">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-info);">
             <div class="metric-label mb-2">Vendidas</div>
@@ -136,7 +145,7 @@
                     <tr>
                         <th>Vendedor</th>
                         <th>Nombre</th>
-                        <th class="text-end">Vendidas</th>
+                        <th class="text-end">Con pago</th>
                         <th class="text-end">Pagadas</th>
                         <th class="text-end">Recaudo</th>
                     </tr>
@@ -144,7 +153,7 @@
                 <tbody>
                     {% for item in stats.ranking %}
                         <tr>
-                            <td><span class="badge text-bg-secondary">{{ item._id }}</span></td>
+                            <td><span class="badge text-bg-secondary">{{ item._id or "—" }}</span></td>
                             <td>{{ item.nombre or "-" }}</td>
                             <td class="text-end fw-bold ticket-number">{{ item.vendidas }}</td>
                             <td class="text-end ticket-number">{{ item.pagadas }}</td>
@@ -153,6 +162,11 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+        <div class="p-3 border-top text-end">
+            <a href="{{ url_for('vendedores_panel') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-people me-1"></i>Ver ranking completo
+            </a>
         </div>
     {% else %}
         <div class="p-4">

@@ -75,6 +75,14 @@ def register_routes(app):
             if not fecha:
                 flash("Debe indicar la fecha del abono.", "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
+            try:
+                fecha_dt = datetime.strptime(fecha, "%Y-%m-%d")
+                if fecha_dt.date() > now_local().date():
+                    flash("La fecha no puede ser posterior a hoy.", "danger")
+                    return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
+            except ValueError:
+                flash("Formato de fecha inv\u00e1lido.", "danger")
+                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
             _cfg = get_config()
             _vb = int(_cfg.get("valor_boleta", 10000) or 10000)

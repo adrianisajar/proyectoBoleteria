@@ -40,10 +40,14 @@ def ticket_number_query(value, errors):
             return None, False
         return number, True
 
+    MAX_MATCHES = 200
     matches = [number for number in range(BOLETA_MIN, BOLETA_MAX + 1) if raw_value in f"{number:04d}"]
     if not matches:
         errors.append("No hay boletas que contengan esos d\u00edgitos.")
         return None, False
+    if len(matches) > MAX_MATCHES:
+        errors.append(f"Demasiados resultados ({len(matches)}). Se usan los primeros {MAX_MATCHES}.")
+        matches = matches[:MAX_MATCHES]
 
     return {"$in": matches}, False
 

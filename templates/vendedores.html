@@ -62,6 +62,7 @@
                     <option value="guardar" {% if form.operacion == "guardar" %}selected{% endif %}>Guardar</option>
                     <option value="asignar" {% if form.operacion == "asignar" %}selected{% endif %}>Asignar</option>
                     <option value="quitar" {% if form.operacion == "quitar" %}selected{% endif %}>Quitar</option>
+                    <option value="reemplazar" {% if form.operacion == "reemplazar" %}selected{% endif %}>Reemplazar</option>
                     <option value="eliminar" {% if form.operacion == "eliminar" %}selected{% endif %}>Eliminar vendedor</option>
                 </select>
         </div>
@@ -145,10 +146,10 @@
                             </td>
                             <td class="text-end">
                                 <div class="d-flex gap-1 justify-content-end">
-                                    <button type="button" class="btn btn-sm btn-outline-info ver-boletas" data-vendedor="{{ vendedor._id }}" data-nombre="{{ vendedor.nombre }}" title="Ver boletas">
+                                    <button type="button" class="btn btn-sm btn-outline-info ver-boletas" data-vendedor="{{ vendedor._id }}" data-nombre="{{ vendedor.nombre|e }}" title="Ver boletas">
                                         <i class="bi bi-list-ul"></i>
                                     </button>
-                                    <button type="button" class="btn btn-sm btn-outline-primary cargar-vendedor" data-nombre="{{ vendedor.nombre }}" data-telefono="{{ vendedor.telefono }}" title="Editar">
+                                    <button type="button" class="btn btn-sm btn-outline-primary cargar-vendedor" data-id="{{ vendedor._id }}" data-nombre="{{ vendedor.nombre|e }}" data-telefono="{{ vendedor.telefono|e }}" title="Editar">
                                         <i class="bi bi-pencil-square"></i>
                                     </button>
                                 </div>
@@ -259,10 +260,17 @@
 
         document.querySelectorAll(".cargar-vendedor").forEach((button) => {
             button.addEventListener("click", () => {
+                const origId = button.dataset.id || "";
                 nombre.value = button.dataset.nombre || "";
                 telefono.value = button.dataset.telefono || "";
                 operacion.value = "guardar";
-                actualizarId();
+                if (origId) {
+                    vendedorIdInput.value = origId;
+                    vendedorIdPreview.textContent = origId;
+                    vendedorIdPreview.className = "badge text-bg-primary fw-normal font-monospace";
+                } else {
+                    actualizarId();
+                }
                 nombre.focus();
             });
         });
@@ -339,12 +347,16 @@
         } else {
         form.addEventListener("submit", async (e) => {
             const op = operacion.value;
-            if (op !== "asignar" && op !== "quitar" && op !== "eliminar") return;
+            if (op !== "asignar" && op !== "quitar" && op !== "reemplazar" && op !== "eliminar") return;
             e.preventDefault();
             const vName = nombre.value || "?";
             const vId = vendedorIdInput.value || vName;
 
             if (op === "eliminar") {
+                if (!vendedorIdInput.value) {
+                    alert("Primero seleccione o cree un vendedor.");
+                    return;
+                }
                 confirmTitle.textContent = "Eliminar vendedor";
                 confirmBody.innerHTML = `<div class="mb-3">
                     <p class="mb-2">¿Está seguro de eliminar al vendedor?</p>

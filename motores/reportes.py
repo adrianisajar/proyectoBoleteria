@@ -13,7 +13,7 @@ from motores.shared import (
     get_rifa_activa, require_collections, role_required,
     get_dashboard_stats,
     modelo_rifa_report_rows,
-    invalidate_rifa_cache, invalidate_config_cache,
+    invalidate_rifa_cache, invalidate_config_cache, invalidate_dashboard_cache,
 )
 from bson import json_util, ObjectId
 
@@ -49,7 +49,15 @@ def register_routes(app):
             stats = get_dashboard_stats()
             rifa = get_rifa_activa()
         except Exception as exc:
-            stats = {}
+            stats = {
+                "recaudo_total": 0, "recaudo_hoy": 0, "pagos_hoy": 0,
+                "pagos_efectivo": 0, "pagos_transferencia": 0,
+                "saldo_pendiente": 0, "vendidas": 0, "pagadas": 0,
+                "disponibles": 0, "abonando": 0, "separadas": 0,
+                "asignadas": 0, "progreso_ventas_pct": 0,
+                "progreso_recaudo_pct": 0, "recaudo_potencial": 0,
+                "ranking": [],
+            }
             rifa = {}
             flash(f"No se pudo cargar el dashboard: {exc}", "danger")
         return render_template("dashboard.html", stats=stats, rifa=rifa)
@@ -172,6 +180,7 @@ def register_routes(app):
                 if restaurados:
                     invalidate_config_cache()
                     invalidate_rifa_cache()
+                    invalidate_dashboard_cache()
                     total = sum(restaurados.values())
                     flash(f"Respaldo restaurado: {total} documentos en {len(restaurados)} colecciones.", "success")
                 for error in errores:

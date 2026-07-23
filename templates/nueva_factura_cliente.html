@@ -381,7 +381,7 @@
                 }
             }
         });
-        montoInput.addEventListener("input", function() { formatearMonto(this); actualizarResumen(); });
+        montoInput.addEventListener("input", function() { formatearMonto(this); actualizarResumen(); programarValidacion(); });
         metodoSelect.addEventListener("change", function() { alternarReferencia(fila); });
         fila.querySelector(".eliminar-fila").addEventListener("click", function() {
             if (abonosBody.querySelectorAll(".fila-abono").length > 1) {

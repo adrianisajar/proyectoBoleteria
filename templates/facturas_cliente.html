@@ -34,7 +34,7 @@
                 <td class="fw-bold">{{ "%05d" % f._id }}</td>
                 <td>{{ f.fecha.strftime("%d/%m/%Y %H:%M") }}</td>
                 <td>
-                    {{ f.cliente.nombre }} {{ f.cliente.apellido }}
+                    {{ f.cliente.nombre }}
                     {% if f.get("anulada") %}
                     <span class="badge text-bg-danger ms-1">Anulada</span>
                     {% endif %}

@@ -7,7 +7,7 @@ from motores.validacion import parse_money
 from motores.shared import (
     configuracion, rifas,
     request, flash, redirect, render_template, url_for,
-    get_config, get_rifa_activa, invalidate_config_cache,
+    get_config, get_rifa_activa, invalidate_config_cache, invalidate_dashboard_cache,
     require_collections, role_required, sync_ticket_statuses,
     importar_modelo_rifa, crear_nueva_rifa,
 )
@@ -50,6 +50,7 @@ def register_routes(app):
                     configuracion.update_one({"_id": CONFIG_ID}, {"$set": {"premios_adicionales": premios_adicionales}}, upsert=True)
                     rifas.update_one({"estado": "activa"}, {"$set": {"premios_adicionales": premios_adicionales}})
                     invalidate_config_cache()
+                    invalidate_dashboard_cache()
                     flash("Premios adicionales guardados.", "success")
                 return redirect(url_for("configuracion_panel"))
 
@@ -64,16 +65,20 @@ def register_routes(app):
                 }
                 configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
                 invalidate_config_cache()
+                invalidate_dashboard_cache()
                 flash("Datos de la empresa guardados.", "success")
                 return redirect(url_for("configuracion_panel"))
 
             elif action == "guardar_config":
                 valor_boleta = parse_money(request.form.get("valor_boleta", ""))
                 nombre = request.form.get("nombre_rifa", "").strip() or DEFAULT_CONFIG["nombre_rifa"]
+                valor_minimo_adicional = parse_money(request.form.get("valor_minimo_adicional", "20000")) or 20000
 
                 errors = []
                 if valor_boleta <= 0:
                     errors.append("El valor de la boleta debe ser mayor que cero.")
+                if valor_minimo_adicional < 0:
+                    errors.append("El valor mínimo para premios adicionales no puede ser negativo.")
 
                 if errors:
                     for error in errors:
@@ -82,9 +87,12 @@ def register_routes(app):
                     update = {
                         "nombre_rifa": nombre,
                         "valor_boleta": valor_boleta,
+                        "valor_minimo_adicional": valor_minimo_adicional,
                     }
                     configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
+                    rifas.update_one({"estado": "activa"}, {"$set": {"nombre": nombre, "valor_boleta": valor_boleta, "valor_minimo_adicional": valor_minimo_adicional}})
                     invalidate_config_cache()
+                    invalidate_dashboard_cache()
                     sync_ticket_statuses(valor_boleta)
                     flash("Parámetros de la rifa guardados.", "success")
                     return redirect(url_for("configuracion_panel"))

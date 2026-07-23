@@ -1,10 +1,8 @@
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 
 from database import boletas, configuracion, facturas, rifas, vendedores
-
-def now_local():
-    return (datetime.now(timezone.utc) + timedelta(hours=-5)).replace(tzinfo=None)
+from motores.fechas import now_local
 
 CONFIG_ID = "rifa"
 
@@ -55,10 +53,9 @@ def crear_rifa():
 
 
 def crear_configuracion_base():
-    configuracion.delete_many({})
     configuracion.update_one(
         {"_id": CONFIG_ID},
-        {"$set": {"factura_counter": 0}},
+        {"$setOnInsert": {"factura_counter": 0}},
         upsert=True,
     )
 

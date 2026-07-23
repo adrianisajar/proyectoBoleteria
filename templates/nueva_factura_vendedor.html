@@ -487,7 +487,7 @@
                 programarValidacion();
             };
             boletaInput.addEventListener("input", onInput);
-            montoInput.addEventListener("input", function() { formatearMonto(this); actualizarResumen(); });
+            montoInput.addEventListener("input", function() { formatearMonto(this); actualizarResumen(); programarValidacion(); });
             montoInput.addEventListener("blur", actualizarResumen);
             metodoSelect.addEventListener("change", function() { alternarReferencia(fila); });
             fila.querySelector(".eliminar-fila").addEventListener("click", function() {
@@ -636,6 +636,8 @@
         });
 
         document.getElementById("btnConfirmar").addEventListener("click", function() {
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Enviando...';
             bootstrap.Modal.getInstance(document.getElementById("previewModal")).hide();
             document.getElementById("formFacturaVendedor").submit();
         });

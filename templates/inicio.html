@@ -190,7 +190,7 @@
             <a class="btn btn-outline-secondary btn-sm {% if not next_url %}disabled{% endif %}" href="{{ next_url or '#' }}" aria-label="Página siguiente">
                 <i class="bi bi-chevron-right"></i>
             </a>
-            <a class="btn btn-outline-success btn-sm" href="/consultas/exportar{{ '?' + request.query_string.decode() if request.query_string else '' }}">
+            <a class="btn btn-outline-success btn-sm" href="{{ export_url }}">
                 <i class="bi bi-download me-1"></i>CSV
             </a>
         </div>

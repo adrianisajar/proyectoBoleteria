@@ -13,7 +13,7 @@ from motores.shared import (
     calcular_premios_adicionales,
     build_consulta_context, build_page_url,
     get_dashboard_counts, get_vendedor_options,
-    estado_pipeline_expr,
+    estado_pipeline_expr, invalidate_dashboard_cache,
 )
 
 SORT_WHITELIST = {"_id", "vendedor_id", "estado", "total_abonado", "cliente.nombre"}
@@ -68,6 +68,9 @@ def register_routes(app):
                         boleta_detalle["premios_adicionales"] = calcular_premios_adicionales(
                             boleta_detalle.get("historial_pagos", []), premios_config
                         )
+                        if boleta_detalle.get("vendedor_id"):
+                            v = vendedores.find_one({"_id": boleta_detalle["vendedor_id"]}, {"nombre": 1})
+                            boleta_detalle["vendedor_nombre"] = v["nombre"] if v else None
             except Exception as exc:
                 flash(f"No se pudo ejecutar la consulta: {exc}", "danger")
 
@@ -105,6 +108,9 @@ def register_routes(app):
         prev_url = build_page_url("consultas", filters, page - 1) if page > 1 else None
         next_url = build_page_url("consultas", filters, page + 1) if page < total_pages else None
 
+        export_params = {k: v for k, v in filters.items() if v}
+        export_url = url_for("exportar_consultas", **export_params)
+
         vendedor_label = ""
         vf = filters.get("vendedor_id", "")
         if vf == "__":
@@ -122,7 +128,6 @@ def register_routes(app):
         return render_template(
             "inicio.html",
             total=counts["total"],
-            vendidas=counts["vendidas"],
             disponibles=counts["disponibles"],
             asignadas=counts["asignadas"],
             separadas=counts.get("separadas", 0),
@@ -139,6 +144,7 @@ def register_routes(app):
             limite=limite,
             prev_url=prev_url,
             next_url=next_url,
+            export_url=export_url,
             has_filters=has_filters,
             boleta=boleta_detalle,
             sort_by=sort_by,
@@ -152,7 +158,6 @@ def register_routes(app):
             config = get_config()
         except Exception:
             config = {"valor_boleta": "100000"}
-        exclude_sort = request.args.get("_", "")
         filters, query, errors, _page, _limite, _offset, _has_filters, _numero_exacto = build_consulta_context(request.args)
         if errors:
             flash("Error al exportar: corrija los filtros.", "danger")
@@ -235,6 +240,7 @@ def register_routes(app):
                 [{"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}}],
             )
 
+            invalidate_dashboard_cache()
             flash(f"Datos guardados para #{boleta_id:04d}.", "success")
         except Exception as exc:
             flash(f"Error al guardar: {exc}", "danger")
@@ -300,15 +306,17 @@ def register_routes(app):
             )
 
             if factura_id:
+                metodo = pago.get("metodo", "")
                 facturas.update_one(
                     {"_id": factura_id},
-                    {"$pull": {"detalle": {"boleta": boleta_id, "valor": valor}}},
+                    {"$pull": {"detalle": {"boleta": boleta_id, "valor": valor, "metodo": metodo}}},
                 )
                 factura_doc = facturas.find_one({"_id": factura_id}, {"detalle": 1})
                 if factura_doc:
                     nuevo_total = sum(d.get("valor", 0) or 0 for d in (factura_doc.get("detalle") or []))
                     facturas.update_one({"_id": factura_id}, {"$set": {"valor_total": nuevo_total}})
 
+            invalidate_dashboard_cache()
             flash(f"Pago eliminado de #{boleta_id:04d}.", "success")
         except Exception as exc:
             flash(f"Error al eliminar pago: {exc}", "danger")
@@ -353,6 +361,7 @@ def register_routes(app):
                 ],
             )
 
+            invalidate_dashboard_cache()
             if result.modified_count:
                 flash(f"#{boleta_id:04d} recalcular: OK.", "success")
             else:
@@ -380,6 +389,7 @@ def register_routes(app):
                 {"$set": {"cliente": {"nombre": "", "telefono": "", "direccion": ""}}},
             )
 
+            invalidate_dashboard_cache()
             flash(f"Datos del cliente eliminados de #{boleta_id:04d}.", "success")
         except Exception as exc:
             flash(f"Error al limpiar cliente: {exc}", "danger")
@@ -389,6 +399,7 @@ def register_routes(app):
     @app.route("/api/clientes")
     @role_required("admin", "cajero", "consulta")
     def api_clientes():
+        require_collections()
         q = request.args.get("q", "").strip()
         if len(q) < 2:
             return jsonify([])
@@ -513,14 +524,15 @@ def register_routes(app):
         resultados = []
         for b in int_ids:
             doc = docs.get(b)
+            boleta_str = f"{b:04d}"
             if not doc:
-                resultados.append({"boleta": b, "ok": False, "error": "No existe"})
+                resultados.append({"boleta": boleta_str, "ok": False, "error": "No existe"})
             elif doc.get("estado") == "pagada":
-                resultados.append({"boleta": b, "ok": False, "error": "Pagada"})
+                resultados.append({"boleta": boleta_str, "ok": False, "error": "Pagada"})
             elif vendedor_id and doc.get("vendedor_id") != vendedor_id:
-                resultados.append({"boleta": b, "ok": False, "error": "Vendedor distinto", "actual": doc.get("vendedor_id")})
+                resultados.append({"boleta": boleta_str, "ok": False, "error": "Vendedor distinto", "actual": doc.get("vendedor_id")})
             else:
-                resultados.append({"boleta": b, "ok": True})
+                resultados.append({"boleta": boleta_str, "ok": True})
         return jsonify({"ok": True, "resultados": resultados})
 
     @app.route("/api/validar-boleta-cliente", methods=["POST"])
@@ -542,10 +554,11 @@ def register_routes(app):
         resultados = []
         for b in int_ids:
             doc = docs.get(b)
+            boleta_str = f"{b:04d}"
             if not doc:
-                resultados.append({"boleta": b, "ok": False, "error": "No existe"})
+                resultados.append({"boleta": boleta_str, "ok": False, "error": "No existe"})
             elif doc.get("estado") == "pagada":
-                resultados.append({"boleta": b, "ok": False, "error": "Pagada", "warning": True})
+                resultados.append({"boleta": boleta_str, "ok": False, "error": "Pagada", "warning": True})
             else:
-                resultados.append({"boleta": b, "ok": True, "estado": doc.get("estado"), "vendedor_id": doc.get("vendedor_id"), "cliente": (doc.get("cliente") or {}).get("nombre", "")})
+                resultados.append({"boleta": boleta_str, "ok": True, "estado": doc.get("estado"), "vendedor_id": doc.get("vendedor_id"), "cliente": (doc.get("cliente") or {}).get("nombre", "")})
         return jsonify({"ok": True, "resultados": resultados})

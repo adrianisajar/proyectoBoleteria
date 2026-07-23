@@ -14,6 +14,7 @@ from motores.shared import (
     current_user, get_config,
     calcular_premios_adicionales,
     estado_pipeline_expr,
+    invalidate_dashboard_cache,
     rollback_pagos_por_factura,
 )
 
@@ -132,7 +133,7 @@ def register_routes(app):
                     "valor_boleta": valor_boleta,
                     "vendedor_id": doc.get("vendedor_id", "LOCAL"),
                     "vendedor_nombre": vid_cache.get(doc.get("vendedor_id", "LOCAL"), "LOCAL"),
-                    "premios_adicionales": calcular_premios_adicionales(historial_completo, single_premio_config),
+                    "premios_adicionales": calcular_premios_adicionales(historial_hasta_factura, single_premio_config),
                     "historial_pagos": historial_hasta_factura,
                     "pagos_factura": historial_esta_factura,
                 }
@@ -191,6 +192,16 @@ def register_routes(app):
         valor_boleta_local = int(config_local["valor_boleta"])
 
         try:
+            facturas.update_one(
+                {"_id": factura_id},
+                {"$set": {
+                    "anulada": True,
+                    "anulada_en": now_local(),
+                    "anulada_por": user,
+                    "motivo_anulacion": motivo,
+                }},
+            )
+
             for boleta_id in factura.get("boletas", []):
                 boletas.update_one(
                     {"_id": boleta_id},
@@ -223,21 +234,12 @@ def register_routes(app):
                         },
                     ],
                 )
-
-            facturas.update_one(
-                {"_id": factura_id},
-                {"$set": {
-                    "anulada": True,
-                    "anulada_en": now_local(),
-                    "anulada_por": user,
-                    "motivo_anulacion": motivo,
-                }},
-            )
         except Exception:
             rollback_pagos_por_factura(factura_id, valor_boleta_local)
             flash(f"Error al anular la factura N\u00b0 {factura_id:05d}. Los cambios fueron revertidos.", "danger")
             return redirect(url_for("ver_factura", factura_id=factura_id))
 
+        invalidate_dashboard_cache()
         flash(f"Factura N\u00b0 {factura_id:05d} anulada.", "success")
         return redirect(url_for("ver_factura", factura_id=factura_id))
 
