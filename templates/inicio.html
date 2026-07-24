@@ -208,6 +208,7 @@
                         <th>Teléfono</th>
                         <th data-sort="total_abonado" class="sortable text-end">Abonado</th>
                         <th>Último pago</th>
+                        <th style="min-width:140px;">Adicionales</th>
                         <th class="text-end">Acción</th>
                     </tr>
                 </thead>
@@ -230,6 +231,17 @@
                                     <span class="badge text-bg-light border">{{ ultimo_pago.fecha }}</span>
                                 {% else %}
                                     <span class="text-secondary">Sin pagos</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.premios_adicionales %}
+                                    {% for p in item.premios_adicionales %}
+                                    <span class="badge {% if p.participa %}text-bg-success{% else %}text-bg-secondary{% endif %} me-1" title="{{ p.nombre }}: {{ p.fecha_juego }}">
+                                        {% if p.participa %}<i class="bi bi-check-lg"></i>{% else %}<i class="bi bi-x-lg"></i>{% endif %}
+                                    </span>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="text-secondary">—</span>
                                 {% endif %}
                             </td>
                             <td class="text-end">

@@ -56,10 +56,16 @@ def register_routes(app):
                     "cliente": 1,
                     "estado": 1,
                     "total_abonado": 1,
-                    "historial_pagos": {"$slice": -1},
+                    "historial_pagos": 1,
                 }
                 total_resultados = boletas.count_documents(query)
                 resultados = list(boletas.find(query, projection).sort(sort_by, sort_direction).skip(offset).limit(limite))
+                config_premios = None
+                for doc in resultados:
+                    if doc.get("historial_pagos") and config_premios is None:
+                        config_premios = config.get("premios_adicionales", [])
+                    if config_premios:
+                        doc["premios_adicionales"] = calcular_premios_adicionales(doc.get("historial_pagos", []), config_premios)
                 if numero_exacto and isinstance(query.get("_id"), int):
                     boleta_detalle = boletas.find_one({"_id": query["_id"]})
                     if boleta_detalle:

@@ -254,22 +254,27 @@ def calc_comision_por_boleta(vendidas, tiers=None):
 
 
 def calcular_premios_adicionales(historial_pagos, premios_config, valor_minimo=None):
-    if not premios_config or not historial_pagos:
-        return [{"nombre": p["nombre"], "fecha_juego": p["fecha_juego"], "participa": False} for p in (premios_config or [])]
-
     if valor_minimo is None:
         valor_minimo = get_config().get("valor_minimo_adicional", VALOR_MINIMO_PREMIO_ADICIONAL)
 
     premios_ordenados = sorted(premios_config, key=lambda p: p["fecha_juego"])
     resultado = []
 
-    for i, premio in enumerate(premios_ordenados):
+    consumed = 0
+    for premio in premios_ordenados:
+        if not historial_pagos:
+            resultado.append({"nombre": premio["nombre"], "fecha_juego": premio["fecha_juego"], "participa": False})
+            continue
+
         total_paid_before = sum(
             int(p.get("valor", 0) or 0)
             for p in historial_pagos
             if p.get("fecha", "9999-12-31") <= premio["fecha_juego"]
         )
-        participa = total_paid_before >= valor_minimo * (i + 1)
+        blocks = total_paid_before // valor_minimo
+        participa = blocks > consumed
+        if participa:
+            consumed += 1
         resultado.append({"nombre": premio["nombre"], "fecha_juego": premio["fecha_juego"], "participa": participa})
 
     return resultado
