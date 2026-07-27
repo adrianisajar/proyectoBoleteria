@@ -44,21 +44,20 @@ COMISION_DEFAULT_TIERS = [
     {"min": 51, "valor": 20000},
 ]
 
-# ── Premiums ──
-VALOR_MINIMO_PREMIO_ADICIONAL = 20000
-
 # ── Default config ──
 DEFAULT_CONFIG = {
     "_id": CONFIG_ID,
     "nombre_rifa": os.getenv("NOMBRE_RIFA", "Rifa Principal"),
     "valor_boleta": int(os.getenv("VALOR_BOLETA", "100000")),
+    "cantidad_boletas": 10000,
+    "premio_mayor": "",
+    "estado": "activa",
     "nombre_empresa": "",
     "direccion": "",
     "telefono": "",
     "ciudad": "",
     "footer_texto": "Documento interno, no tiene validez fiscal.",
     "observaciones_recaudo": "Todos los pagos fueron registrados correctamente.\nLas boletas actualizan autom\u00e1ticamente su saldo en el sistema.",
-    "premios_adicionales": [],
     "comisiones_tiers": COMISION_DEFAULT_TIERS,
 }
 
@@ -69,9 +68,7 @@ DEFAULT_RIFA = {
     "valor_boleta": int(os.getenv("VALOR_BOLETA", "100000")),
     "cantidad_boletas": 10000,
     "premio_mayor": "",
-    "valor_minimo_adicional": 20000,
     "comisiones_tiers": COMISION_DEFAULT_TIERS,
-    "premios_adicionales": [],
     "estado": "activa",
     "creada_en": None,
 }

@@ -12,7 +12,7 @@ from motores.shared import (
     request, flash, redirect, render_template, url_for, abort,
     require_collections, role_required,
     current_user, get_config,
-    calcular_premios_adicionales,
+
     estado_pipeline_expr,
     invalidate_dashboard_cache,
     rollback_pagos_por_factura,
@@ -41,21 +41,21 @@ def register_routes(app):
                     {"vendedor_nombre": {"$regex": re.escape(q), "$options": "i"}},
                     {"vendedor_id": {"$regex": re.escape(q), "$options": "i"}},
                 ]
-        lista = list(facturas.find(query).sort("_id", -1).limit(100))
+        lista = list(facturas.find(query).sort([("fecha", -1), ("_id", -1)]).limit(100))
         return render_template("facturas_list.html", facturas=lista, q=q)
 
     @app.route("/facturas/cliente")
     @role_required("admin", "cajero", "consulta")
     def facturas_cliente():
         require_collections()
-        lista = list(facturas.find({"tipo": "cliente"}).sort("_id", -1).limit(100))
+        lista = list(facturas.find({"tipo": "cliente"}).sort([("fecha", -1), ("_id", -1)]).limit(100))
         return render_template("facturas_cliente.html", facturas=lista)
 
     @app.route("/facturas/vendedor")
     @role_required("admin", "cajero", "consulta")
     def facturas_vendedor():
         require_collections()
-        lista = list(facturas.find({"tipo": "vendedor"}).sort("_id", -1).limit(100))
+        lista = list(facturas.find({"tipo": "vendedor"}).sort([("fecha", -1), ("_id", -1)]).limit(100))
         return render_template("facturas_vendedor.html", facturas=lista)
 
     @app.route("/facturas/<int:factura_id>")
@@ -68,46 +68,34 @@ def register_routes(app):
 
         ctx = {"factura": factura, "config": get_config(), "imprimir": request.args.get("imprimir")}
 
-        hoy = now_local().date()
         fecha_f = factura["fecha"]
         if isinstance(fecha_f, datetime):
-            if fecha_f.date() == hoy:
-                factura["fecha_display"] = fecha_f.strftime("%d/%m/%Y %I:%M %p")
+            if fecha_f.hour == 0 and fecha_f.minute == 0 and fecha_f.second == 0:
+                factura["fecha_display"] = fecha_f.strftime("%d/%m/%Y")
             else:
-                factura["fecha_display"] = fecha_f.strftime("%d/%m/%Y") + " 12:00 PM"
+                factura["fecha_display"] = fecha_f.strftime("%d/%m/%Y %I:%M %p")
 
         if factura.get("tipo") == "cliente":
             boletas_ids = factura.get("boletas", [])
             docs = list(boletas.find({"_id": {"$in": boletas_ids}}))
             config = ctx["config"]
             valor_boleta = int(config.get("valor_boleta", 10000))
-            premios_config = config.get("premios_adicionales", [])
-            # Solo el próximo premio adicional (fecha >= hoy)
-            hoy = now_local().date()
-            next_premio = None
-            for p in sorted(premios_config, key=lambda x: x.get("fecha_juego", "9999-12-31")):
-                try:
-                    if datetime.strptime(p["fecha_juego"], "%Y-%m-%d").date() >= hoy:
-                        next_premio = p
-                        break
-                except (ValueError, KeyError):
-                    continue
-            if next_premio:
-                ctx["premios_config"] = [next_premio]
-                single_premio_config = [next_premio]
-            else:
-                ctx["premios_config"] = []
-                single_premio_config = []
             boletas_info = {}
-            vid_cache = {v["_id"]: v.get("nombre", v["_id"]) for v in vendedores.find({}, {"nombre": 1})}
+            vendedores_vistos = {doc.get("vendedor_id") for doc in docs if doc.get("vendedor_id") and doc.get("vendedor_id") != VENDEDOR_LOCAL}
+            vid_cache = {}
+            if vendedores_vistos:
+                for v in vendedores.find({"_id": {"$in": list(vendedores_vistos)}}, {"nombre": 1}):
+                    vid_cache[v["_id"]] = v.get("nombre", v["_id"])
             for doc in docs:
                 bid = doc["_id"]
                 historial_completo = doc.get("historial_pagos") or []
-                # Todos los pagos hasta la fecha de la factura (para total_abonado, saldo e historial)
+                # Pagos hasta la fecha de la factura: filtramos por fecha del pago <= fecha de la factura
+                # Y adem�s por factura_id para resolver el orden dentro del mismo d�a
                 fecha_factura_str = factura["fecha"].strftime("%Y-%m-%d") if isinstance(factura["fecha"], datetime) else str(factura["fecha"])[:10]
                 historial_hasta_factura = [
                     p for p in historial_completo
-                    if str(p.get("fecha", ""))[:10] <= fecha_factura_str
+                    if (p.get("factura_id") is None or p.get("factura_id", 0) <= factura_id)
+                    and str(p.get("fecha", ""))[:10] <= fecha_factura_str
                 ]
                 # Pagos de esta factura (para tabla "PAGOS DE ESTA FACTURA")
                 historial_esta_factura = [
@@ -126,6 +114,7 @@ def register_routes(app):
                     estado_historico = "asignada"
                 else:
                     estado_historico = "disponible"
+
                 boletas_info[bid] = {
                     "total_abonado": total_hasta_factura,
                     "saldo_pendiente": saldo_hasta_factura,
@@ -133,7 +122,6 @@ def register_routes(app):
                     "valor_boleta": valor_boleta,
                     "vendedor_id": doc.get("vendedor_id", "LOCAL"),
                     "vendedor_nombre": vid_cache.get(doc.get("vendedor_id", "LOCAL"), "LOCAL"),
-                    "premios_adicionales": calcular_premios_adicionales(historial_hasta_factura, single_premio_config),
                     "historial_pagos": historial_hasta_factura,
                     "pagos_factura": historial_esta_factura,
                 }
@@ -191,20 +179,11 @@ def register_routes(app):
         config_local = get_config()
         valor_boleta_local = int(config_local["valor_boleta"])
 
+        boleta_ids = factura.get("boletas", [])
         try:
-            facturas.update_one(
-                {"_id": factura_id},
-                {"$set": {
-                    "anulada": True,
-                    "anulada_en": now_local(),
-                    "anulada_por": user,
-                    "motivo_anulacion": motivo,
-                }},
-            )
-
-            for boleta_id in factura.get("boletas", []):
-                boletas.update_one(
-                    {"_id": boleta_id},
+            if boleta_ids:
+                boletas.update_many(
+                    {"_id": {"$in": boleta_ids}},
                     [
                         {
                             "$set": {
@@ -234,9 +213,25 @@ def register_routes(app):
                         },
                     ],
                 )
-        except Exception:
-            rollback_pagos_por_factura(factura_id, valor_boleta_local)
-            flash(f"Error al anular la factura N\u00b0 {factura_id:05d}. Los cambios fueron revertidos.", "danger")
+
+            facturas.update_one(
+                {"_id": factura_id},
+                {"$set": {
+                    "anulada": True,
+                    "anulada_en": now_local(),
+                    "anulada_por": user,
+                    "motivo_anulacion": motivo,
+                }},
+            )
+        except Exception as exc:
+            try:
+                facturas.update_one(
+                    {"_id": factura_id},
+                    {"$set": {"anulada": False}},
+                )
+            except Exception:
+                pass
+            flash(f"Error al anular la factura N\u00b0 {factura_id:05d}: {exc}", "danger")
             return redirect(url_for("ver_factura", factura_id=factura_id))
 
         invalidate_dashboard_cache()

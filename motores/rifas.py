@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from motores.constants import CONFIG_ID, DEFAULT_CONFIG
+from motores.constants import CONFIG_ID, COMISION_DEFAULT_TIERS, DEFAULT_CONFIG
 from motores.fechas import now_local
 from motores.validacion import parse_money
 
@@ -24,37 +24,7 @@ def register_routes(app):
         if request.method == "POST":
             action = request.form.get("action", "")
 
-            if "premio_nombre[]" in request.form:
-                premios_adicionales = []
-                errores = []
-                hoy = now_local().date()
-                nombres = request.form.getlist("premio_nombre[]")
-                fechas = request.form.getlist("premio_fecha[]")
-                for nombre_p, fecha_p in zip(nombres, fechas):
-                    nombre_p = nombre_p.strip().upper()
-                    fecha_p = fecha_p.strip()
-                    if nombre_p and fecha_p:
-                        try:
-                            fecha_dt = datetime.strptime(fecha_p, "%Y-%m-%d").date()
-                        except ValueError:
-                            errores.append(f"Fecha inválida para '{nombre_p}'.")
-                            continue
-                        if fecha_dt < hoy:
-                            errores.append(f"Premio '{nombre_p}': la fecha ({fecha_p}) no puede ser anterior a hoy ({hoy.isoformat()}).")
-                            continue
-                        premios_adicionales.append({"nombre": nombre_p, "fecha_juego": fecha_p})
-                if errores:
-                    for e in errores:
-                        flash(e, "danger")
-                else:
-                    configuracion.update_one({"_id": CONFIG_ID}, {"$set": {"premios_adicionales": premios_adicionales}}, upsert=True)
-                    rifas.update_one({"estado": "activa"}, {"$set": {"premios_adicionales": premios_adicionales}})
-                    invalidate_config_cache()
-                    invalidate_dashboard_cache()
-                    flash("Premios adicionales guardados.", "success")
-                return redirect(url_for("configuracion_panel"))
-
-            elif action == "guardar_empresa":
+            if action == "guardar_empresa":
                 update = {
                     "nombre_empresa": request.form.get("nombre_empresa", "").strip(),
                     "direccion": request.form.get("direccion", "").strip().upper(),
@@ -72,13 +42,13 @@ def register_routes(app):
             elif action == "guardar_config":
                 valor_boleta = parse_money(request.form.get("valor_boleta", ""))
                 nombre = request.form.get("nombre_rifa", "").strip() or DEFAULT_CONFIG["nombre_rifa"]
-                valor_minimo_adicional = parse_money(request.form.get("valor_minimo_adicional", "20000")) or 20000
+                cantidad_boletas = parse_money(request.form.get("cantidad_boletas", "")) or 0
 
                 errors = []
                 if valor_boleta <= 0:
                     errors.append("El valor de la boleta debe ser mayor que cero.")
-                if valor_minimo_adicional < 0:
-                    errors.append("El valor mínimo para premios adicionales no puede ser negativo.")
+                if cantidad_boletas < 1:
+                    errors.append("La cantidad de boletas debe ser al menos 1.")
 
                 if errors:
                     for error in errors:
@@ -87,15 +57,43 @@ def register_routes(app):
                     update = {
                         "nombre_rifa": nombre,
                         "valor_boleta": valor_boleta,
-                        "valor_minimo_adicional": valor_minimo_adicional,
+                        "cantidad_boletas": cantidad_boletas,
                     }
                     configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
-                    rifas.update_one({"estado": "activa"}, {"$set": {"nombre": nombre, "valor_boleta": valor_boleta, "valor_minimo_adicional": valor_minimo_adicional}})
-                    invalidate_config_cache()
-                    invalidate_dashboard_cache()
+                    try:
+                        rifas.update_one({"estado": "activa"}, {"$set": {"nombre": nombre, "valor_boleta": valor_boleta, "cantidad_boletas": cantidad_boletas}})
+                    except Exception:
+                        flash("Advertencia: no se pudo actualizar el documento de la rifa.", "warning")
                     sync_ticket_statuses(valor_boleta)
+                    invalidate_dashboard_cache()
+                    invalidate_config_cache()
                     flash("Parámetros de la rifa guardados.", "success")
                     return redirect(url_for("configuracion_panel"))
+
+            elif action == "guardar_comisiones":
+                try:
+                    indices = request.form.getlist("tier_idx")
+                    nuevos_tiers = []
+                    for idx in indices:
+                        min_val = parse_money(request.form.get(f"tier_min_{idx}", ""))
+                        valor = parse_money(request.form.get(f"tier_valor_{idx}", ""))
+                        if min_val is not None and valor is not None and min_val >= 0 and valor >= 0:
+                            nuevos_tiers.append({"min": min_val, "valor": valor})
+                    if not nuevos_tiers:
+                        flash("Debe haber al menos un tier de comisión.", "danger")
+                    else:
+                        nuevos_tiers.sort(key=lambda t: t["min"])
+                        update = {"comisiones_tiers": nuevos_tiers}
+                        configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
+                        try:
+                            rifas.update_one({"estado": "activa"}, {"$set": update})
+                        except Exception:
+                            flash("Advertencia: no se pudo actualizar comisiones en el documento de rifa.", "warning")
+                        invalidate_config_cache()
+                        flash("Comisiones guardadas correctamente.", "success")
+                except Exception as exc:
+                    flash(f"Error al guardar comisiones: {exc}", "danger")
+                return redirect(url_for("configuracion_panel"))
 
         return render_template("configuracion.html", config=config, rifa=rifa)
 
@@ -108,7 +106,6 @@ def register_routes(app):
         confirmacion = request.form.get("confirmacion", "").strip().upper()
         cantidad_boletas = parse_money(request.form.get("cantidad_boletas", "10000")) or 10000
         premio_mayor = request.form.get("premio_mayor", "").strip()
-        valor_minimo_adicional = parse_money(request.form.get("valor_minimo_adicional", "20000")) or 20000
         estado = request.form.get("estado", "activa").strip()
 
         errors = []
@@ -131,7 +128,6 @@ def register_routes(app):
                 conservar_vendedores,
                 cantidad_boletas=cantidad_boletas,
                 premio_mayor=premio_mayor,
-                valor_minimo_adicional=valor_minimo_adicional,
                 estado=estado,
             )
         except Exception as exc:

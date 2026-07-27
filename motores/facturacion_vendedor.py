@@ -231,7 +231,7 @@ def register_routes(app):
                 factura = {
                     "_id": factura_id,
                     "tipo": "vendedor",
-                    "fecha": datetime.strptime(fecha, "%Y-%m-%d"),
+                    "fecha": now_local() if fecha_dt.date() == now_local().date() else fecha_dt,
                     "boletas": sorted(boleta_ids),
                     "detalle": detalle,
                     "valor_total": valor_total,

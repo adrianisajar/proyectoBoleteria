@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime
 
 from motores.constants import VENDEDOR_LOCAL, METODO_EFECTIVO, METODO_TRANSFERENCIA
@@ -69,6 +70,14 @@ def register_routes(app):
             errors = []
             if not nombre:
                 errors.append("El nombre del cliente es obligatorio.")
+            if telefono and not all(c in "0123456789 +-()" for c in telefono):
+                errors.append("El tel\u00e9fono contiene caracteres inv\u00e1lidos. Use solo d\u00edgitos, espacios, guiones o par\u00e9ntesis.")
+            if len(telefono) > 30:
+                errors.append("El tel\u00e9fono no puede tener m\u00e1s de 30 caracteres.")
+            if len(nombre) > 100:
+                errors.append("El nombre no puede tener m\u00e1s de 100 caracteres.")
+            if len(direccion) > 200:
+                errors.append("La direcci\u00f3n no puede tener m\u00e1s de 200 caracteres.")
             if not fecha_str:
                 errors.append("Debe indicar la fecha del abono.")
             else:
@@ -121,8 +130,13 @@ def register_routes(app):
                         errors.append(f"Banco obligatorio para transferencia en boleta #{r['boleta']:04d}.")
 
             if not errors:
+                seen_refs = set()
                 for r in rows:
                     if r["metodo"] == METODO_TRANSFERENCIA:
+                        ref_key = (r["referencia"].strip(), r["banco"].strip())
+                        if ref_key in seen_refs:
+                            continue
+                        seen_refs.add(ref_key)
                         ref = r["referencia"].strip()
                         banco_val = r["banco"].strip()
                         elem_match = {"metodo": METODO_TRANSFERENCIA, "referencia": ref}
@@ -166,20 +180,25 @@ def register_routes(app):
                 config_local = get_config()
                 valor_boleta_local = int(config_local["valor_boleta"])
 
+                groups = defaultdict(list)
                 for r in rows:
                     if r["monto"] > 0:
-                        pago_form = {
-                            "boletas": f"{r['boleta']:04d}",
-                            "valor": str(r["monto"]),
-                            "fecha": fecha_str,
-                            "metodo": r["metodo"],
-                            "referencia": r["referencia"],
-                            "banco": r.get("banco", ""),
-                        }
-                        _form_data, preview = build_abono_preview(pago_form, factura_id=factura_id)
-                        if not preview.get("can_confirm"):
-                            raise ValueError("; ".join(preview.get("errors", [])))
-                        registrar_abono_lote([r["boleta"]], _form_data, preview["valor_abono"], factura_id=factura_id)
+                        key = (r["metodo"], r["referencia"], r.get("banco", ""), r["monto"])
+                        groups[key].append(r["boleta"])
+
+                for (metodo, referencia, banco, monto), boleta_ids_group in groups.items():
+                    pago_form = {
+                        "boletas": ",".join(f"{b:04d}" for b in boleta_ids_group),
+                        "valor": str(monto),
+                        "fecha": fecha_str,
+                        "metodo": metodo,
+                        "referencia": referencia,
+                        "banco": banco,
+                    }
+                    _form_data, preview = build_abono_preview(pago_form, factura_id=factura_id)
+                    if not preview.get("can_confirm"):
+                        raise ValueError("; ".join(preview.get("errors", [])))
+                    registrar_abono_lote(boleta_ids_group, _form_data, preview["valor_abono"], factura_id=factura_id)
 
                 docs = list(boletas.find({"_id": {"$in": boleta_ids}}, sort=[("_id", 1)]))
                 detalle = []
@@ -202,7 +221,7 @@ def register_routes(app):
                 factura = {
                     "_id": factura_id,
                     "tipo": "cliente",
-                    "fecha": datetime.strptime(fecha_str, "%Y-%m-%d"),
+                    "fecha": now_local() if fecha_dt.date() == now_local().date() else fecha_dt,
                     "boletas": sorted(boleta_ids),
                     "detalle": detalle,
                     "valor_total": valor_total,

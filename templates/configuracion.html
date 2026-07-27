@@ -41,11 +41,8 @@
                         </div>
                     </div>
                     <div class="col-md-6">
-                        <label for="valor_minimo_adicional" class="form-label fw-semibold">Valor mín. premio adicional</label>
-                        <div class="input-group">
-                            <span class="input-group-text">$</span>
-                            <input type="text" class="form-control" id="valor_minimo_adicional" name="valor_minimo_adicional" value="{{ rifa.valor_minimo_adicional or 20000 }}">
-                        </div>
+                        <label for="cantidad_boletas" class="form-label fw-semibold">Cantidad de boletas</label>
+                        <input type="number" class="form-control" id="cantidad_boletas" name="cantidad_boletas" value="{{ rifa.cantidad_boletas }}" min="1">
                     </div>
                     <div class="col-12 d-grid">
                         <button type="submit" class="btn btn-primary">Guardar par&aacute;metros</button>
@@ -91,36 +88,53 @@
         </div>
 
         <div class="office-card bg-body p-3 p-md-4">
-            <h2 class="section-title mb-3">Premios adicionales</h2>
-            <p class="text-secondary small mb-3">Cada ${{ "{:,}".format(rifa.valor_minimo_adicional) }} abonados antes de la fecha del premio dan derecho a participar.</p>
+            <h2 class="section-title mb-3">Comisiones por vendedor</h2>
+            <p class="text-secondary small mb-3">Cada vendedor recibe una comisi&oacute;n fija por boleta vendida, seg&uacute;n el n&uacute;mero total de boletas que haya vendido.</p>
             <form method="post">
-                <input type="hidden" name="guardar_premios" value="1">
-                <input type="hidden" name="rifa_id" value="{{ rifa._id }}">
-                <div id="premiosContainer">
-                    {% for premio in rifa.get('premios_adicionales', []) %}
-                    <div class="row g-2 mb-2 premio-row">
-                        <div class="col-md-6">
-                            <input type="text" class="form-control" name="premio_nombre[]" value="{{ premio.nombre }}" placeholder="Nombre del premio">
-                        </div>
-                        <div class="col-md-4">
-                            <input type="date" class="form-control" name="premio_fecha[]" value="{{ premio.fecha_juego }}">
-                        </div>
-                        <div class="col-md-2 d-grid">
-                            <button type="button" class="btn btn-outline-danger" onclick="this.closest('.premio-row').remove()">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                    {% endfor %}
+                <input type="hidden" name="action" value="guardar_comisiones">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-3">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Desde (boletas vendidas)</th>
+                                <th>Comisi&oacute;n por boleta</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tiers-body">
+                            {% for tier in config.comisiones_tiers %}
+                            <tr>
+                                <td>
+                                    <input type="hidden" name="tier_idx" value="{{ loop.index0 }}">
+                                    <input type="number" class="form-control form-control-sm" name="tier_min_{{ loop.index0 }}" value="{{ tier.min }}" min="0" required>
+                                </td>
+                                <td>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text">$</span>
+                                        <input type="text" class="form-control" name="tier_valor_{{ loop.index0 }}" value="{{ tier.valor }}" required>
+                                    </div>
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('tr').remove()">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
-                <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="agregarPremioBtn">
-                    <i class="bi bi-plus-lg"></i> Agregar premio
-                </button>
-                <div class="mt-3 d-grid">
-                    <button type="submit" class="btn btn-primary">Guardar premios</button>
+                <div class="d-flex gap-2 mb-3">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="agregarTier()">
+                        <i class="bi bi-plus-circle me-1"></i>Agregar tier
+                    </button>
+                </div>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary">Guardar comisiones</button>
                 </div>
             </form>
         </div>
+
         {% endif %}
     </div>
 
@@ -179,10 +193,6 @@
                     <input type="text" class="form-control" id="premio_mayor" name="premio_mayor" placeholder="Opcional">
                 </div>
                 <div class="col-md-3">
-                    <label for="valor_min_adic" class="form-label fw-semibold">Valor m&iacute;nimo adicional</label>
-                    <input type="text" inputmode="numeric" class="form-control" id="valor_min_adic" name="valor_minimo_adicional" value="20000">
-                </div>
-                <div class="col-md-3">
                     <label for="estado_nueva" class="form-label fw-semibold">Estado inicial</label>
                     <input type="hidden" name="estado" value="activa">
                     <div class="form-control-plaintext fw-semibold">Activa</div>
@@ -212,26 +222,29 @@
 
 {% block scripts %}
 <script>
-    document.getElementById("agregarPremioBtn").addEventListener("click", function() {
-        const container = document.getElementById("premiosContainer");
-        const row = document.createElement("div");
-        row.className = "row g-2 mb-2 premio-row";
-        row.innerHTML = [
-            '<div class="col-md-6">',
-            '<input type="text" class="form-control" name="premio_nombre[]" placeholder="Nombre del premio">',
-            '</div>',
-            '<div class="col-md-4">',
-            '<input type="date" class="form-control" name="premio_fecha[]">',
-            '</div>',
-            '<div class="col-md-2 d-grid">',
-            '<button type="button" class="btn btn-outline-danger" onclick="this.closest(\'.premio-row\').remove()">',
-            '<i class="bi bi-trash"></i>',
-            '</button>',
-            '</div>',
-        ].join("");
-        container.appendChild(row);
-    });
-
-
+let tierCounter = {{ config.comisiones_tiers|length }};
+function agregarTier() {
+    const tbody = document.getElementById('tiers-body');
+    const idx = tierCounter++;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td>
+            <input type="hidden" name="tier_idx" value="${idx}">
+            <input type="number" class="form-control form-control-sm" name="tier_min_${idx}" value="0" min="0" required>
+        </td>
+        <td>
+            <div class="input-group input-group-sm">
+                <span class="input-group-text">$</span>
+                <input type="text" class="form-control" name="tier_valor_${idx}" value="0" required>
+            </div>
+        </td>
+        <td class="text-end">
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('tr').remove()">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+}
 </script>
 {% endblock %}

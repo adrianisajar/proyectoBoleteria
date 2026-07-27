@@ -1,3 +1,4 @@
+import copy
 import io
 import zipfile
 import xml.etree.ElementTree as ET
@@ -18,6 +19,7 @@ from unicodedata import normalize as unicode_normalize
 
 from flask import (
     abort,
+    current_app,
     flash,
     g,
     jsonify,
@@ -32,7 +34,7 @@ from database import boletas, configuracion, facturas, rifas, vendedores
 from motores.constants import (
     BOLETA_MIN, BOLETA_MAX, METODOS_PAGO, OPERACIONES_VENDEDOR,
     ESTADOS_BOLETA, CONSULTA_LIMIT_DEFAULT, CONSULTA_LIMIT_MAX,
-    CONFIG_ID, COMISION_DEFAULT_TIERS, VALOR_MINIMO_PREMIO_ADICIONAL,
+    CONFIG_ID, COMISION_DEFAULT_TIERS,
     DEFAULT_RIFA, DEFAULT_CONFIG,
     VENDEDOR_LOCAL, VENDEDOR_SIN_ASIGNAR, METODO_EFECTIVO, METODO_TRANSFERENCIA, REFERENCIA_N_A,
     USUARIO_SISTEMA,
@@ -80,12 +82,7 @@ def get_rifa_activa(force=False):
                 rifa["creada_en"] = now_local()
                 rifa["_id"] = rifas.insert_one(rifa).inserted_id
         else:
-            stored = configuracion.find_one({"_id": CONFIG_ID}) if configuracion is not None else None
-            if stored:
-                premios = stored.get("premios_adicionales")
-                if premios and not rifa.get("premios_adicionales"):
-                    rifa["premios_adicionales"] = premios
-        RIFA_CACHE["data"] = rifa.copy()
+            RIFA_CACHE["data"] = rifa.copy()
         RIFA_CACHE["loaded_at"] = time.monotonic()
         migrar_boletas_existentes(rifa["_id"])
         return rifa.copy()
@@ -101,9 +98,7 @@ def migrar_config_a_rifa(config_doc):
         "valor_boleta": int(config_doc.get("valor_boleta", DEFAULT_RIFA["valor_boleta"])),
         "cantidad_boletas": DEFAULT_RIFA["cantidad_boletas"],
         "premio_mayor": "",
-        "valor_minimo_adicional": DEFAULT_RIFA["valor_minimo_adicional"],
         "comisiones_tiers": config_doc.get("comisiones_tiers", COMISION_DEFAULT_TIERS),
-        "premios_adicionales": config_doc.get("premios_adicionales", []),
         "estado": "activa",
         "creada_en": now_local(),
     }
@@ -137,16 +132,17 @@ def invalidate_config_cache():
 
 def get_config(force=False):
     if not force and CONFIG_CACHE["data"] and time.monotonic() - CONFIG_CACHE["loaded_at"] < CONFIG_CACHE_SECONDS:
-        return CONFIG_CACHE["data"].copy()
+        return copy.deepcopy(CONFIG_CACHE["data"])
 
     rifa = get_rifa_activa(force)
-    config = DEFAULT_CONFIG.copy()
+    config = copy.deepcopy(DEFAULT_CONFIG)
     config.update({
         "nombre_rifa": rifa.get("nombre", DEFAULT_CONFIG["nombre_rifa"]),
         "valor_boleta": int(rifa.get("valor_boleta", DEFAULT_CONFIG["valor_boleta"])),
-        "premios_adicionales": rifa.get("premios_adicionales", []),
+        "cantidad_boletas": int(rifa.get("cantidad_boletas", 10000)),
+        "premio_mayor": rifa.get("premio_mayor", ""),
+        "estado": rifa.get("estado", "activa"),
         "comisiones_tiers": rifa.get("comisiones_tiers", COMISION_DEFAULT_TIERS),
-        "valor_minimo_adicional": int(rifa.get("valor_minimo_adicional", VALOR_MINIMO_PREMIO_ADICIONAL)),
         "rifa_id": rifa.get("_id"),
     })
 
@@ -156,17 +152,19 @@ def get_config(force=False):
             config["nombre_rifa"] = stored["nombre_rifa"]
         if stored.get("valor_boleta") is not None:
             config["valor_boleta"] = int(stored["valor_boleta"])
-        if stored.get("premios_adicionales") is not None:
-            config["premios_adicionales"] = stored["premios_adicionales"]
+        if stored.get("cantidad_boletas") is not None:
+            config["cantidad_boletas"] = int(stored["cantidad_boletas"])
+        if stored.get("premio_mayor"):
+            config["premio_mayor"] = stored["premio_mayor"]
+        if stored.get("estado"):
+            config["estado"] = stored["estado"]
         if stored.get("comisiones_tiers") is not None:
             config["comisiones_tiers"] = stored["comisiones_tiers"]
-        if stored.get("valor_minimo_adicional") is not None:
-            config["valor_minimo_adicional"] = int(stored["valor_minimo_adicional"])
         for k in ("nombre_empresa", "direccion", "telefono", "ciudad", "footer_texto", "observaciones_recaudo"):
             if k in stored and stored[k]:
                 config[k] = stored[k]
 
-    CONFIG_CACHE["data"] = config
+    CONFIG_CACHE["data"] = copy.deepcopy(config)
     CONFIG_CACHE["loaded_at"] = time.monotonic()
     return config
 
@@ -253,57 +251,17 @@ def calc_comision_por_boleta(vendidas, tiers=None):
     return 0
 
 
-def calcular_premios_adicionales(historial_pagos, premios_config, valor_minimo=None):
-    if valor_minimo is None:
-        valor_minimo = get_config().get("valor_minimo_adicional", VALOR_MINIMO_PREMIO_ADICIONAL)
 
-    premios_ordenados = sorted(premios_config, key=lambda p: p["fecha_juego"])
-    resultado = []
-
-    consumed = 0
-    for premio in premios_ordenados:
-        if not historial_pagos:
-            resultado.append({"nombre": premio["nombre"], "fecha_juego": premio["fecha_juego"], "participa": False})
-            continue
-
-        total_paid_before = sum(
-            int(p.get("valor", 0) or 0)
-            for p in historial_pagos
-            if p.get("fecha", "9999-12-31") <= premio["fecha_juego"]
-        )
-        blocks = total_paid_before // valor_minimo
-        participa = blocks > consumed
-        if participa:
-            consumed += 1
-        resultado.append({"nombre": premio["nombre"], "fecha_juego": premio["fecha_juego"], "participa": participa})
-
-    return resultado
 
 
 def get_alertas():
     try:
-        alertas_list = []
-        config = get_config()
-        rifa = get_rifa_activa()
-
-        hoy = now_local().date()
-        for p in (config.get("premios_adicionales") or []):
-            try:
-                f = datetime.strptime(p["fecha_juego"], "%Y-%m-%d").date()
-                dias = (f - hoy).days
-                if 0 <= dias <= 7:
-                    alertas_list.append({
-                        "tipo": "premio",
-                        "icono": "bi-trophy",
-                        "color": "warning",
-                        "mensaje": f"Premio '{p['nombre']}' en {dias} día(s) ({p['fecha_juego']})",
-                    })
-            except (ValueError, KeyError):
-                pass
-
-        return alertas_list
+        return []
     except Exception:
         return []
+
+
+
 
 
 def get_vendedor_options():
@@ -332,6 +290,21 @@ def get_dashboard_counts(rifa_id=None, valor_boleta=100000):
             "$group": {
                 "_id": None,
                 "total": {"$sum": 1},
+                "recaudo_total": {"$sum": {"$ifNull": ["$total_abonado", 0]}},
+                "saldo_pendiente": {
+                    "$sum": {
+                        "$cond": [
+                            {
+                                "$and": [
+                                    {"$gt": [{"$ifNull": ["$total_abonado", 0]}, 0]},
+                                    {"$lt": [{"$ifNull": ["$total_abonado", 0]}, valor_boleta]},
+                                ]
+                            },
+                            {"$subtract": [valor_boleta, {"$ifNull": ["$total_abonado", 0]}]},
+                            0,
+                        ]
+                    }
+                },
                 "pagadas": {"$sum": {"$cond": [{"$gte": [{"$ifNull": ["$total_abonado", 0]}, valor_boleta]}, 1, 0]}},
                 "abonando": {"$sum": {"$cond": [
                     {"$and": [
@@ -366,6 +339,8 @@ def get_dashboard_counts(rifa_id=None, valor_boleta=100000):
     disponibles = total - pagadas - abonando - separadas - asignadas
     return {
         "total": total,
+        "recaudo_total": int(stats.get("recaudo_total", 0) or 0),
+        "saldo_pendiente": int(stats.get("saldo_pendiente", 0) or 0),
         "disponibles": max(disponibles, 0),
         "separadas": separadas,
         "abonando": abonando,
@@ -393,36 +368,10 @@ def get_dashboard_stats(force=False):
 
     match_rifa = [{"$match": {"rifa_id": rifa_id}}] if rifa_id else []
 
-    totals = first_aggregate(
-        boletas,
-        match_rifa + [
-            {
-                "$group": {
-                    "_id": None,
-                    "recaudo_total": {"$sum": {"$ifNull": ["$total_abonado", 0]}},
-                    "saldo_pendiente": {
-                        "$sum": {
-                            "$cond": [
-                                {
-                                    "$and": [
-                                        {"$gt": [{"$ifNull": ["$total_abonado", 0]}, 0]},
-                                        {"$lt": [{"$ifNull": ["$total_abonado", 0]}, valor_boleta]},
-                                    ]
-                                },
-                                {"$subtract": [valor_boleta, {"$ifNull": ["$total_abonado", 0]}]},
-                                0,
-                            ]
-                        }
-                    },
-                }
-            }
-        ],
-        {"recaudo_total": 0, "saldo_pendiente": 0},
-    )
-
     today_totals = first_aggregate(
         boletas,
         match_rifa + [
+            {"$match": {"historial_pagos.fecha": today}},
             {"$unwind": {"path": "$historial_pagos", "preserveNullAndEmptyArrays": False}},
             {"$match": {"historial_pagos.fecha": today}},
             {"$group": {"_id": None, "recaudo_hoy": {"$sum": "$historial_pagos.valor"}, "pagos_hoy": {"$sum": 1}}},
@@ -467,24 +416,26 @@ def get_dashboard_stats(force=False):
             ]
         )
     )
-    nombres = {doc["_id"]: doc.get("nombre", "") for doc in vendedores.find({}, {"nombre": 1})}
-    for item in ranking:
-        item["nombre"] = nombres.get(item["_id"], "Oficina local" if item["_id"] == VENDEDOR_LOCAL else "Sin registrar" if item["_id"] in ("", None) else "")
+    if ranking:
+        vendedor_ids = [item["_id"] for item in ranking if item["_id"] not in ("", None, VENDEDOR_LOCAL)]
+        nombres = {}
+        if vendedor_ids:
+            for doc in vendedores.find({"_id": {"$in": vendedor_ids}}, {"nombre": 1}):
+                nombres[doc["_id"]] = doc.get("nombre", "")
+        for item in ranking:
+            item["nombre"] = nombres.get(item["_id"], "Oficina local" if item["_id"] == VENDEDOR_LOCAL else "Sin registrar" if item["_id"] in ("", None) else "")
 
-    recaudo_total = int(totals.get("recaudo_total", 0) or 0)
     recaudo_potencial = total_boletas * valor_boleta
 
     result = {
         **counts,
-        "recaudo_total": recaudo_total,
-        "saldo_pendiente": totals.get("saldo_pendiente", 0),
         "recaudo_hoy": today_totals.get("recaudo_hoy", 0),
         "pagos_hoy": today_totals.get("pagos_hoy", 0),
         "ranking": ranking,
         "valor_boleta": valor_boleta,
         "recaudo_potencial": recaudo_potencial,
         "progreso_ventas_pct": round((vendidas / total_boletas) * 100, 1) if total_boletas else 0,
-        "progreso_recaudo_pct": round((recaudo_total / recaudo_potencial) * 100, 1) if recaudo_potencial else 0,
+        "progreso_recaudo_pct": round((counts["recaudo_total"] / recaudo_potencial) * 100, 1) if recaudo_potencial else 0,
         "pagos_efectivo": pagos_efectivo,
         "pagos_transferencia": pagos_transferencia,
         "pagos_otros": pagos_otros,
@@ -591,6 +542,9 @@ def build_consulta_context(args):
         "referencia": args.get("referencia", "").strip(),
         "cliente_estado": args.get("cliente_estado", "").strip(),
         "abono_estado": args.get("abono_estado", "").strip(),
+        "abonado_op": args.get("abonado_op", "").strip(),
+        "abonado_valor": args.get("abonado_valor", "").strip(),
+
         "saldo_estado": args.get("saldo_estado", "").strip(),
         "limite": args.get("limite", str(CONSULTA_LIMIT_DEFAULT)).strip(),
     }
@@ -670,6 +624,19 @@ def build_consulta_context(args):
         query.setdefault("$and", []).append({"estado": "pagada"})
     elif filters["saldo_estado"]:
         errors.append("Filtro de saldo inválido.")
+
+    abonado_op = filters["abonado_op"]
+    abonado_valor_raw = filters["abonado_valor"]
+    if abonado_valor_raw:
+        if abonado_op not in ("gte", "lte", "eq"):
+            errors.append("Operador de abonado inválido.")
+        else:
+            abonado_valor = parse_money(abonado_valor_raw)
+            if abonado_valor is not None and abonado_valor >= 0:
+                op_map = {"gte": "$gte", "lte": "$lte", "eq": "$eq"}
+                query["total_abonado"] = {op_map[abonado_op]: abonado_valor}
+            else:
+                errors.append("Valor de abonado inválido.")
 
     if filters["estado"]:
         if filters["estado"] == "disponible":
@@ -886,6 +853,12 @@ def registrar_abono_lote(boleta_ids, form_data, valor_abono, factura_id=None):
             },
         ],
     )
+    if result.modified_count < len(boleta_ids):
+        skipped = len(boleta_ids) - result.modified_count
+        current_app.logger.warning(
+            "registrar_abono_lote: %d boleta(s) no se actualizaron "
+            "(probablemente ya estaban pagadas)", skipped
+        )
     invalidate_dashboard_cache()
     return result
 
@@ -1218,7 +1191,7 @@ def crear_indices_boletas():
 
 def crear_nueva_rifa(nombre, valor_boleta, conservar_vendedores,
                      cantidad_boletas=10000, premio_mayor="",
-                     valor_minimo_adicional=20000, estado="activa"):
+                     estado="activa"):
     require_collections()
     asignaciones = []
     if conservar_vendedores:
@@ -1251,9 +1224,7 @@ def crear_nueva_rifa(nombre, valor_boleta, conservar_vendedores,
         "valor_boleta": valor_boleta,
         "cantidad_boletas": cantidad_boletas,
         "premio_mayor": premio_mayor,
-        "valor_minimo_adicional": valor_minimo_adicional,
         "comisiones_tiers": COMISION_DEFAULT_TIERS,
-        "premios_adicionales": [],
         "estado": estado,
         "creada_en": now_local(),
     }
@@ -1264,10 +1235,8 @@ def crear_nueva_rifa(nombre, valor_boleta, conservar_vendedores,
         "valor_boleta": valor_boleta,
         "cantidad_boletas": cantidad_boletas,
         "premio_mayor": premio_mayor,
-        "valor_minimo_adicional": valor_minimo_adicional,
         "estado": estado,
         "creada_en": now_local(),
-        "premios_adicionales": [],
     }
     configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
     invalidate_config_cache()

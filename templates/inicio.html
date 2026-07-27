@@ -115,15 +115,20 @@
                 <option value="sin_abono" {% if filters.abono_estado == "sin_abono" %}selected{% endif %}>Sin abono</option>
             </select>
         </div>
+        <div class="col-sm-6 col-lg-3">
+            <label for="abonado_op" class="form-label fw-semibold">Cantidad abonado</label>
+            <div class="input-group">
+                <select class="form-select flex-shrink-1" id="abonado_op" name="abonado_op" style="max-width:120px">
+                    <option value="" {% if not filters.abonado_op %}selected{% endif %}>--</option>
+                    <option value="gte" {% if filters.abonado_op == "gte" %}selected{% endif %}>&ge;</option>
+                    <option value="lte" {% if filters.abonado_op == "lte" %}selected{% endif %}>&le;</option>
+                    <option value="eq" {% if filters.abonado_op == "eq" %}selected{% endif %}>=</option>
+                </select>
+                <span class="input-group-text">$</span>
+                <input type="text" inputmode="numeric" class="form-control" id="abonado_valor" name="abonado_valor" value="{{ filters.abonado_valor }}" placeholder="0">
+            </div>
+        </div>
 
-        <div class="col-sm-6 col-lg-2">
-            <label for="desde" class="form-label fw-semibold">Desde</label>
-            <input type="number" class="form-control ticket-number" id="desde" name="desde" value="{{ filters.desde }}" min="0" max="9999" placeholder="0000">
-        </div>
-        <div class="col-sm-6 col-lg-2">
-            <label for="hasta" class="form-label fw-semibold">Hasta</label>
-            <input type="number" class="form-control ticket-number" id="hasta" name="hasta" value="{{ filters.hasta }}" min="0" max="9999" placeholder="9999">
-        </div>
         <div class="col-sm-6 col-lg-3">
             <label for="cliente" class="form-label fw-semibold">Nombre</label>
             <input type="text" class="form-control" id="cliente" name="cliente" value="{{ filters.cliente }}" placeholder="Cliente" list="clientesSugeridos" autocomplete="off">
@@ -139,15 +144,6 @@
                 <option value="">Todos</option>
                 <option value="efectivo" {% if filters.pago_metodo == "efectivo" %}selected{% endif %}>Efectivo</option>
                 <option value="transferencia" {% if filters.pago_metodo == "transferencia" %}selected{% endif %}>Transferencia</option>
-            </select>
-        </div>
-
-        <div class="col-sm-6 col-lg-3">
-            <label for="saldo_estado" class="form-label fw-semibold">Saldo</label>
-            <select class="form-select" id="saldo_estado" name="saldo_estado">
-                <option value="">Todos</option>
-                <option value="pendiente" {% if filters.saldo_estado == "pendiente" %}selected{% endif %}>Con saldo pendiente</option>
-                <option value="sin_saldo" {% if filters.saldo_estado == "sin_saldo" %}selected{% endif %}>Sin saldo</option>
             </select>
         </div>
 
@@ -176,7 +172,7 @@
     </form>
 </div>
 
-<div class="office-card bg-body overflow-hidden mb-4">
+<div id="resultados" class="office-card bg-body overflow-hidden mb-4"{% if not has_filters %} style="display:none"{% endif %}>
     <div class="p-3 p-md-4 border-bottom d-flex flex-column flex-md-row justify-content-between gap-2">
         <div>
             <h2 class="h5 mb-0">Resultados</h2>
@@ -208,7 +204,6 @@
                         <th>Teléfono</th>
                         <th data-sort="total_abonado" class="sortable text-end">Abonado</th>
                         <th>Último pago</th>
-                        <th style="min-width:140px;">Adicionales</th>
                         <th class="text-end">Acción</th>
                     </tr>
                 </thead>
@@ -231,17 +226,6 @@
                                     <span class="badge text-bg-light border">{{ ultimo_pago.fecha }}</span>
                                 {% else %}
                                     <span class="text-secondary">Sin pagos</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if item.premios_adicionales %}
-                                    {% for p in item.premios_adicionales %}
-                                    <span class="badge {% if p.participa %}text-bg-success{% else %}text-bg-secondary{% endif %} me-1" title="{{ p.nombre }}: {{ p.fecha_juego }}">
-                                        {% if p.participa %}<i class="bi bi-check-lg"></i>{% else %}<i class="bi bi-x-lg"></i>{% endif %}
-                                    </span>
-                                    {% endfor %}
-                                {% else %}
-                                    <span class="text-secondary">—</span>
                                 {% endif %}
                             </td>
                             <td class="text-end">
@@ -420,37 +404,7 @@
             <div class="alert alert-secondary mb-0">Esta boleta no registra abonos.</div>
         {% endif %}
 
-        {% if boleta.premios_adicionales %}
-        <div class="mt-4">
-            <h3 class="h6 fw-bold mb-3">Premios adicionales</h3>
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Premio</th>
-                            <th>Fecha de juego</th>
-                            <th>Participa</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for premio in boleta.premios_adicionales %}
-                            <tr>
-                                <td class="fw-bold">{{ premio.nombre }}</td>
-                                <td>{{ premio.fecha_juego }}</td>
-                                <td>
-                                    {% if premio.participa %}
-                                        <span class="badge rounded-pill text-bg-success"><i class="bi bi-check-lg"></i> Sí</span>
-                                    {% else %}
-                                        <span class="badge rounded-pill text-bg-secondary"><i class="bi bi-x-lg"></i> No</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endif %}
+
     </div>
 </div>
 {% endif %}
@@ -504,6 +458,16 @@
 {% endblock %}
 
 {% block scripts %}
+{% if total_resultados > 0 %}
+<script>
+    (function() {
+        var el = document.getElementById("resultados");
+        if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    })();
+</script>
+{% endif %}
 <script>
     (() => {
         /* ── Cliente autocomplete (con teléfono) ── */

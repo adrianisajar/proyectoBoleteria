@@ -130,6 +130,8 @@
 
   <div class="resumen-row" style="font-size:0.9rem;font-weight:800;border-top:3px double #000;padding-top:0.35rem;"><span>TOTAL RECIBIDO</span><span>${{ "{:,}".format(factura.valor_total) }}</span></div>
 
+
+
   <div class="obs">
     <strong>Observaciones</strong><br>
     {% set obs = config.get("observaciones_recaudo", "") %}

@@ -4,13 +4,16 @@ import re
 
 from flask import Response
 
-from motores.constants import BOLETA_MIN, BOLETA_MAX, VENDEDOR_LOCAL
+from datetime import datetime
+
+from motores.constants import BOLETA_MIN, BOLETA_MAX, CONSULTA_LIMIT_MAX, VENDEDOR_LOCAL
+from motores.fechas import now_local
 
 from motores.shared import (
     boletas, vendedores, facturas,
     request, flash, redirect, render_template, url_for, jsonify,
     get_config, require_collections, role_required,
-    calcular_premios_adicionales,
+
     build_consulta_context, build_page_url,
     get_dashboard_counts, get_vendedor_options,
     estado_pipeline_expr, invalidate_dashboard_cache,
@@ -24,17 +27,21 @@ def register_routes(app):
     @app.route("/consultas")
     @role_required("admin", "cajero", "consulta")
     def consultas():
-        try:
-            config = get_config()
-            valor_boleta = int(config["valor_boleta"])
-            counts = get_dashboard_counts(valor_boleta=valor_boleta)
-            vendedor_options = get_vendedor_options()
-        except Exception as exc:
-            counts = {"total": 0, "vendidas": 0, "disponibles": 0, "asignadas": 0, "separadas": 0, "abonando": 0, "pagadas": 0}
-            vendedor_options = []
-            flash(f"No se pudieron cargar las m├®tricas: {exc}", "danger")
-
         filters, query, errors, page, limite, offset, has_filters, numero_exacto = build_consulta_context(request.args)
+
+        counts = {"total": 0, "vendidas": 0, "disponibles": 0, "asignadas": 0, "separadas": 0, "abonando": 0, "pagadas": 0}
+        vendedor_options = []
+        try:
+            vendedor_options = get_vendedor_options()
+        except Exception:
+            pass
+        if not numero_exacto:
+            try:
+                config = get_config()
+                valor_boleta = int(config["valor_boleta"])
+                counts = get_dashboard_counts(valor_boleta=valor_boleta)
+            except Exception as exc:
+                flash(f"No se pudieron cargar las m├®tricas: {exc}", "danger")
         sort_by = request.args.get("sort_by", "_id").strip()
         sort_dir = request.args.get("sort_dir", "asc").strip()
         if sort_by not in SORT_WHITELIST:
@@ -43,6 +50,7 @@ def register_routes(app):
         resultados = []
         total_resultados = 0
         boleta_detalle = None
+
 
         for error in errors:
             flash(error, "warning")
@@ -58,23 +66,13 @@ def register_routes(app):
                     "total_abonado": 1,
                     "historial_pagos": 1,
                 }
+
                 total_resultados = boletas.count_documents(query)
                 resultados = list(boletas.find(query, projection).sort(sort_by, sort_direction).skip(offset).limit(limite))
-                config_premios = None
-                for doc in resultados:
-                    if doc.get("historial_pagos") and config_premios is None:
-                        config_premios = config.get("premios_adicionales", [])
-                    if config_premios:
-                        doc["premios_adicionales"] = calcular_premios_adicionales(doc.get("historial_pagos", []), config_premios)
+
                 if numero_exacto and isinstance(query.get("_id"), int):
                     boleta_detalle = boletas.find_one({"_id": query["_id"]})
-                    if boleta_detalle:
-                        config = get_config()
-                        premios_config = config.get("premios_adicionales", [])
-                        boleta_detalle["premios_adicionales"] = calcular_premios_adicionales(
-                            boleta_detalle.get("historial_pagos", []), premios_config
-                        )
-                        if boleta_detalle.get("vendedor_id"):
+                    if boleta_detalle and boleta_detalle.get("vendedor_id"):
                             v = vendedores.find_one({"_id": boleta_detalle["vendedor_id"]}, {"nombre": 1})
                             boleta_detalle["vendedor_nombre"] = v["nombre"] if v else None
             except Exception as exc:
@@ -170,13 +168,15 @@ def register_routes(app):
             return redirect(url_for("consultas"))
         try:
             require_collections()
-            docs = boletas.find(query, {"_id": 1, "vendedor_id": 1, "cliente": 1, "estado": 1, "total_abonado": 1, "historial_pagos": {"$slice": -1}}).sort("_id", 1)
+            projection = {"_id": 1, "vendedor_id": 1, "cliente": 1, "estado": 1, "total_abonado": 1, "historial_pagos": 1}
+            docs = list(boletas.find(query, projection).sort("_id", 1).limit(CONSULTA_LIMIT_MAX))
+
             output = io.StringIO()
-            writer = csv.writer(output)
+            writer = csv.writer(output, delimiter=";")
             writer.writerow(["Boleta", "Vendedor", "Estado", "Cliente", "Telefono", "Abonado", "UltimoPago"])
             for doc in docs:
                 ultimo = doc.get("historial_pagos") or []
-                ultimo_pago = ultimo[0].get("fecha", "") if ultimo else ""
+                ultimo_pago = ultimo[-1].get("fecha", "") if ultimo else ""
                 writer.writerow([
                     f"{doc['_id']:04d}",
                     doc.get("vendedor_id", ""),
@@ -319,8 +319,12 @@ def register_routes(app):
                 )
                 factura_doc = facturas.find_one({"_id": factura_id}, {"detalle": 1})
                 if factura_doc:
-                    nuevo_total = sum(d.get("valor", 0) or 0 for d in (factura_doc.get("detalle") or []))
-                    facturas.update_one({"_id": factura_id}, {"$set": {"valor_total": nuevo_total}})
+                    detalle_restante = factura_doc.get("detalle") or []
+                    if not detalle_restante:
+                        facturas.delete_one({"_id": factura_id})
+                    else:
+                        nuevo_total = sum(d.get("valor", 0) or 0 for d in detalle_restante)
+                        facturas.update_one({"_id": factura_id}, {"$set": {"valor_total": nuevo_total}})
 
             invalidate_dashboard_cache()
             flash(f"Pago eliminado de #{boleta_id:04d}.", "success")
@@ -482,9 +486,6 @@ def register_routes(app):
             return jsonify({"ok": False, "error": "No existe la boleta."}), 404
 
         cliente = doc.get("cliente") or {}
-        config = get_config()
-        premios_config = config.get("premios_adicionales", [])
-        premios = calcular_premios_adicionales(doc.get("historial_pagos", []), premios_config)
 
         vendedor_id = doc.get("vendedor_id", VENDEDOR_LOCAL)
         v_nombre = vendedor_id
@@ -506,7 +507,6 @@ def register_routes(app):
                     "telefono": cliente.get("telefono", ""),
                     "direccion": cliente.get("direccion", ""),
                 },
-                "premios_adicionales": premios,
             }
         )
 

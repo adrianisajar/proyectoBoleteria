@@ -38,9 +38,7 @@ def crear_rifa():
         "valor_boleta": int(os.getenv("VALOR_BOLETA", "100000")),
         "cantidad_boletas": 10000,
         "premio_mayor": "",
-        "valor_minimo_adicional": 20000,
         "comisiones_tiers": COMISION_DEFAULT_TIERS,
-        "premios_adicionales": [],
         "estado": "activa",
         "creada_en": now_local(),
     }
