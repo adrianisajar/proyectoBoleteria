@@ -47,8 +47,8 @@ COMISION_DEFAULT_TIERS = [
 # ── Default config ──
 DEFAULT_CONFIG = {
     "_id": CONFIG_ID,
-    "nombre_rifa": os.getenv("NOMBRE_RIFA", "Rifa Principal"),
-    "valor_boleta": int(os.getenv("VALOR_BOLETA", "100000")),
+    "nombre_rifa": os.getenv("NOMBRE_RIFA", "Rifas Transparencia"),
+    "valor_boleta": int(os.getenv("VALOR_BOLETA", "70000")),
     "cantidad_boletas": 10000,
     "premio_mayor": "",
     "estado": "activa",
@@ -63,9 +63,9 @@ DEFAULT_CONFIG = {
 
 # ── Default rifa ──
 DEFAULT_RIFA = {
-    "nombre": os.getenv("NOMBRE_RIFA", "Rifa Principal"),
+    "nombre": os.getenv("NOMBRE_RIFA", "Rifas Transparencia"),
     "anio": date.today().year,
-    "valor_boleta": int(os.getenv("VALOR_BOLETA", "100000")),
+    "valor_boleta": int(os.getenv("VALOR_BOLETA", "70000")),
     "cantidad_boletas": 10000,
     "premio_mayor": "",
     "comisiones_tiers": COMISION_DEFAULT_TIERS,

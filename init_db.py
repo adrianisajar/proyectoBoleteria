@@ -3,15 +3,9 @@ from datetime import datetime
 
 from database import boletas, configuracion, facturas, rifas, vendedores
 from motores.fechas import now_local
+from motores.constants import COMISION_DEFAULT_TIERS, DEFAULT_RIFA, DEFAULT_CONFIG
 
 CONFIG_ID = "rifa"
-
-COMISION_DEFAULT_TIERS = [
-    {"min": 0, "valor": 0},
-    {"min": 10, "valor": 10000},
-    {"min": 21, "valor": 15000},
-    {"min": 51, "valor": 20000},
-]
 
 
 def crear_indices():
@@ -33,13 +27,13 @@ def crear_indices():
 
 def crear_rifa():
     rifa = {
-        "nombre": os.getenv("NOMBRE_RIFA", "Rifa Principal"),
+        "nombre": os.getenv("NOMBRE_RIFA", DEFAULT_RIFA["nombre"]),
         "anio": now_local().year,
-        "valor_boleta": int(os.getenv("VALOR_BOLETA", "100000")),
-        "cantidad_boletas": 10000,
-        "premio_mayor": "",
+        "valor_boleta": int(os.getenv("VALOR_BOLETA", str(DEFAULT_RIFA["valor_boleta"]))),
+        "cantidad_boletas": DEFAULT_RIFA["cantidad_boletas"],
+        "premio_mayor": DEFAULT_RIFA["premio_mayor"],
         "comisiones_tiers": COMISION_DEFAULT_TIERS,
-        "estado": "activa",
+        "estado": DEFAULT_RIFA["estado"],
         "creada_en": now_local(),
     }
     result = rifas.update_one({"estado": "activa"}, {"$setOnInsert": rifa}, upsert=True)

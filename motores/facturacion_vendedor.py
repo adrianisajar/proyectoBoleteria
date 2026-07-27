@@ -13,6 +13,8 @@ from motores.shared import (
     next_factura_id, calc_comision_por_boleta, get_config,
     registrar_abono_lote,
     rollback_pagos_por_factura,
+    _buscar_transferencia_duplicada,
+    _build_factura_detalle,
 )
 
 
@@ -126,10 +128,7 @@ def register_routes(app):
                         if ref_key in seen_refs:
                             continue
                         seen_refs.add(ref_key)
-                        elem_match = {"metodo": METODO_TRANSFERENCIA, "referencia": r["referencia"].strip()}
-                        if r["banco"].strip():
-                            elem_match["banco"] = r["banco"].strip()
-                        dup = boletas.find_one({"historial_pagos": {"$elemMatch": elem_match}}, {"_id": 1})
+                        dup = _buscar_transferencia_duplicada(r["referencia"].strip(), r["banco"].strip())
                         if dup:
                             errors.append(f"Ya existe un pago por transferencia con referencia {r['referencia'].strip()} y banco {r['banco'].strip()} (boleta #{dup['_id']:04d}).")
 
@@ -192,22 +191,7 @@ def register_routes(app):
                         factura_id=factura_id,
                     )
 
-                docs = list(boletas.find({"_id": {"$in": boleta_ids}}, sort=[("_id", 1)]))
-                detalle = []
-                for doc in docs:
-                    for pago in doc.get("historial_pagos") or []:
-                        if pago.get("factura_id") == factura_id:
-                            entry = {
-                                "boleta": doc["_id"],
-                                "fecha": str(pago.get("fecha", "")),
-                                "valor": int(pago.get("valor", 0) or 0),
-                                "metodo": pago.get("metodo", ""),
-                            }
-                            if pago.get("referencia"):
-                                entry["referencia"] = pago["referencia"]
-                            if pago.get("banco"):
-                                entry["banco"] = pago["banco"]
-                            detalle.append(entry)
+                detalle = _build_factura_detalle(boleta_ids, factura_id)
                 valor_total = sum(d["valor"] for d in detalle)
 
                 v = vendedores.find_one({"_id": vendedor_id})

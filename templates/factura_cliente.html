@@ -107,25 +107,7 @@
       <div class="recibo-mov-line"><span class="recibo-label">Saldo pendiente</span><span>${{ "{:,}".format(info.get("saldo_pendiente", 0)) }}</span></div>
       <div class="recibo-mov-line" style="font-size:0.7rem;"><span class="recibo-label">Estado</span><span>{{ info.get("estado", "disponible") | capitalize }}</span></div>
     </div>
-    {% set pagos_factura = info.get("pagos_factura", []) %}
-    {% if pagos_factura %}
-    <div class="recibo-historial">
-      <table>
-        <thead>
-          <tr><th>Fecha</th><th>Valor</th><th>M&eacute;todo</th></tr>
-        </thead>
-        <tbody>
-          {% for p in pagos_factura %}
-          <tr>
-            <td>{{ (p.get("fecha") or "")[:10] }}</td>
-            <td>${{ "{:,}".format((p.get("valor", 0) or 0) | int) }}</td>
-            <td>{{ "Transf." if p.get("metodo") == "transferencia" else "Efect." }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% endif %}
+
   </div>
   <hr class="recibo-linea">
   {% endfor %}

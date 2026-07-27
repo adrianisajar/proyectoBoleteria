@@ -53,6 +53,37 @@ RIFA_CACHE_SECONDS = 30
 DASHBOARD_CACHE = {"data": None, "loaded_at": 0}
 DASHBOARD_CACHE_SECONDS = 30
 
+ABONADO_OP_MAP = {"gte": "$gte", "lte": "$lte", "eq": "$eq"}
+
+
+def _buscar_transferencia_duplicada(ref, banco="", exclude_factura_id=None):
+    elem_match = {"metodo": METODO_TRANSFERENCIA, "referencia": ref}
+    if banco:
+        elem_match["banco"] = banco
+    if exclude_factura_id is not None:
+        elem_match["factura_id"] = {"$ne": exclude_factura_id}
+    return boletas.find_one({"historial_pagos": {"$elemMatch": elem_match}}, {"_id": 1})
+
+
+def _build_factura_detalle(boleta_ids, factura_id):
+    docs = list(boletas.find({"_id": {"$in": boleta_ids}}, sort=[("_id", 1)]))
+    detalle = []
+    for doc in docs:
+        for pago in doc.get("historial_pagos") or []:
+            if pago.get("factura_id") == factura_id:
+                entry = {
+                    "boleta": doc["_id"],
+                    "fecha": str(pago.get("fecha", "")),
+                    "valor": int(pago.get("valor", 0) or 0),
+                    "metodo": pago.get("metodo", ""),
+                }
+                if pago.get("referencia"):
+                    entry["referencia"] = pago["referencia"]
+                if pago.get("banco"):
+                    entry["banco"] = pago["banco"]
+                detalle.append(entry)
+    return detalle
+
 
 def invalidate_rifa_cache():
     RIFA_CACHE["data"] = None
@@ -279,7 +310,7 @@ def existing_boleta_ids(boleta_ids):
     return [boleta_id for boleta_id in boleta_ids if boleta_id in existing]
 
 
-def get_dashboard_counts(rifa_id=None, valor_boleta=100000):
+def get_dashboard_counts(rifa_id=None, valor_boleta=None):
     require_collections()
     match = {}
     if rifa_id:
@@ -633,8 +664,7 @@ def build_consulta_context(args):
         else:
             abonado_valor = parse_money(abonado_valor_raw)
             if abonado_valor is not None and abonado_valor >= 0:
-                op_map = {"gte": "$gte", "lte": "$lte", "eq": "$eq"}
-                query["total_abonado"] = {op_map[abonado_op]: abonado_valor}
+                query["total_abonado"] = {ABONADO_OP_MAP[abonado_op]: abonado_valor}
             else:
                 errors.append("Valor de abonado inválido.")
 
@@ -778,6 +808,9 @@ def build_abono_preview(form, factura_id=None):
             continue
 
         nuevo_total = int(doc.get("total_abonado", 0) or 0) + valor_abono
+        if nuevo_total > valor_boleta:
+            preview["excesos"] = preview.get("excesos", []) + [doc]
+            continue
         doc["nuevo_total"] = nuevo_total
         doc["nuevo_estado"] = estado_para_total(nuevo_total, valor_boleta)
         preview["validas"].append(doc)
@@ -789,6 +822,8 @@ def build_abono_preview(form, factura_id=None):
     if preview["pagadas"]:
         preview["warnings"].append("Las boletas ya pagadas se omitirán.")
 
+    if preview.get("excesos"):
+        preview["warnings"].append(f"Se omitieron {len(preview['excesos'])} boleta(s) porque el abono supera su saldo pendiente.")
     if not preview["validas"]:
         preview["errors"].append("No hay boletas disponibles para registrar este abono.")
 
@@ -805,12 +840,7 @@ def registrar_abono_lote(boleta_ids, form_data, valor_abono, factura_id=None):
         if not ref:
             raise ValueError("La referencia bancaria es obligatoria para transferencias.")
         banco = form_data.get("banco", "").strip()
-        elem_match = {"metodo": METODO_TRANSFERENCIA, "referencia": ref}
-        if banco:
-            elem_match["banco"] = banco
-        if factura_id is not None:
-            elem_match["factura_id"] = {"$ne": factura_id}
-        duplicado = boletas.find_one({"historial_pagos": {"$elemMatch": elem_match}}, {"_id": 1})
+        duplicado = _buscar_transferencia_duplicada(ref, banco, exclude_factura_id=factura_id)
         if duplicado:
             msg = f"Ya existe un pago por transferencia con referencia {ref}"
             if banco:
@@ -837,6 +867,13 @@ def registrar_abono_lote(boleta_ids, form_data, valor_abono, factura_id=None):
         }
     if factura_id is not None:
         pago["factura_id"] = factura_id
+    if valor_abono > 0:
+        sobrepasan = boletas.count_documents({
+            "_id": {"$in": boleta_ids},
+            "total_abonado": {"$gt": valor_boleta - valor_abono},
+        })
+        if sobrepasan:
+            raise ValueError(f"El abono de ${valor_abono:,} excede el saldo pendiente de {sobrepasan} boleta(s).")
     result = boletas.update_many(
         {"_id": {"$in": boleta_ids}, "estado": {"$ne": "pagada"}},
         [

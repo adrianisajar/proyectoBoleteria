@@ -6,7 +6,7 @@ from flask import Response
 
 from datetime import datetime
 
-from motores.constants import BOLETA_MIN, BOLETA_MAX, CONSULTA_LIMIT_MAX, VENDEDOR_LOCAL
+from motores.constants import BOLETA_MIN, BOLETA_MAX, CONSULTA_LIMIT_MAX, VENDEDOR_LOCAL, DEFAULT_CONFIG
 from motores.fechas import now_local
 
 from motores.shared import (
@@ -161,7 +161,7 @@ def register_routes(app):
         try:
             config = get_config()
         except Exception:
-            config = {"valor_boleta": "100000"}
+            config = {"valor_boleta": str(DEFAULT_CONFIG["valor_boleta"])}
         filters, query, errors, _page, _limite, _offset, _has_filters, _numero_exacto = build_consulta_context(request.args)
         if errors:
             flash("Error al exportar: corrija los filtros.", "danger")
