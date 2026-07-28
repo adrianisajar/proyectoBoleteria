@@ -37,7 +37,7 @@
                         <label for="valor_boleta" class="form-label fw-semibold">Valor boleta</label>
                         <div class="input-group">
                             <span class="input-group-text">$</span>
-                            <input type="text" class="form-control" id="valor_boleta" name="valor_boleta" value="{{ rifa.valor_boleta }}">
+                            <input type="text" class="form-control" id="valor_boleta" name="valor_boleta" value="{{ rifa.valor_boleta }}" data-money-input>
                         </div>
                     </div>
                     <div class="col-md-6">
@@ -111,7 +111,7 @@
                                 <td>
                                     <div class="input-group input-group-sm">
                                         <span class="input-group-text">$</span>
-                                        <input type="text" class="form-control" name="tier_valor_{{ loop.index0 }}" value="{{ tier.valor }}" required>
+                                        <input type="text" class="form-control" name="tier_valor_{{ loop.index0 }}" value="{{ tier.valor }}" data-money-input required>
                                     </div>
                                 </td>
                                 <td class="text-end">
@@ -182,7 +182,7 @@
                 </div>
                 <div class="col-md-3">
                     <label for="valor_boleta_nueva" class="form-label fw-semibold">Valor boleta</label>
-                    <input type="text" inputmode="numeric" class="form-control" id="valor_boleta_nueva" name="valor_boleta_nueva" value="{{ config.valor_boleta }}">
+                    <input type="text" inputmode="numeric" class="form-control" id="valor_boleta_nueva" name="valor_boleta_nueva" value="{{ config.valor_boleta }}" data-money-input>
                 </div>
                 <div class="col-md-3">
                     <label for="cantidad_boletas" class="form-label fw-semibold">Cantidad</label>
@@ -235,7 +235,7 @@ function agregarTier() {
         <td>
             <div class="input-group input-group-sm">
                 <span class="input-group-text">$</span>
-                <input type="text" class="form-control" name="tier_valor_${idx}" value="0" required>
+                <input type="text" class="form-control" name="tier_valor_${idx}" value="0" data-money-input required>
             </div>
         </td>
         <td class="text-end">

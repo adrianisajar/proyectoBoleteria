@@ -43,6 +43,10 @@
 <div class="recibo">
   {% if factura.get("anulada") %}
   <div class="alert alert-danger text-center fw-bold mb-2 no-print">ANULADA — {{ factura.get("motivo_anulacion", "") }}</div>
+  {% elif factura.get("estado") == "pendiente" %}
+  <div class="alert alert-warning text-center fw-bold mb-2 no-print"><i class="bi bi-hourglass-split"></i> PENDIENTE — Esta factura está en proceso de creación</div>
+  {% elif factura.get("estado") == "error" %}
+  <div class="alert alert-danger text-center fw-bold mb-2 no-print"><i class="bi bi-x-octagon"></i> ERROR — {{ factura.get("error", "Error durante la creación") }}</div>
   {% endif %}
 
   <div class="text-end mb-1 no-print">
@@ -128,6 +132,9 @@
   <hr class="recibo-linea">
   {% endif %}
 
+  {% if factura.get("estado") == "pendiente" %}
+  <div class="text-center text-warning fw-bold my-3">FACTURA EN PROCESO — Los pagos no se han registrado aún.</div>
+  {% endif %}
   <div class="resumen-row" style="font-size:0.9rem;font-weight:800;border-top:3px double #000;padding-top:0.35rem;"><span>TOTAL RECIBIDO</span><span>${{ "{:,}".format(factura.valor_total) }}</span></div>
 
 

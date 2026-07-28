@@ -214,7 +214,7 @@ def register_routes(app):
 
                 cliente_data = {"nombre": nombre, "telefono": telefono, "direccion": direccion}
                 boletas.update_many(
-                    {"_id": {"$in": boleta_ids}},
+                    {"_id": {"$in": boleta_ids}, "cliente.nombre": {"$in": ["", None]}},
                     {"$set": {"cliente": cliente_data}},
                 )
                 boletas.update_many(

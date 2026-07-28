@@ -1,0 +1,574 @@
+{% extends "base.html" %}
+{% block title %}Ingreso r&aacute;pido de compradores &mdash; {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+  <div>
+    <p class="text-uppercase text-secondary fw-bold mb-1 small">Compradores</p>
+    <h1 class="h3 mb-0">Ingreso r&aacute;pido de compradores</h1>
+  </div>
+</div>
+
+<div class="office-card bg-body p-3 p-md-4 mb-3">
+  <div class="row g-2 align-items-end mb-3">
+    <div class="col-auto">
+      <button type="button" class="btn btn-outline-primary btn-sm" onclick="agregarFilas(1)"><i class="bi bi-plus-lg me-1"></i>Fila</button>
+    </div>
+    <div class="col-auto">
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="agregarFilas(5)">+5 filas</button>
+    </div>
+    <div class="col-auto">
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copiarHaciaAbajo()"><i class="bi bi-arrow-down me-1"></i>Copiar hacia abajo</button>
+    </div>
+    <div class="col-auto">
+      <button type="button" class="btn btn-outline-info btn-sm" id="btnValidar" onclick="validarTodo()"><i class="bi bi-check-circle me-1"></i>Validar todo</button>
+    </div>
+    <div class="col-auto ms-md-auto">
+      <span class="text-muted small me-2" id="resumenCuenta">0 filas</span>
+      <button type="button" class="btn btn-success" onclick="guardarCambios()" id="btnGuardar">
+        <i class="bi bi-save me-1"></i>Guardar cambios
+      </button>
+    </div>
+  </div>
+
+  <div class="table-responsive" style="max-height:70vh;overflow-y:auto;">
+    <table class="table table-bordered table-sm mb-0" id="tablaCompradores" style="font-size:0.85rem;">
+      <thead class="table-light" style="position:sticky;top:0;z-index:2;">
+        <tr>
+          <th style="width:50px;">#</th>
+          <th style="width:100px;">Boleta</th>
+          <th style="width:250px;">Comprador</th>
+          <th style="width:250px;">Direcci&oacute;n</th>
+          <th style="width:160px;">Tel&eacute;fono</th>
+          <th style="width:90px;">Estado</th>
+          <th style="width:50px;"></th>
+        </tr>
+      </thead>
+      <tbody id="tbodyCompradores">
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="modalResumen" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Resumen antes de guardar</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="modalResumenBody">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-success" id="btnConfirmarGuardar">Guardar de todas formas</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="modalResultado" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Resultado</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="modalResultadoBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Aceptar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const apiBoleta = "{{ url_for('api_boleta', boleta_id=0) }}".replace("/0", "/");
+const apiClientes = "{{ url_for('api_clientes') }}";
+const apiValidar = "{{ url_for('api_compradores_validar') }}";
+const apiGuardar = "{{ url_for('compradores_rapido') }}";
+
+let debounceTimers = {};
+let guardando = false;
+
+/* ── helpers ─────────────────────────────────────────── */
+
+function rowHTML(idx) {
+  const n = idx + 1;
+  return `<tr>
+    <td class="text-center text-muted small">${n}</td>
+    <td><input type="text" class="form-control form-control-sm boleta-input" inputmode="numeric" maxlength="4" autocomplete="off"></td>
+    <td><input type="text" class="form-control form-control-sm nombre-input" autocomplete="off"></td>
+    <td><input type="text" class="form-control form-control-sm direccion-input" autocomplete="off"></td>
+    <td><input type="text" class="form-control form-control-sm telefono-input" inputmode="numeric" autocomplete="off"></td>
+    <td class="text-center estado-cell"><span class="text-muted small">--</span></td>
+    <td class="text-center"><button type="button" class="btn btn-outline-danger btn-sm py-0 px-1 btn-eliminar-fila">&times;</button></td>
+  </tr>`;
+}
+
+function agregarFilas(n) {
+  const tbody = document.getElementById("tbodyCompradores");
+  const start = tbody.children.length;
+  const html = Array.from({length: n}, (_, i) => rowHTML(start + i)).join("");
+  tbody.insertAdjacentHTML("beforeend", html);
+  actualizarCuenta();
+  if (tbody.lastElementChild) {
+    tbody.lastElementChild.querySelector(".boleta-input").focus();
+  }
+}
+
+function renumberRows() {
+  const tbody = document.getElementById("tbodyCompradores");
+  Array.from(tbody.children).forEach((tr, i) => {
+    tr.querySelector("td:first-child").textContent = i + 1;
+  });
+}
+
+function actualizarCuenta() {
+  const tbody = document.getElementById("tbodyCompradores");
+  const total = tbody.children.length;
+  const llenas = Array.from(tbody.querySelectorAll(".boleta-input")).filter(i => i.value.trim()).length;
+  document.getElementById("resumenCuenta").textContent = `${llenas}/${total} filas con boleta`;
+  document.getElementById("btnGuardar").disabled = (llenas === 0);
+}
+
+function obtenerFilas() {
+  const tbody = document.getElementById("tbodyCompradores");
+  const filas = [];
+  for (const tr of tbody.children) {
+    const boleta = tr.querySelector(".boleta-input").value.trim();
+    if (!boleta) continue;
+    filas.push({
+      boleta: parseInt(boleta),
+      nombre: (tr.querySelector(".nombre-input").value || "").trim(),
+      telefono: (tr.querySelector(".telefono-input").value || "").trim(),
+      direccion: (tr.querySelector(".direccion-input").value || "").trim(),
+    });
+  }
+  return filas;
+}
+
+function setEstado(tr, html) {
+  tr.querySelector(".estado-cell").innerHTML = html;
+}
+
+/* ── validación individual ───────────────────────────── */
+
+function onBoletaInput(tr, immediate) {
+  const input = tr.querySelector(".boleta-input");
+  const raw = input.value.replace(/\D/g, "").slice(0, 4);
+  input.value = raw;
+
+  if (raw.length < 4) {
+    setEstado(tr, raw.length
+      ? '<span class="text-warning small">...</span>'
+      : '<span class="text-muted small">--</span>');
+    actualizarCuenta();
+    return;
+  }
+
+  const num = parseInt(raw);
+  if (num < 0 || num > 9999) {
+    setEstado(tr, '<span class="text-danger small">Fuera de rango</span>');
+    return;
+  }
+
+  const delay = immediate ? 0 : 300;
+  const key = "b_" + num;
+  clearTimeout(debounceTimers[key]);
+  debounceTimers[key] = setTimeout(() => {
+    fetch(apiBoleta + num)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) {
+          setEstado(tr, '<span class="text-danger small"><i class="bi bi-x-circle"></i> No existe</span>');
+          return;
+        }
+        const c = data.cliente || {};
+        if (c.nombre && c.nombre.trim()) {
+          const nom = c.nombre.trim();
+          setEstado(tr, `<span class="text-warning small"><i class="bi bi-exclamation-triangle"></i> ${nom.substring(0, 20)}</span>`);
+          if (!tr.querySelector(".nombre-input").value.trim()) {
+            tr.querySelector(".nombre-input").value = nom;
+            tr.querySelector(".telefono-input").value = c.telefono || "";
+            tr.querySelector(".direccion-input").value = c.direccion || "";
+          }
+        } else {
+          setEstado(tr, '<span class="text-success small"><i class="bi bi-check-circle"></i> OK</span>');
+        }
+      })
+      .catch(() => setEstado(tr, '<span class="text-danger small">Error</span>'));
+  }, delay);
+  actualizarCuenta();
+}
+
+function onTelefonoInput(tr, immediate) {
+  const input = tr.querySelector(".telefono-input");
+  const raw = input.value.replace(/\D/g, "");
+  input.value = raw;
+  if (raw.length < 3) return;
+
+  const delay = immediate ? 0 : 300;
+  const key = "t_" + raw + "_" + Math.random();
+  clearTimeout(debounceTimers[key]);
+  debounceTimers[key] = setTimeout(() => {
+    fetch(apiClientes + "?q=" + encodeURIComponent(raw))
+      .then(r => r.json())
+      .then(items => {
+        if (!items.length) return;
+        const ni = tr.querySelector(".nombre-input");
+        const di = tr.querySelector(".direccion-input");
+        const match = items.find(i => i.telefono === raw);
+        if (match && !ni.value.trim()) {
+          ni.value = match.nombre || "";
+          if (match.direccion) di.value = match.direccion || "";
+        }
+      })
+      .catch(() => {});
+  }, delay);
+}
+
+/* ── navegación por teclado ──────────────────────────── */
+
+function onKeyNav(e) {
+  const tr = e.target.closest("tr");
+  if (!tr || e.target.tagName !== "INPUT") return;
+  const inputs = Array.from(tr.querySelectorAll("input"));
+  const idx = inputs.indexOf(e.target);
+  if (idx < 0) return;
+
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const nextTr = tr.nextElementSibling;
+    if (nextTr) {
+      const ni = nextTr.querySelectorAll("input");
+      if (ni.length) ni[0].focus();
+    }
+    return;
+  }
+
+  if (e.key === "Tab" && !e.shiftKey && idx < inputs.length - 1) {
+    e.preventDefault();
+    inputs[idx + 1].focus();
+    return;
+  }
+
+  if (e.key === "Tab" && e.shiftKey && idx > 0) {
+    e.preventDefault();
+    inputs[idx - 1].focus();
+    return;
+  }
+
+  if ((e.ctrlKey || e.metaKey) && e.key === "d") {
+    e.preventDefault();
+    copiarHaciaAbajo(tr);
+    return;
+  }
+
+  if (e.key === "ArrowUp" && idx >= 0) {
+    const prevTr = tr.previousElementSibling;
+    if (prevTr) {
+      const ni = prevTr.querySelectorAll("input");
+      if (ni.length > idx) ni[idx].focus();
+    }
+    return;
+  }
+
+  if (e.key === "ArrowDown" && idx >= 0) {
+    const nextTr = tr.nextElementSibling;
+    if (nextTr) {
+      const ni = nextTr.querySelectorAll("input");
+      if (ni.length > idx) ni[idx].focus();
+    }
+  }
+}
+
+function copiarHaciaAbajo(origen) {
+  const tbody = document.getElementById("tbodyCompradores");
+  const rows = Array.from(tbody.children);
+  const startIdx = origen ? rows.indexOf(origen) : 0;
+  if (startIdx >= rows.length - 1) return;
+
+  const src = rows[startIdx];
+  const nombre = src.querySelector(".nombre-input").value;
+  const telefono = src.querySelector(".telefono-input").value;
+  const direccion = src.querySelector(".direccion-input").value;
+  if (!nombre && !telefono && !direccion) return;
+
+  for (let i = startIdx + 1; i < rows.length; i++) {
+    const t = rows[i];
+    if (nombre) t.querySelector(".nombre-input").value = nombre;
+    if (telefono) t.querySelector(".telefono-input").value = telefono;
+    if (direccion) t.querySelector(".direccion-input").value = direccion;
+  }
+}
+
+/* ── validación por lotes ────────────────────────────── */
+
+function setBtnLoading(btn, loading) {
+  btn.disabled = loading;
+  btn.innerHTML = loading
+    ? '<span class="spinner-border spinner-border-sm me-1"></span>' + btn.dataset.loadingText
+    : btn.dataset.restoreHtml;
+}
+
+function validarTodo() {
+  const btn = document.getElementById("btnValidar");
+  btn.dataset.loadingText = "Validando...";
+  btn.dataset.restoreHtml = btn.innerHTML;
+
+  const filas = obtenerFilas();
+  if (!filas.length) {
+    alert("No hay filas con boleta para validar.");
+    return;
+  }
+
+  setBtnLoading(btn, true);
+  fetch(apiValidar, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({boletas: filas.map(f => f.boleta)}),
+  })
+    .then(r => r.json())
+    .then(data => {
+      const res = data.resultados || {};
+      const tbody = document.getElementById("tbodyCompradores");
+      for (const tr of tbody.children) {
+        const ns = tr.querySelector(".boleta-input").value.trim();
+        if (!ns) continue;
+        const info = res[ns];
+        if (!info || !info.existe) {
+          setEstado(tr, '<span class="text-danger small"><i class="bi bi-x-circle"></i> No existe</span>');
+        } else if (info.tiene_cliente) {
+          const nom = (info.cliente && info.cliente.nombre || "").trim();
+          setEstado(tr, `<span class="text-warning small"><i class="bi bi-exclamation-triangle"></i> ${nom.substring(0, 20)}</span>`);
+        } else {
+          setEstado(tr, '<span class="text-success small"><i class="bi bi-check-circle"></i> OK</span>');
+        }
+      }
+      mostrarResumen(filas, res);
+    })
+    .catch(() => alert("Error al validar."))
+    .finally(() => setBtnLoading(btn, false));
+}
+
+function mostrarResumen(filas, resultados) {
+  let validas = 0, conCliente = 0, inexistentes = 0, sinDatos = 0;
+  const detInex = [], detCliente = [];
+
+  for (const f of filas) {
+    const info = resultados ? resultados[String(f.boleta)] : null;
+    if (!info || !info.existe) {
+      inexistentes++;
+      detInex.push(f.boleta);
+    } else if (info.tiene_cliente) {
+      conCliente++;
+      detCliente.push({boleta: f.boleta, nom: (info.cliente && info.cliente.nombre || "").trim()});
+    } else if (!f.nombre && !f.telefono && !f.direccion) {
+      sinDatos++;
+    } else {
+      validas++;
+    }
+  }
+
+  const parts = [];
+  if (validas) parts.push(`<p class="text-success mb-1"><i class="bi bi-check-circle me-1"></i>${validas} boleta(s) v&aacute;lida(s) sin cliente</p>`);
+  if (conCliente) parts.push(`<p class="text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>${conCliente} boleta(s) se sobrescribir&aacute;n: ${detCliente.map(d => `${d.boleta} (${d.nom.substring(0, 15)})`).join(", ")}</p>`);
+  if (sinDatos) parts.push(`<p class="text-info mb-1"><i class="bi bi-info-circle me-1"></i>${sinDatos} boleta(s) sin datos de comprador (se ignorar&aacute;n)</p>`);
+  if (inexistentes) parts.push(`<p class="text-danger mb-1"><i class="bi bi-x-circle me-1"></i>${inexistentes} inexistente(s): ${detInex.join(", ")}</p>`);
+
+  const html = parts.length ? parts.join("") : '<p class="text-danger">No hay boletas v&aacute;lidas para guardar.</p>';
+  document.getElementById("modalResumenBody").innerHTML = html;
+  document.getElementById("btnConfirmarGuardar").style.display = (validas || conCliente) ? "" : "none";
+  const modal = new bootstrap.Modal(document.getElementById("modalResumen"));
+  modal.show();
+}
+
+/* ── guardado ─────────────────────────────────────────── */
+
+function guardarCambios() {
+  if (guardando) return;
+  guardando = true;
+
+  const btn = document.getElementById("btnGuardar");
+  btn.dataset.loadingText = "Guardando...";
+  btn.dataset.restoreHtml = btn.innerHTML;
+
+  const filas = obtenerFilas();
+  if (!filas.length) {
+    guardando = false;
+    alert("No hay datos para guardar.");
+    return;
+  }
+
+  setBtnLoading(btn, true);
+  fetch(apiValidar, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({boletas: filas.map(f => f.boleta)}),
+  })
+    .then(r => r.json())
+    .then(data => {
+      const res = data.resultados || {};
+      let validas = 0, conCliente = 0, inexistentes = 0;
+      const detInex = [];
+
+      for (const f of filas) {
+        const info = res[String(f.boleta)];
+        if (!info || !info.existe) {
+          inexistentes++;
+          detInex.push(f.boleta);
+        } else if (info.tiene_cliente) {
+          conCliente++;
+          validas++;
+        } else {
+          validas++;
+        }
+      }
+
+      if (!validas) {
+        const html = `<p class="text-danger">No hay boletas v&aacute;lidas para guardar.</p>`;
+        document.getElementById("modalResumenBody").innerHTML = html;
+        document.getElementById("btnConfirmarGuardar").style.display = "none";
+        new bootstrap.Modal(document.getElementById("modalResumen")).show();
+        setBtnLoading(btn, false);
+        guardando = false;
+        return;
+      }
+
+      const html = `<p class="text-success mb-1"><i class="bi bi-check-circle me-1"></i>${validas} boleta(s) v&aacute;lida(s)</p>`
+        + (conCliente ? `<p class="text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>${conCliente} se sobrescribir&aacute;n</p>` : "")
+        + (inexistentes ? `<p class="text-danger mb-1"><i class="bi bi-x-circle me-1"></i>${inexistentes} inexistente(s): ${detInex.join(", ")}</p>` : "")
+        + '<p class="mt-2 mb-0">¿Desea continuar?</p>';
+
+      document.getElementById("modalResumenBody").innerHTML = html;
+      document.getElementById("btnConfirmarGuardar").style.display = "";
+      document.getElementById("btnConfirmarGuardar").onclick = () => {
+        document.getElementById("btnConfirmarGuardar").disabled = true;
+        ejecutarGuardado(filas, btn);
+      };
+      new bootstrap.Modal(document.getElementById("modalResumen")).show();
+      setBtnLoading(btn, false);
+      guardando = false;
+    })
+    .catch(() => {
+      alert("Error al validar.");
+      setBtnLoading(btn, false);
+      guardando = false;
+    });
+}
+
+function ejecutarGuardado(filas, btn) {
+  fetch(apiGuardar, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({rows: filas}),
+  })
+    .then(r => r.json())
+    .then(data => {
+      let html = `<p class="text-success mb-1"><i class="bi bi-check-circle me-1"></i>${data.updated} boleta(s) actualizada(s)</p>`;
+      if (data.sin_datos && data.sin_datos.length) {
+        html += `<p class="text-info mb-1"><i class="bi bi-info-circle me-1"></i>${data.sin_datos.length} boleta(s) ignoradas (sin datos): ${data.sin_datos.join(", ")}</p>`;
+      }
+      if (data.not_found && data.not_found.length) {
+        html += `<p class="text-danger mb-1"><i class="bi bi-x-circle me-1"></i>${data.not_found.length} no encontrada(s): ${data.not_found.join(", ")}</p>`;
+      }
+      document.getElementById("modalResultadoBody").innerHTML = html;
+      const rm = bootstrap.Modal.getInstance(document.getElementById("modalResumen"));
+      if (rm) rm.hide();
+      new bootstrap.Modal(document.getElementById("modalResultado")).show();
+
+      document.getElementById("tbodyCompradores").innerHTML = "";
+      agregarFilas(5);
+      document.getElementById("btnConfirmarGuardar").disabled = false;
+      guardando = false;
+    })
+    .catch(() => { alert("Error al guardar."); guardando = false; });
+}
+
+/* ── pegado ───────────────────────────────────────────── */
+
+document.addEventListener("paste", function(e) {
+  const tbody = document.getElementById("tbodyCompradores");
+  const target = e.target.closest("td");
+  if (!target || !tbody.contains(target)) return;
+
+  const text = (e.clipboardData || window.clipboardData).getData("text");
+  if (!text) return;
+
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return;
+
+  e.preventDefault();
+  const tr0 = target.closest("tr");
+  const colIdx = Array.from(tr0.querySelectorAll("input")).indexOf(e.target);
+
+  const existingCount = tbody.children.length;
+  const newRowsNeeded = lines.length - 1;
+  if (newRowsNeeded > 0) {
+    const start = existingCount;
+    const html = Array.from({length: newRowsNeeded}, (_, i) => rowHTML(start + i)).join("");
+    tbody.insertAdjacentHTML("beforeend", html);
+  }
+
+  const allRows = Array.from(tbody.children);
+  for (let i = 0; i < lines.length; i++) {
+    const tr = (i === 0) ? tr0 : allRows[existingCount + i - 1];
+    const cells = lines[i].split(/\t/);
+    const inputs = tr.querySelectorAll("input");
+    for (let j = colIdx; j < inputs.length && (j - colIdx) < cells.length; j++) {
+      inputs[j].value = cells[j - colIdx].trim();
+    }
+    if (i > 0) {
+      const bi = tr.querySelector(".boleta-input");
+      if (bi.value.trim()) onBoletaInput(tr);
+    }
+  }
+  actualizarCuenta();
+});
+
+/* ── delegación de eventos ──────────────────────────── */
+
+document.getElementById("tbodyCompradores").addEventListener("input", function(e) {
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  if (e.target.classList.contains("boleta-input")) onBoletaInput(tr);
+  else if (e.target.classList.contains("telefono-input")) onTelefonoInput(tr);
+});
+
+document.getElementById("tbodyCompradores").addEventListener("focusout", function(e) {
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  if (e.target.classList.contains("boleta-input")) onBoletaInput(tr, true);
+  else if (e.target.classList.contains("telefono-input")) onTelefonoInput(tr, true);
+  else if (e.target.classList.contains("nombre-input") && e.target.value.trim()) {
+    const bi = tr.querySelector(".boleta-input");
+    if (bi) bi.focus();
+  }
+});
+
+document.getElementById("tbodyCompradores").addEventListener("keydown", onKeyNav);
+
+document.getElementById("tbodyCompradores").addEventListener("click", function(e) {
+  if (e.target.closest(".btn-eliminar-fila")) {
+    const tr = e.target.closest("tr");
+    if (tr) {
+      tr.remove();
+      renumberRows();
+      actualizarCuenta();
+    }
+  }
+});
+
+/* ── limpieza de estado ────────────────────────────────── */
+
+document.getElementById("modalResumen").addEventListener("hidden.bs.modal", function() {
+  guardando = false;
+});
+
+/* ── arranque ─────────────────────────────────────────── */
+
+agregarFilas(5);
+</script>
+{% endblock %}

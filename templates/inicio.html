@@ -125,7 +125,7 @@
                     <option value="eq" {% if filters.abonado_op == "eq" %}selected{% endif %}>=</option>
                 </select>
                 <span class="input-group-text">$</span>
-                <input type="text" inputmode="numeric" class="form-control" id="abonado_valor" name="abonado_valor" value="{{ filters.abonado_valor }}" placeholder="0">
+                <input type="text" inputmode="numeric" class="form-control" id="abonado_valor" name="abonado_valor" value="{{ filters.abonado_valor }}" placeholder="0" data-money-input>
             </div>
         </div>
 

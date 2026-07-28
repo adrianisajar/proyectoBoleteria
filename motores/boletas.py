@@ -427,7 +427,7 @@ def register_routes(app):
             label = f"{cliente.get('nombre', '')} {cliente.get('telefono', '')}".strip()
             if label and label not in seen:
                 seen.add(label)
-                items.append({"label": label, "nombre": cliente.get("nombre", ""), "telefono": cliente.get("telefono", "")})
+                items.append({"label": label, "nombre": cliente.get("nombre", ""), "telefono": cliente.get("telefono", ""), "direccion": cliente.get("direccion", "")})
         return jsonify(items)
 
     @app.route("/clientes")

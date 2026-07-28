@@ -11,6 +11,7 @@ from motores.facturacion import register_routes as register_facturacion
 from motores.facturacion_cliente import register_routes as register_facturacion_cliente
 from motores.facturacion_vendedor import register_routes as register_facturacion_vendedor
 from motores.reportes import register_routes as register_reportes
+from motores.compradores import register_routes as register_compradores
 
 
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
@@ -31,6 +32,7 @@ register_facturacion(app)
 register_facturacion_cliente(app)
 register_facturacion_vendedor(app)
 register_reportes(app)
+register_compradores(app)
 
 if __name__ == "__main__":
     app.run(debug=True)

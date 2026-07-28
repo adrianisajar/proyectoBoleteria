@@ -2,20 +2,22 @@ import re
 
 from datetime import datetime
 
-from motores.constants import COMISION_DEFAULT_TIERS, VENDEDOR_LOCAL, METODO_EFECTIVO, METODO_TRANSFERENCIA
+from motores.constants import COMISION_DEFAULT_TIERS, VENDEDOR_LOCAL, METODO_EFECTIVO, METODO_TRANSFERENCIA, USUARIO_SISTEMA
 from motores.fechas import now_local
 from motores.validacion import parse_money
 
 from motores.shared import (
     boletas, vendedores, facturas,
-    request, flash, redirect, render_template, url_for,
+    request, flash, redirect, render_template, url_for, jsonify,
     require_collections, role_required,
     next_factura_id, calc_comision_por_boleta, get_config,
-    registrar_abono_lote,
+    current_user, estado_pipeline_expr, invalidate_dashboard_cache,
     rollback_pagos_por_factura,
     _buscar_transferencia_duplicada,
     _build_factura_detalle,
 )
+from pymongo import UpdateOne
+from pymongo.errors import BulkWriteError
 
 
 def _build_form_data(vendedor_id, fecha, boletas_raw, montos_raw, metodos, referencias, bancos):
@@ -183,21 +185,91 @@ def register_routes(app):
                 config = get_config()
                 valor_boleta = int(config["valor_boleta"])
 
-                for r in rows:
-                    registrar_abono_lote(
-                        [r["boleta"]],
-                        {"fecha": fecha, "metodo": r["metodo"], "referencia": r["referencia"], "banco": r.get("banco", "")},
-                        r["monto"],
-                        factura_id=factura_id,
-                    )
-
-                detalle = _build_factura_detalle(boleta_ids, factura_id)
-                valor_total = sum(d["valor"] for d in detalle)
-
                 v = vendedores.find_one({"_id": vendedor_id})
                 v_nombre = v.get("nombre", vendedor_id) if v else vendedor_id
                 v_telefono = v.get("telefono", "") if v else ""
 
+                # ── 1. Crear factura "pendiente" antes de tocar las boletas ──
+                facturas.insert_one({
+                    "_id": factura_id,
+                    "tipo": "vendedor",
+                    "estado": "pendiente",
+                    "fecha": now_local() if fecha_dt.date() == now_local().date() else fecha_dt,
+                    "boletas": sorted(boleta_ids),
+                    "detalle": [],
+                    "valor_total": 0,
+                    "vendedor_id": vendedor_id,
+                    "vendedor_nombre": v_nombre,
+                    "vendedor_telefono": v_telefono,
+                })
+
+                # ── 2. Validar montos (sin viajes extra a MongoDB) ──
+                sobrepasan = []
+                for r in rows:
+                    doc = docs_map.get(r["boleta"])
+                    if not doc:
+                        continue
+                    actual = doc.get("total_abonado", 0) or 0
+                    if actual + r["monto"] > valor_boleta:
+                        sobrepasan.append(r["boleta"])
+                if sobrepasan:
+                    raise ValueError(
+                        f"El abono excede el saldo pendiente en {len(sobrepasan)} boleta(s): "
+                        f"{', '.join(f'#{b:04d}' for b in sobrepasan)}."
+                    )
+
+                # ── 3. Un solo bulk_write con todos los pagos ──
+                ops = []
+                usuario = (current_user() or {}).get("username", USUARIO_SISTEMA)
+                for r in rows:
+                    pago = {
+                        "fecha": fecha,
+                        "valor": r["monto"],
+                        "metodo": r["metodo"],
+                        "registrado_en": now_local(),
+                        "usuario": usuario,
+                        "factura_id": factura_id,
+                    }
+                    if r["metodo"] == METODO_TRANSFERENCIA:
+                        pago["referencia"] = r.get("referencia", "")
+                        if r.get("banco"):
+                            pago["banco"] = r["banco"]
+
+                    ops.append(UpdateOne(
+                        {"_id": r["boleta"], "estado": {"$ne": "pagada"}},
+                        [
+                            {"$set": {
+                                "historial_pagos": {"$concatArrays": [
+                                    {"$ifNull": ["$historial_pagos", []]},
+                                    {"$literal": [pago]},
+                                ]},
+                                "total_abonado": {"$add": [
+                                    {"$ifNull": ["$total_abonado", 0]},
+                                    r["monto"],
+                                ]},
+                            }},
+                            {"$set": {"estado": estado_pipeline_expr(valor_boleta)}},
+                        ],
+                    ))
+
+                try:
+                    boletas.bulk_write(ops, ordered=False)
+                except BulkWriteError:
+                    rollback_pagos_por_factura(factura_id, valor_boleta)
+                    facturas.update_one(
+                        {"_id": factura_id},
+                        {"$set": {"estado": "error", "error": "Error de escritura en MongoDB durante el bulk_write."}},
+                    )
+                    flash(
+                        f"Error al registrar los pagos (factura #{factura_id:05d}). "
+                        "Los pagos se revirtieron automáticamente. Intente de nuevo.",
+                        "danger",
+                    )
+                    return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
+
+                invalidate_dashboard_cache()
+
+                # ── 4. Calcular comisiones (después de los pagos) ──
                 tiers = config.get("comisiones_tiers", COMISION_DEFAULT_TIERS)
                 existing_vendidas = boletas.count_documents({
                     "vendedor_id": vendedor_id,
@@ -212,27 +284,32 @@ def register_routes(app):
                 comision_por_boleta = calc_comision_por_boleta(total_vendidas, tiers)
                 total_comision = total_vendidas * comision_por_boleta
 
-                factura = {
-                    "_id": factura_id,
-                    "tipo": "vendedor",
-                    "fecha": now_local() if fecha_dt.date() == now_local().date() else fecha_dt,
-                    "boletas": sorted(boleta_ids),
-                    "detalle": detalle,
-                    "valor_total": valor_total,
-                    "vendedor_id": vendedor_id,
-                    "vendedor_nombre": v_nombre,
-                    "vendedor_telefono": v_telefono,
-                    "comision_por_boleta": comision_por_boleta,
-                    "total_comision": total_comision,
-                    "total_vendidas": total_vendidas,
-                }
-                facturas.insert_one(factura)
-                flash(f"Factura de vendedor N\u00b0 {factura['_id']:05d} generada.", "success")
-                return redirect(url_for("ver_factura", factura_id=factura["_id"], imprimir=1))
+                # ── 5. Construir detalle y finalizar factura ──
+                detalle = _build_factura_detalle(boleta_ids, factura_id)
+                valor_total = sum(d["valor"] for d in detalle)
+
+                facturas.update_one(
+                    {"_id": factura_id},
+                    {"$set": {
+                        "detalle": detalle,
+                        "valor_total": valor_total,
+                        "estado": "completa",
+                        "comision_por_boleta": comision_por_boleta,
+                        "total_comision": total_comision,
+                        "total_vendidas": total_vendidas,
+                    }},
+                )
+
+                flash(f"Factura de vendedor N\u00b0 {factura_id:05d} generada.", "success")
+                return redirect(url_for("ver_factura", factura_id=factura_id, imprimir=1))
 
             except Exception as exc:
                 if factura_id is not None:
                     rollback_pagos_por_factura(factura_id, valor_boleta)
+                    facturas.update_one(
+                        {"_id": factura_id},
+                        {"$set": {"estado": "error", "error": str(exc)[:200]}},
+                    )
                 flash(f"Error al generar la factura: {exc}", "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 

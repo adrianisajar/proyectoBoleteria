@@ -37,6 +37,10 @@
                     {{ f.vendedor_nombre or f.vendedor_id }}
                     {% if f.get("anulada") %}
                     <span class="badge text-bg-danger ms-1">Anulada</span>
+                    {% elif f.get("estado") == "pendiente" %}
+                    <span class="badge text-bg-warning ms-1">Pendiente</span>
+                    {% elif f.get("estado") == "error" %}
+                    <span class="badge text-bg-danger ms-1">Error</span>
                     {% endif %}
                 </td>
                 <td class="ticket-number">{{ f.boletas|length }}</td>

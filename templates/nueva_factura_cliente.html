@@ -275,7 +275,6 @@
     };
 
     let autoFillDone = false;
-    let autoFilledBoleta = null;
 
     const autoFillCliente = async (boletaNum) => {
         if (autoFillDone) return;
@@ -289,7 +288,6 @@
                 document.getElementById("telefono").value = data.cliente.telefono || "";
                 document.getElementById("direccion").value = (data.cliente.direccion || "").toUpperCase();
                 autoFillDone = true;
-                autoFilledBoleta = boletaNum;
                 actualizarPreview();
             }
         } catch (_e) {}
@@ -366,19 +364,9 @@
         boletaInput.addEventListener("input", function() {
             actualizarResumen();
             programarValidacion();
-            if (esPrimera) {
+            if (esPrimera && !autoFillDone && /^\d{4}$/.test(this.value.trim())) {
                 if (autoFillTimeout) clearTimeout(autoFillTimeout);
-                const raw = this.value.trim();
-                if (autoFillDone && autoFilledBoleta !== null) {
-                    const currentNum = parseInt(raw);
-                    if (isNaN(currentNum) || currentNum !== autoFilledBoleta || !/^\d{4}$/.test(raw)) {
-                        autoFillDone = false;
-                        autoFilledBoleta = null;
-                    }
-                }
-                if (/^\d{4}$/.test(raw)) {
-                    autoFillTimeout = setTimeout(function() { autoFillCliente(parseInt(raw)); }, 400);
-                }
+                autoFillTimeout = setTimeout(function() { autoFillCliente(parseInt(this.value.trim())); }.bind(this), 400);
             }
         });
         montoInput.addEventListener("input", function() { formatearMonto(this); actualizarResumen(); programarValidacion(); });
