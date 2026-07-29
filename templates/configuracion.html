@@ -26,7 +26,7 @@
 
         <div class="office-card bg-body p-3 p-md-4">
             <h2 class="section-title mb-3">Par&aacute;metros de la rifa</h2>
-            <form method="post">
+            <form method="post" autocomplete="off">
                 <input type="hidden" name="action" value="guardar_config">
                 <div class="row g-3">
                     <div class="col-12">
@@ -53,7 +53,7 @@
 
         <div class="office-card bg-body p-3 p-md-4">
             <h2 class="section-title mb-3">Datos de la empresa</h2>
-            <form method="post">
+            <form method="post" autocomplete="off">
                 <input type="hidden" name="action" value="guardar_empresa">
                 <div class="row g-3">
                     <div class="col-md-6">
@@ -90,7 +90,7 @@
         <div class="office-card bg-body p-3 p-md-4">
             <h2 class="section-title mb-3">Comisiones por vendedor</h2>
             <p class="text-secondary small mb-3">Cada vendedor recibe una comisi&oacute;n fija por boleta vendida, seg&uacute;n el n&uacute;mero total de boletas que haya vendido.</p>
-            <form method="post">
+            <form method="post" autocomplete="off">
                 <input type="hidden" name="action" value="guardar_comisiones">
                 <div class="table-responsive">
                     <table class="table table-sm align-middle mb-3">
@@ -156,7 +156,7 @@
                     </button>
                 </form>
             </div>
-            <form method="post" action="{{ url_for('importar_rifa_excel') }}" enctype="multipart/form-data" class="border-top pt-3">
+            <form method="post" action="{{ url_for('importar_rifa_excel') }}" enctype="multipart/form-data" class="border-top pt-3" autocomplete="off">
                 <div class="mb-3">
                     <label for="archivo_rifa" class="form-label fw-semibold">Seleccionar archivo Excel (.xlsx)</label>
                     <input type="file" class="form-control" id="archivo_rifa" name="archivo_rifa" accept=".xlsx" required>
@@ -175,7 +175,7 @@
 
         <div class="office-card bg-body p-3 p-md-4 border border-primary">
             <h2 class="section-title mb-3">Crear nueva rifa</h2>
-            <form method="post" action="{{ url_for('nueva_rifa') }}" class="row g-3">
+            <form method="post" action="{{ url_for('nueva_rifa') }}" class="row g-3" autocomplete="off">
                 <div class="col-md-6">
                     <label for="nombre" class="form-label fw-semibold">Nombre de la rifa</label>
                     <input type="text" class="form-control" id="nombre" name="nombre_rifa_nueva" placeholder="Rifa 2026" required>
@@ -230,12 +230,12 @@ function agregarTier() {
     tr.innerHTML = `
         <td>
             <input type="hidden" name="tier_idx" value="${idx}">
-            <input type="number" class="form-control form-control-sm" name="tier_min_${idx}" value="0" min="0" required>
+            <input type="number" class="form-control form-control-sm" name="tier_min_${idx}" value="0" min="0" required autocomplete="off">
         </td>
         <td>
             <div class="input-group input-group-sm">
                 <span class="input-group-text">$</span>
-                <input type="text" class="form-control" name="tier_valor_${idx}" value="0" data-money-input required>
+                <input type="text" class="form-control" name="tier_valor_${idx}" value="0" data-money-input required autocomplete="off">
             </div>
         </td>
         <td class="text-end">

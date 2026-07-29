@@ -6,8 +6,13 @@
   .no-print { display: none !important; }
   body { background: #fff !important; }
   .app-main { padding: 0 !important; margin: 0 !important; }
-  @page { margin: 0; size: 80mm auto; }
-  .grupo { page-break-inside: avoid; }
+  @page { margin: 0; }
+  .recibo { max-width: none !important; width: 100% !important; margin: 0 !important; padding: 0 !important; }
+  .grupo { margin: 0.15rem 0 !important; padding: 0.1rem 0 !important; }
+  .recibo-linea { margin: 0.2rem 0 !important; }
+  .resumen-row { padding-top: 0.1rem !important; }
+  .grupo-valor { margin: 0.1rem 0 !important; }
+  div[style*="margin:0.3rem 0 0.3rem 0.4rem"] { margin: 0.1rem 0 0.1rem 0.4rem !important; }
 }
 .recibo {
   max-width: 340px; margin: 0 auto;

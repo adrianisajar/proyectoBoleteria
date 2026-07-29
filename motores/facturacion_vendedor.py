@@ -8,7 +8,7 @@ from motores.validacion import parse_money
 
 from motores.shared import (
     boletas, vendedores, facturas,
-    request, flash, redirect, render_template, url_for, jsonify,
+    request, flash, redirect, render_template, url_for,
     require_collections, role_required,
     next_factura_id, calc_comision_por_boleta, get_config,
     current_user, estado_pipeline_expr, invalidate_dashboard_cache,

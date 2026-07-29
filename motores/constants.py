@@ -30,7 +30,7 @@ BOLETA_MIN = 0
 BOLETA_MAX = 9999
 
 # ── Vendor operations ──
-OPERACIONES_VENDEDOR = {"guardar", "asignar", "quitar", "reemplazar", "eliminar"}
+OPERACIONES_VENDEDOR = {"guardar", "asignar", "quitar", "eliminar"}
 
 # ── Query limits ──
 CONSULTA_LIMIT_DEFAULT = 50

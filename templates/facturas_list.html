@@ -16,7 +16,7 @@
     </div>
 </div>
 
-<form class="row g-2 mb-3" action="{{ url_for('facturas_list') }}" method="get">
+<form class="row g-2 mb-3" action="{{ url_for('facturas_list') }}" method="get" autocomplete="off">
     <div class="col-sm-6 col-md-4">
         <div class="input-group">
             <input type="text" class="form-control" name="q" value="{{ q }}" placeholder="Número, cliente o vendedor…">

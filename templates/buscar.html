@@ -6,7 +6,7 @@
         <p class="text-uppercase text-secondary fw-bold mb-1 small">Búsqueda global</p>
         <h1 class="h3 mb-0">Resultados para "{{ q }}"</h1>
     </div>
-    <form class="d-flex" action="{{ url_for('buscar') }}" method="get">
+    <form class="d-flex" action="{{ url_for('buscar') }}" method="get" autocomplete="off">
         <div class="input-group">
             <input type="text" class="form-control" name="q" value="{{ q }}" placeholder="Buscar..." autofocus>
             <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i></button>

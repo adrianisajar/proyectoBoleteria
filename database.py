@@ -5,9 +5,9 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-    exe_dir = os.path.dirname(sys.executable)
-    dotenv_path = os.path.join(exe_dir, ".env")
-    load_dotenv(dotenv_path)
+    dotenv_path = os.path.join(os.path.dirname(sys.executable), ".env")
+    if not load_dotenv(dotenv_path):
+        load_dotenv()  # fallback to CWD
 else:
     load_dotenv()
 

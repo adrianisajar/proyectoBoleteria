@@ -1,13 +1,11 @@
-# Python
+.env
 __pycache__/
 *.py[cod]
-
-# Entorno
-.env
 .venv/
 venv/
-
-# Logs
+dist/
+build/
+*.exe
+*.spec
 *.log
-flask-server.err.log
-flask-server.out.log
+.agents/*.txt

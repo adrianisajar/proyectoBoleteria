@@ -1,63 +1,109 @@
 """
-Build a standalone .exe of the boletería app using PyInstaller.
+Build boleteria.exe with PyInstaller.
 
 Usage:
-    python build_exe.py              -- one-folder build (fast startup)
-    python build_exe.py --onefile    -- single .exe (easier to distribute)
-
-The .env file must be placed next to the .exe at runtime.
+    python build_exe.py            # with console (shows logs)
+    python build_exe.py --noconsole  # no terminal window
 """
-import os
-import sys
-import subprocess
-import shutil
+
 import argparse
+import os
+import shutil
+import subprocess
+import sys
 
-BUILD_DIR = os.path.dirname(os.path.abspath(__file__))
-DIST_DIR = os.path.join(BUILD_DIR, "dist")
+SPEC_NAME = "_boleteria_build.spec"
+DIST_DIR = "dist"
+BUILD_DIR = "_pyinstaller_build"
 
-DATA_DIRS = [
-    ("templates", "templates"),
-    ("static", "static"),
-]
+SPEC_TEMPLATE = r'''# -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.building.api import EXE, PYZ
+from PyInstaller.building.build_main import Analysis
+
+a = Analysis(
+    ['run_server.py'],
+    pathex=[],
+    binaries=[],
+    datas=[
+        ('templates', 'templates'),
+    ],
+    hiddenimports=[
+        'pymongo', 'flask', 'jinja2', 'dotenv',
+        'datetime', 're', 'math', 'time', 'functools', 'logging',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[
+        'tkinter', 'unittest', 'test', 'pip',
+        'setuptools', 'numpy', 'matplotlib',
+    ],
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz, a.scripts, a.binaries, a.datas, [],
+    name='boleteria', debug=False,
+    bootloader_ignore_signals=False, strip=False,
+    upx=True, upx_exclude=[], runtime_tmpdir=None,
+    console={console},
+    disable_windowed_traceback=False,
+    argv_emulation=False, target_arch=None,
+    codesign_identity=None, entitlements_file=None,
+)
+'''
 
 
-def build(onefile=False):
-    if os.path.exists(DIST_DIR):
-        shutil.rmtree(DIST_DIR)
+def main():
+    parser = argparse.ArgumentParser(description="Build boleteria.exe")
+    parser.add_argument(
+        "--console", action="store_true",
+        help="Show terminal window (default: hidden GUI mode)",
+    )
+    args = parser.parse_args()
 
-    cmd = [
-        sys.executable, "-m", "PyInstaller",
-        "--clean",
-        "--noconfirm",
-        "--name", "boleteria",
-        "--onedir" if not onefile else "--onefile",
-    ]
+    console = "True" if args.console else "False"
+    mode = "con consola" if args.console else "sin ventana (GUI)"
 
-    for src, dst in DATA_DIRS:
-        cmd.extend(["--add-data", f"{src}{os.pathsep}{dst}"])
+    print(f"  ✓ Modo: {mode}")
+    print("  Construyendo ejecutable...")
 
-    for mod in [
-        "openpyxl", "pymongo", "dns", "bson",
-    ]:
-        cmd.extend(["--collect-all", mod])
+    spec_content = SPEC_TEMPLATE.replace("{console}", console)
+    with open(SPEC_NAME, "w", encoding="utf-8") as f:
+        f.write(spec_content)
 
-    cmd.append("run_server.py")
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "PyInstaller", "--clean",
+             "--distpath", DIST_DIR, "--workpath", BUILD_DIR, SPEC_NAME],
+            capture_output=True, text=True,
+        )
+        print(result.stdout)
+        if result.returncode != 0:
+            print(result.stderr)
+            print("  ✗ Error al construir")
+            return 1
+    finally:
+        if os.path.exists(BUILD_DIR):
+            shutil.rmtree(BUILD_DIR, ignore_errors=True)
+        if os.path.exists(SPEC_NAME):
+            os.remove(SPEC_NAME)
 
-    subprocess.run(cmd, cwd=BUILD_DIR, check=True)
-
-    if onefile:
-        exe_path = os.path.join(DIST_DIR, "boleteria.exe")
+    exe_path = os.path.join(DIST_DIR, "boleteria.exe")
+    if os.path.exists(exe_path):
+        size_mb = os.path.getsize(exe_path) / (1024 * 1024)
+        print(f"  ✓ Listo! {exe_path} ({size_mb:.1f} MB)")
+        print()
+        print("  NOTA: Coloca tu .env junto al .exe si no usas")
+        print("        variables de entorno del sistema.")
     else:
-        exe_path = os.path.join(DIST_DIR, "boleteria", "boleteria.exe")
+        print("  ✗ No se encontró el ejecutable")
+        return 1
 
-    print(f"\nBuild complete: {exe_path}")
-    print("Copy .env next to the .exe before running.")
-    print("Each PC needs its own .env with the same MONGO_URI.")
+    return 0
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build boleteria executable")
-    parser.add_argument("--onefile", action="store_true", help="Build single-file .exe")
-    args = parser.parse_args()
-    build(onefile=args.onefile)
+    sys.exit(main())

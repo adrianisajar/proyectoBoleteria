@@ -34,7 +34,7 @@ SECRET_KEY=...
 ```
 Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `NOMBRE_RIFA`, `VALOR_BOLETA`, `COMISION_POR_BOLETA` (default 10000), `FLASK_HOST`, `FLASK_DEBUG`.
 
-**No `.gitignore`** — `.env` with secrets is tracked. Be careful not to commit secrets.
+**`.gitignore` includes `.env`** — secrets are not tracked.
 
 ## Architecture notes
 - **No auth system** — all routes accessible without login. `current_user()` always returns admin.

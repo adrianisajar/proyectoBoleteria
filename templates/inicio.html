@@ -63,7 +63,7 @@
 </div>
 
 <div class="office-card bg-body p-3 p-md-4 mb-4">
-    <form action="{{ url_for('consultas') }}" method="get" class="row g-3 align-items-end">
+    <form action="{{ url_for('consultas') }}" method="get" class="row g-3 align-items-end" autocomplete="off">
         <div class="col-sm-6 col-lg-2">
             <label for="numero" class="form-label fw-semibold">Número o parte</label>
             <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="numero" name="numero" value="{{ filters.numero }}" placeholder="0001">
@@ -305,7 +305,7 @@
             </div>
         </div>
 
-        <form action="{{ url_for('guardar_boleta', boleta_id=boleta._id) }}" method="post" class="row g-3 align-items-end bg-body-tertiary border rounded p-3 mb-4">
+        <form action="{{ url_for('guardar_boleta', boleta_id=boleta._id) }}" method="post" class="row g-3 align-items-end bg-body-tertiary border rounded p-3 mb-4" autocomplete="off">
             <div class="col-lg-3">
                 <label for="detalleNombre" class="form-label fw-semibold">Nombre cliente</label>
                 <input type="text" class="form-control text-uppercase" id="detalleNombre" name="nombre" value="{{ boleta.cliente.nombre }}" placeholder="Nombre completo">

@@ -42,10 +42,14 @@
 </div>
 
 <div class="office-card bg-body p-3 p-md-4 mb-4">
-    <form method="post" class="row g-3">
+    <form method="post" class="row g-3" autocomplete="off">
         <div class="col-md-5">
             <label for="nombre" class="form-label fw-semibold">Nombre del vendedor</label>
-            <input type="text" class="form-control text-uppercase" id="nombre" name="nombre" value="{{ form.nombre }}" placeholder="Nombre completo" required>
+            <div class="position-relative">
+                <input type="text" class="form-control text-uppercase" id="nombre" name="nombre" value="{{ form.nombre }}" placeholder="Nombre completo" required autocomplete="off">
+                <div class="list-group position-absolute w-100 shadow-sm rounded-2"
+                     id="vendedorSugerencias" style="display:none; z-index:1050; max-height:200px; overflow-y:auto;"></div>
+            </div>
             <div class="d-flex align-items-center gap-2 mt-1">
                 <span class="text-secondary small">ID:</span>
                 <span class="badge text-bg-light border fw-normal font-monospace" id="vendedorIdPreview">—</span>
@@ -59,10 +63,10 @@
         <div class="col-md-2">
             <label for="operacion" class="form-label fw-semibold">Operación</label>
                 <select class="form-select" id="operacion" name="operacion">
+                    <option value="" {% if not form.operacion %}selected{% endif %}>Seleccione...</option>
                     <option value="guardar" {% if form.operacion == "guardar" %}selected{% endif %}>Guardar</option>
                     <option value="asignar" {% if form.operacion == "asignar" %}selected{% endif %}>Asignar</option>
                     <option value="quitar" {% if form.operacion == "quitar" %}selected{% endif %}>Quitar</option>
-                    <option value="reemplazar" {% if form.operacion == "reemplazar" %}selected{% endif %}>Reemplazar</option>
                     <option value="eliminar" {% if form.operacion == "eliminar" %}selected{% endif %}>Eliminar vendedor</option>
                 </select>
         </div>
@@ -96,7 +100,7 @@
             <span class="badge text-bg-light border">{{ vendedores_lista|length }} registro(s)</span>
         </div>
         <div>
-            <input type="text" class="form-control form-control-sm" id="buscarVendedor" placeholder="Buscar vendedor…" style="min-width:220px;">
+            <input type="text" class="form-control form-control-sm" id="buscarVendedor" placeholder="Buscar vendedor…" style="min-width:220px;" autocomplete="off">
         </div>
     </div>
 
@@ -234,6 +238,70 @@
         };
         nombre.addEventListener("input", actualizarId);
         actualizarId();
+
+        /* ── Autocomplete vendedor ── */
+        const vendedorSug = document.getElementById("vendedorSugerencias");
+        const vendedores = [
+            {% for v in vendedores_lista %}
+            { id: {{ v._id | tojson }}, nombre: {{ (v.nombre or v._id) | tojson }} },
+            {% endfor %}
+        ];
+        let selectedVendedor = null;
+
+        var escAttr = function(s) { return String(s).replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
+        var escHtml = function(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
+
+        const mostrarSugerencias = (filtro) => {
+            const q = filtro.toLowerCase();
+            const opts = vendedores.filter(function(v) {
+                return v.id.toLowerCase().includes(q) || v.nombre.toLowerCase().includes(q);
+            });
+            if (!q || !opts.length) { vendedorSug.style.display = "none"; return; }
+            vendedorSug.innerHTML = opts.map(function(v) {
+                var active = selectedVendedor && selectedVendedor.id === v.id ? " active" : "";
+                return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + escAttr(v.id) + '" data-nombre="' + escAttr(v.nombre) + '">' + escHtml(v.nombre) + ' <small class="text-secondary">(' + escHtml(v.id) + ')</small></button>';
+            }).join("");
+            vendedorSug.style.display = "";
+        };
+
+        const seleccionarVendedor = (id, nombre) => {
+            selectedVendedor = { id: id, nombre: nombre };
+            vendedorIdInput.value = id;
+            vendedorIdPreview.textContent = id;
+            vendedorIdPreview.className = "badge text-bg-primary fw-normal font-monospace";
+            vendedorSug.style.display = "none";
+        };
+
+        nombre.addEventListener("input", function() {
+            if (selectedVendedor && selectedVendedor.nombre !== this.value) {
+                selectedVendedor = null;
+                vendedorIdInput.value = "";
+                vendedorIdPreview.textContent = "—";
+                vendedorIdPreview.className = "badge text-bg-light border fw-normal font-monospace";
+            }
+            mostrarSugerencias(this.value);
+        });
+
+        vendedorSug.addEventListener("click", function(e) {
+            var btn = e.target.closest("button");
+            if (btn) {
+                var id = btn.dataset.id;
+                var nom = btn.dataset.nombre;
+                nombre.value = nom;
+                seleccionarVendedor(id, nom);
+                actualizarId();
+            }
+        });
+
+        nombre.addEventListener("blur", function() {
+            setTimeout(function() { vendedorSug.style.display = "none"; }, 200);
+        });
+
+        nombre.addEventListener("focus", function() {
+            if (this.value) mostrarSugerencias(this.value);
+        });
+        /* ── Fin autocomplete ── */
+
         const contador = document.getElementById("contadorBoletas");
 
         const getUniqueNumbers = () => {
@@ -249,14 +317,17 @@
         document.querySelectorAll(".cargar-vendedor").forEach((button) => {
             button.addEventListener("click", () => {
                 const origId = button.dataset.id || "";
-                nombre.value = button.dataset.nombre || "";
+                const origNombre = button.dataset.nombre || "";
+                nombre.value = origNombre;
                 telefono.value = button.dataset.telefono || "";
                 operacion.value = "guardar";
                 if (origId) {
+                    selectedVendedor = { id: origId, nombre: origNombre };
                     vendedorIdInput.value = origId;
                     vendedorIdPreview.textContent = origId;
                     vendedorIdPreview.className = "badge text-bg-primary fw-normal font-monospace";
                 } else {
+                    selectedVendedor = null;
                     actualizarId();
                 }
                 nombre.focus();
@@ -274,6 +345,56 @@
             actualizarContador();
         });
         actualizarContador();
+
+        /* ── Validación servidor (debounced) ── */
+        const debounce = function(fn, ms) {
+            var timer;
+            return function() {
+                var ctx = this, args = arguments;
+                clearTimeout(timer);
+                timer = setTimeout(function() { fn.apply(ctx, args); }, ms);
+            };
+        };
+        var serverErrorsBoletas = [];
+
+        const fetchServerValidation = debounce(function() {
+            var op = operacion.value;
+            if (op !== "asignar" && op !== "quitar") {
+                serverErrorsBoletas = [];
+                validarBoletasCampo(op);
+                return;
+            }
+            var nums = [...getUniqueNumbers()];
+            if (!nums.length) {
+                serverErrorsBoletas = [];
+                validarBoletasCampo(op);
+                return;
+            }
+            var body = JSON.stringify({
+                boletas: nums,
+                operacion: op,
+                vendedor_id: vendedorIdInput.value.trim(),
+            });
+            fetch("/api/validar-boletas-vendedor", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: body,
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                serverErrorsBoletas = [];
+                if (data.ok && data.resultados) {
+                    data.resultados.forEach(function(r) {
+                        if (!r.ok) serverErrorsBoletas.push("Boleta #" + r.boleta + ": " + r.error);
+                    });
+                }
+                validarBoletasCampo(operacion.value);
+            })
+            .catch(function() {
+                serverErrorsBoletas = [];
+                validarBoletasCampo(operacion.value);
+            });
+        }, 400);
 
         const modal = document.getElementById("boletasModal");
         const modalNombre = document.getElementById("modalVendedorNombre");
@@ -324,31 +445,148 @@
                 }
             });
         });
+        /* ── Validación client-side (lista de errores en tiempo real) ── */
+        const errorLists = {};
+
+        const getErrorList = (fieldId) => {
+            if (errorLists[fieldId]) return errorLists[fieldId];
+            const el = document.getElementById(fieldId);
+            if (!el) return null;
+            const ul = document.createElement("ul");
+            ul.className = "invalid-feedback d-block small mt-1 mb-0 ps-3";
+            ul.style.display = "none";
+            el.parentNode.appendChild(ul);
+            errorLists[fieldId] = ul;
+            return ul;
+        };
+
+        const mostrarErrores = (fieldId, msgs) => {
+            const ul = getErrorList(fieldId);
+            const el = document.getElementById(fieldId);
+            if (!ul || !el) return;
+            ul.innerHTML = "";
+            if (!msgs || !msgs.length) {
+                ul.style.display = "none";
+                el.classList.remove("is-invalid");
+                return;
+            }
+            el.classList.add("is-invalid");
+            msgs.forEach(function(msg) {
+                const li = document.createElement("li");
+                li.textContent = msg;
+                ul.appendChild(li);
+            });
+            ul.style.display = "";
+        };
+
+        const limpiarErrores = () => {
+            Object.keys(errorLists).forEach(function(k) {
+                const ul = errorLists[k];
+                if (ul) { ul.innerHTML = ""; ul.style.display = "none"; }
+                const el = document.getElementById(k);
+                if (el) el.classList.remove("is-invalid");
+            });
+        };
+
+        const opsConBoletas = {"asignar": true, "quitar": true};
+        const opsConNombre = {"guardar": true, "asignar": true, "quitar": true, "eliminar": true};
+        const necesitaBoletas = function(op) { return !!opsConBoletas[op]; };
+        const necesitaNombre = function(op) { return !!opsConNombre[op]; };
+
+        const validarOperacionCampo = (op) => {
+            const errors = [];
+            if (!op) errors.push("Seleccione una operaci\u00f3n.");
+            mostrarErrores("operacion", errors);
+        };
+
+        const validarNombreCampo = (op) => {
+            const errors = [];
+            if (!op) {
+                errors.push("Seleccione una operaci\u00f3n primero.");
+            } else if (necesitaNombre(op)) {
+                const vName = nombre.value.trim();
+                if (!vName) {
+                    errors.push("El nombre del vendedor es obligatorio.");
+                } else if (!vendedorIdInput.value.trim()) {
+                    errors.push("No se pudo generar un ID v\u00e1lido desde el nombre.");
+                }
+                if (op === "eliminar" && !vendedorIdInput.value.trim() && !errors.length) {
+                    errors.push("Seleccione un vendedor existente para eliminar.");
+                }
+                if (op === "guardar" && !selectedVendedor) {
+                    const generatedId = vendedorIdInput.value.trim();
+                    if (generatedId) {
+                        const dupe = vendedores.find(function(v) { return v.id === generatedId; });
+                        if (dupe) {
+                            errors.push("El vendedor \u201c" + dupe.nombre + "\u201d (" + dupe.id + ") ya existe. C\u00e1rgalo con Editar para modificarlo.");
+                        }
+                    }
+                }
+            }
+            mostrarErrores("nombre", errors);
+        };
+
+        const validarBoletasCampo = (op) => {
+            const errors = [];
+            if (!op) {
+                if (getUniqueNumbers().size) errors.push("Seleccione una operaci\u00f3n primero.");
+            } else if (necesitaBoletas(op)) {
+                const nums = [...getUniqueNumbers()];
+                if (!nums.length) {
+                    errors.push("Ingrese al menos una boleta para esta operaci\u00f3n.");
+                } else {
+                    const invalidos = nums.filter(function(n) { return n < 0 || n > 9999; });
+                    if (invalidos.length) {
+                        errors.push("Boletas fuera de rango (0000-9999): " + invalidos.join(", "));
+                    }
+                }
+            } else {
+                if (getUniqueNumbers().size) errors.push("La operaci\u00f3n seleccionada no requiere boletas.");
+            }
+            if (serverErrorsBoletas.length) {
+                serverErrorsBoletas.forEach(function(e) { errors.push(e); });
+            }
+            mostrarErrores("boletas", errors);
+        };
+
+        const validarFormulario = (op) => {
+            limpiarErrores();
+            validarOperacionCampo(op);
+            validarNombreCampo(op);
+            validarBoletasCampo(op);
+            var ok = true;
+            Object.keys(errorLists).forEach(function(k) {
+                const ul = errorLists[k];
+                if (ul && ul.style.display !== "none") ok = false;
+            });
+            return ok;
+        };
+
         const form = document.querySelector(".office-card form");
         const confirmModal = document.getElementById("confirmModal");
         const confirmTitle = document.getElementById("confirmTitle");
         const confirmBody = document.getElementById("confirmBody");
         const confirmBtn = document.getElementById("confirmActionBtn");
+        const submitBtn = form ? form.querySelector("[type='submit']") : null;
         let pendingSubmit = null;
         if (!form || !confirmModal || !confirmBtn) {
             console.warn("Vendedores: elementos del modal no encontrados");
         } else {
         form.addEventListener("submit", async (e) => {
             const op = operacion.value;
-            if (op !== "asignar" && op !== "quitar" && op !== "reemplazar" && op !== "eliminar") return;
+            if (!validarFormulario(op)) { e.preventDefault(); return; }
+
+            if (op === "guardar") return;
+
             e.preventDefault();
-            const vName = nombre.value || "?";
+            const vName = nombre.value.trim();
             const vId = vendedorIdInput.value || vName;
 
             if (op === "eliminar") {
-                if (!vendedorIdInput.value) {
-                    alert("Primero seleccione o cree un vendedor.");
-                    return;
-                }
                 confirmTitle.textContent = "Eliminar vendedor";
                 confirmBody.innerHTML = `<div class="mb-3">
                     <p class="mb-2">¿Está seguro de eliminar al vendedor?</p>
-                    <div class="p-3 bg-light rounded">
+                    <div class="p-3 bg-light rounded mb-3">
                         <div class="d-flex align-items-center gap-2 mb-1">
                             <span class="badge text-bg-secondary">${vId}</span>
                             <span class="fw-semibold text-uppercase">${vName}</span>
@@ -358,17 +596,28 @@
                             Se eliminará el vendedor y todas sus boletas asignadas volverán a estar disponibles.
                         </div>
                     </div>
+                    <div class="mb-2">
+                        <label for="confirmarNombre" class="form-label fw-semibold">Escriba el nombre del vendedor para confirmar:</label>
+                        <input type="text" class="form-control" id="confirmarNombre" autocomplete="off" placeholder="${vName}">
+                    </div>
                 </div>`;
                 confirmBtn.className = "btn btn-danger";
-                confirmBtn.textContent = "Sí, eliminar";
-                confirmBtn.disabled = false;
-                pendingSubmit = () => form.submit();
-                bootstrap.Modal.getOrCreateInstance(confirmModal).show();
+                confirmBtn.textContent = "Eliminar";
+                confirmBtn.disabled = true;
+                var nombreInput = document.getElementById("confirmarNombre");
+                var checkNombre = function() {
+                    confirmBtn.disabled = nombreInput.value.trim().toUpperCase() !== vName.toUpperCase();
+                };
+                nombreInput.addEventListener("input", checkNombre);
+                nombreInput.addEventListener("paste", function() { setTimeout(checkNombre, 50); });
+                pendingSubmit = function() { submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...'; form.submit(); };
+                var bsModal = bootstrap.Modal.getOrCreateInstance(confirmModal);
+                bsModal.show();
+                setTimeout(function() { nombreInput.focus(); }, 300);
                 return;
             }
 
             const nums = [...getUniqueNumbers()];
-            if (!nums.length) return;
             const opLabel = op === "asignar" ? "Asignar" : "Quitar";
             confirmTitle.textContent = opLabel + " boletas";
 
@@ -377,13 +626,35 @@
             confirmBtn.className = "btn " + (op === "quitar" ? "btn-danger" : "btn-primary");
             confirmBtn.textContent = "Sí, " + opLabel.toLowerCase();
             confirmBtn.disabled = false;
-            pendingSubmit = () => form.submit();
+            pendingSubmit = () => { submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...'; form.submit(); };
             bootstrap.Modal.getOrCreateInstance(confirmModal).show();
         });
 
         confirmBtn.addEventListener("click", () => {
             if (pendingSubmit) pendingSubmit();
         });
+
+        /* ── Errores en tiempo real ── */
+        nombre.addEventListener("input", function() {
+            validarNombreCampo(operacion.value);
+            fetchServerValidation();
+        });
+        boletas.addEventListener("input", function() {
+            serverErrorsBoletas = [];
+            validarBoletasCampo(operacion.value);
+            fetchServerValidation();
+        });
+        operacion.addEventListener("change", function() {
+            validarOperacionCampo(this.value);
+            validarNombreCampo(this.value);
+            validarBoletasCampo(this.value);
+            fetchServerValidation();
+        });
+
+        /* ── Validación inicial ── */
+        validarOperacionCampo(operacion.value);
+        validarNombreCampo(operacion.value);
+        validarBoletasCampo(operacion.value);
         }
 
         const buscarInput = document.getElementById("buscarVendedor");
