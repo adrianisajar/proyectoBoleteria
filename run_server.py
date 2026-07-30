@@ -15,7 +15,7 @@ wz.disabled = True
 
 
 def _status(msg: str):
-    print(f"  ⚡ {msg}")
+    print(f"  -> {msg}")
 
 
 def _ok(msg: str):
