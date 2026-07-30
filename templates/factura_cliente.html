@@ -3,11 +3,52 @@
 {% block head %}
 <style>
 @media print {
-  .no-print { display: none !important; }
-  body { background: #fff !important; }
+  @page { margin: 2mm; }
+  nav, .navbar, .navbar *, .no-print, .modal, .modal-backdrop, .flash-stack,
+  .btn, button:not(.no-print), a:not(.no-print),
+  [class*="modal"], [id*="modal"] {
+    display: none !important;
+  }
+  body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
   .app-main { padding: 0 !important; margin: 0 !important; }
-  @page { margin: 0; }
-  .recibo { max-width: none !important; width: 100% !important; margin: 0 !important; padding: 0 !important; }
+  .container { padding: 0 !important; max-width: none !important; margin: 0 !important; }
+  .recibo {
+    max-width: none !important; width: 100% !important;
+    margin: 0 !important; padding: 0 !important;
+    font-size: 1.3rem !important;
+    line-height: 1.8 !important;
+  }
+  .recibo-header { margin-bottom: 0.6rem !important; }
+  .recibo-empresa { font-size: 1.75rem !important; font-weight: 800 !important; }
+  .recibo-titulo { font-size: 1.55rem !important; font-weight: 700 !important; }
+  .recibo-dir { font-size: 1.15rem !important; color: #333 !important; }
+  .recibo-linea { margin: 0.4rem 0 !important; }
+  .recibo-linea-doble { margin: 0.45rem 0 !important; }
+  .recibo-label {
+    color: #222 !important;
+    font-weight: 600 !important;
+  }
+  .recibo > .recibo-label {
+    font-size: 1.5rem !important;
+    font-weight: 700 !important;
+  }
+  .recibo-boleta {
+    margin: 0.35rem 0 !important; padding: 0.3rem 0 !important;
+  }
+  .recibo-boleta-num {
+    font-size: 1.2rem !important;
+  }
+  .recibo-campo { padding: 0.15rem 0 !important; }
+  .recibo-mov { margin: 0.2rem 0 0.2rem 0.6rem !important; }
+  .recibo-mov-line { padding: 0.12rem 0 !important; }
+  .recibo-total { margin-top: 0.5rem !important; padding-top: 0.35rem !important; font-size: 1.3rem !important; }
+  .recibo-footer { margin-top: 0.4rem !important; padding-top: 0.4rem !important; font-size: 1.15rem !important; }
+  .recibo-historial { margin-top: 0.5rem !important; }
+  .recibo-historial table { font-size: 1.05rem !important; }
+  .recibo-estado { font-size: 1.05rem !important; }
+  div[style*="font-size:0.8rem"] { font-size: 1.3rem !important; }
+  div[style*="font-size:0.75rem"] { font-size: 1.15rem !important; }
+  div[style*="font-size:0.7rem"] { font-size: 1.05rem !important; }
 }
 .recibo {
   max-width: 340px; margin: 0 auto;

@@ -98,9 +98,11 @@
                             </td>
                             <td class="ref-cell">
                                 <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="TX-000" autocomplete="off">
+                                <div class="ref-errors text-danger small mt-1"></div>
                             </td>
                             <td class="banco-cell">
                                 <input type="text" class="form-control form-control-sm" name="banco[]" placeholder="Banco" list="listaBancos" autocomplete="off">
+                                <div class="banco-errors text-danger small mt-1"></div>
                             </td>
                             <td>
                                 <button type="button" class="btn btn-sm btn-outline-danger eliminar-fila" title="Quitar">
@@ -326,6 +328,88 @@
             }
 
             previewBtn.disabled = hasErrors;
+
+            const txHasErrors = await validarTransferencias();
+            if (txHasErrors) previewBtn.disabled = true;
+        };
+
+        const validarTransferencias = async () => {
+            const filas = abonosBody.querySelectorAll(".fila-abono");
+            filas.forEach(function(f) {
+                f.querySelectorAll(".ref-errors, .banco-errors").forEach(function(el) { el.innerHTML = ""; });
+            });
+
+            const transferRows = [];
+            filas.forEach(function(f, idx) {
+                const metodo = f.querySelector("select[name='metodo[]']").value;
+                if (metodo !== "transferencia") return;
+                const ref = f.querySelector("input[name='referencia[]']").value.trim();
+                const banco = f.querySelector("input[name='banco[]']").value.trim();
+                if (!ref && !banco) { f.dataset.txIndex = idx; transferRows.push({ idx, element: f, referencia: "", banco: "" }); return; }
+                transferRows.push({ idx, element: f, referencia: ref, banco: banco });
+                f.dataset.txIndex = idx;
+            });
+
+            if (!transferRows.length) return false;
+
+            let hasErrors = false;
+
+            const bancosValidos = transferRows.filter(function(r) { return r.banco; });
+            const bancosUnicos = [...new Set(bancosValidos.map(function(r) { return r.banco; }))];
+            if (bancosUnicos.length > 1) {
+                hasErrors = true;
+                transferRows.forEach(function(r) {
+                    var el = r.element.querySelector(".banco-errors");
+                    if (el) el.innerHTML = '<i class="bi bi-x-circle me-1"></i>Todas las transferencias deben usar el mismo banco.';
+                });
+            }
+
+            const refCount = {};
+            transferRows.forEach(function(r) {
+                if (!r.referencia) return;
+                refCount[r.referencia] = (refCount[r.referencia] || 0) + 1;
+            });
+            var dupRefs = Object.keys(refCount).filter(function(k) { return refCount[k] > 1; });
+            if (dupRefs.length) {
+                hasErrors = true;
+                transferRows.forEach(function(r) {
+                    if (r.referencia && dupRefs.indexOf(r.referencia) !== -1) {
+                        var el = r.element.querySelector(".ref-errors");
+                        if (el) el.innerHTML = '<i class="bi bi-x-circle me-1"></i>La referencia "' + r.referencia + '" est\u00e1 duplicada en esta factura.';
+                    }
+                });
+            }
+
+            var apiRows = transferRows.map(function(r) {
+                return { metodo: "transferencia", referencia: r.referencia, banco: r.banco };
+            });
+            try {
+                var res = await fetch("/api/validar-referencias-vendedor", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ rows: apiRows })
+                });
+                var data = await res.json();
+                if (data.ok && data.resultados && data.resultados.length) {
+                    hasErrors = true;
+                    data.resultados.forEach(function(r) {
+                        var tRow = null;
+                        for (var i = 0; i < transferRows.length; i++) {
+                            if (transferRows[i].idx === r.index) { tRow = transferRows[i]; break; }
+                        }
+                        if (tRow) {
+                            var el = tRow.element.querySelector(".ref-errors");
+                            if (el) {
+                                var msg = '<i class="bi bi-x-circle me-1"></i>' + r.error;
+                                if (el.innerHTML) el.innerHTML += "<br>" + msg;
+                                else el.innerHTML = msg;
+                            }
+                        }
+                    });
+                }
+            } catch (_e) {}
+
+            return hasErrors;
         };
 
         let validarTimeout = null;
@@ -489,7 +573,11 @@
             boletaInput.addEventListener("input", onInput);
             montoInput.addEventListener("input", function() { formatearMonto(this); actualizarResumen(); programarValidacion(); });
             montoInput.addEventListener("blur", actualizarResumen);
-            metodoSelect.addEventListener("change", function() { alternarReferencia(fila); });
+            metodoSelect.addEventListener("change", function() { alternarReferencia(fila); programarValidacion(); });
+            var refInput = fila.querySelector("input[name='referencia[]']");
+            var bancoInput = fila.querySelector("input[name='banco[]']");
+            if (refInput) refInput.addEventListener("input", function() { programarValidacion(); });
+            if (bancoInput) bancoInput.addEventListener("input", function() { programarValidacion(); });
             fila.querySelector(".eliminar-fila").addEventListener("click", function() {
                 if (abonosBody.querySelectorAll(".fila-abono").length > 1) {
                     fila.remove();

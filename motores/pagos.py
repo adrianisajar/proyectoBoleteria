@@ -1,7 +1,7 @@
 import re
 
 from motores.validacion import parse_boletas
-from motores.constants import OPERACIONES_VENDEDOR, BOLETA_MIN, BOLETA_MAX, VENDEDOR_SIN_ASIGNAR, VENDEDOR_LOCAL
+from motores.constants import OPERACIONES_VENDEDOR, BOLETA_MIN, BOLETA_MAX, VENDEDOR_SIN_ASIGNAR, VENDEDOR_LOCAL, METODO_TRANSFERENCIA
 
 from motores.shared import (
     boletas, vendedores,
@@ -337,5 +337,42 @@ def register_routes(app):
                     item["ok"] = True
             resultados.append(item)
         return jsonify({"ok": True, "resultados": resultados})
+
+    @app.route("/api/validar-referencias-vendedor", methods=["POST"])
+    @role_required("admin")
+    def api_validar_referencias_vendedor():
+        try:
+            data = request.get_json(force=True) or {}
+            rows = data.get("rows", [])
+        except Exception:
+            return jsonify({"ok": False, "error": "JSON inv\u00e1lido."}), 400
+        if not isinstance(rows, list):
+            return jsonify({"ok": False, "error": "Par\u00e1metros inv\u00e1lidos."}), 400
+        try:
+            require_collections()
+        except Exception:
+            pass
+        try:
+            results = []
+            for i, row in enumerate(rows):
+                if not isinstance(row, dict):
+                    continue
+                metodo = (row.get("metodo") or "").strip()
+                if metodo != METODO_TRANSFERENCIA:
+                    continue
+                ref = (row.get("referencia") or "").strip()
+                if not ref:
+                    continue
+                elem_match = {"metodo": METODO_TRANSFERENCIA, "referencia": ref}
+                dup = boletas.find_one({"historial_pagos": {"$elemMatch": elem_match}}, {"_id": 1})
+                if dup:
+                    results.append({
+                        "index": i,
+                        "referencia": ref,
+                        "error": f"La referencia '{ref}' ya existe en otro pago (boleta #{dup['_id']:04d})."
+                    })
+            return jsonify({"ok": True, "resultados": results})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
 
 
