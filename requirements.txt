@@ -2,9 +2,6 @@ Flask>=3.0,<4
 pymongo>=4.7,<5
 python-dotenv>=1.0,<2
 Werkzeug>=3.0,<4
-<<<<<<< HEAD
-=======
 dnspython>=2.6,<3
 openpyxl>=3.1,<4
 waitress>=3.0,<4
->>>>>>> 10f0911 (Reestructuración modular y correcciones)

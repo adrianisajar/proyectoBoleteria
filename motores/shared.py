@@ -14,6 +14,14 @@ if _APP_ROOT not in sys.path:
 from datetime import datetime
 
 from motores.fechas import now_local
+from motores.auth import current_user, has_role, role_required
+from motores.cache import (
+    CONFIG_CACHE, CONFIG_CACHE_SECONDS,
+    RIFA_CACHE, RIFA_CACHE_SECONDS,
+    DASHBOARD_CACHE, DASHBOARD_CACHE_SECONDS,
+    invalidate_rifa_cache, invalidate_dashboard_cache, invalidate_config_cache,
+)
+from motores.ticket_service import estado_para_total, sync_ticket_statuses, estado_pipeline_expr
 from functools import wraps
 from unicodedata import normalize as unicode_normalize
 
@@ -44,19 +52,10 @@ from motores.validacion import parse_int_filter, ticket_number_query, parse_mone
 from motores.modelos import crear_boleta_base
 from motores.excel_export import column_letter, make_xlsx_response
 from motores.excel_import import col_to_index, clean_excel_text, parse_excel_number, parse_excel_boleta, parse_excel_date
-CONFIG_CACHE = {"data": None, "loaded_at": 0}
-CONFIG_CACHE_SECONDS = 30
-
-RIFA_CACHE = {"data": None, "loaded_at": 0}
-RIFA_CACHE_SECONDS = 30
-
-DASHBOARD_CACHE = {"data": None, "loaded_at": 0}
-DASHBOARD_CACHE_SECONDS = 30
-
 ABONADO_OP_MAP = {"gte": "$gte", "lte": "$lte", "eq": "$eq"}
 
 
-def _buscar_transferencia_duplicada(ref, banco="", exclude_factura_id=None):
+def _buscar_transferencia_duplicada(ref: str, banco: str = "", exclude_factura_id: int | None = None) -> dict | None:
     elem_match = {"metodo": METODO_TRANSFERENCIA, "referencia": ref}
     if banco:
         elem_match["banco"] = banco
@@ -65,7 +64,7 @@ def _buscar_transferencia_duplicada(ref, banco="", exclude_factura_id=None):
     return boletas.find_one({"historial_pagos": {"$elemMatch": elem_match}}, {"_id": 1})
 
 
-def _build_factura_detalle(boleta_ids, factura_id):
+def _build_factura_detalle(boleta_ids: list[int], factura_id: int) -> list[dict]:
     docs = list(boletas.find({"_id": {"$in": boleta_ids}}, sort=[("_id", 1)]))
     detalle = []
     for doc in docs:
@@ -85,17 +84,7 @@ def _build_factura_detalle(boleta_ids, factura_id):
     return detalle
 
 
-def invalidate_rifa_cache():
-    RIFA_CACHE["data"] = None
-    RIFA_CACHE["loaded_at"] = 0
-
-
-def invalidate_dashboard_cache():
-    DASHBOARD_CACHE["data"] = None
-    DASHBOARD_CACHE["loaded_at"] = 0
-
-
-def get_rifa_activa(force=False):
+def get_rifa_activa(force: bool = False) -> dict:
     if not force and RIFA_CACHE["data"] and time.monotonic() - RIFA_CACHE["loaded_at"] < RIFA_CACHE_SECONDS:
         return RIFA_CACHE["data"].copy()
 
@@ -118,11 +107,11 @@ def get_rifa_activa(force=False):
         migrar_boletas_existentes(rifa["_id"])
         return rifa.copy()
     except Exception as exc:
-        print(f"[get_rifa_activa] {type(exc).__name__}: {exc}", file=sys.stderr)
+        logging.getLogger(__name__).error("get_rifa_activa: %s: %s", type(exc).__name__, exc)
         return DEFAULT_RIFA.copy()
 
 
-def migrar_config_a_rifa(config_doc):
+def migrar_config_a_rifa(config_doc: dict) -> dict | None:
     rifa = {
         "nombre": config_doc.get("nombre_rifa", DEFAULT_RIFA["nombre"]),
         "anio": DEFAULT_RIFA["anio"],
@@ -141,7 +130,7 @@ def migrar_config_a_rifa(config_doc):
     return rifa
 
 
-def migrar_boletas_existentes(rifa_id):
+def migrar_boletas_existentes(rifa_id: str) -> None:
     if boletas is None:
         return
     pendientes = boletas.count_documents({"rifa_id": {"$exists": False}})
@@ -149,19 +138,13 @@ def migrar_boletas_existentes(rifa_id):
         boletas.update_many({"rifa_id": {"$exists": False}}, {"$set": {"rifa_id": rifa_id}})
 
 
-def require_collections():
+def require_collections() -> None:
     required = [boletas, configuracion, facturas, rifas, vendedores]
     if any(collection is None for collection in required):
         raise RuntimeError("No hay conexión activa a MongoDB.")
 
 
-def invalidate_config_cache():
-    CONFIG_CACHE["data"] = None
-    CONFIG_CACHE["loaded_at"] = 0
-    invalidate_rifa_cache()
-
-
-def get_config(force=False):
+def get_config(force: bool = False) -> dict:
     if not force and CONFIG_CACHE["data"] and time.monotonic() - CONFIG_CACHE["loaded_at"] < CONFIG_CACHE_SECONDS:
         return copy.deepcopy(CONFIG_CACHE["data"])
 
@@ -200,7 +183,7 @@ def get_config(force=False):
     return config
 
 
-def normalize_vendedor_id(value):
+def normalize_vendedor_id(value: str) -> str:
     vendedor_id = re.sub(r"\s+", "_", value.strip().upper())
     if not re.fullmatch(r"[A-Z0-9_-]{2,32}", vendedor_id):
         raise ValueError("El ID del vendedor debe tener 2 a 32 caracteres: letras, números, guion o guion bajo.")
@@ -209,69 +192,7 @@ def normalize_vendedor_id(value):
 
 
 
-def estado_para_total(total_abonado, valor_boleta, cliente=None, vendedor_id=None):
-    if total_abonado >= valor_boleta:
-        return "pagada"
-    if total_abonado > 0:
-        return "abonando"
-    if vendedor_id == VENDEDOR_LOCAL:
-        return "separada"
-    if vendedor_id and vendedor_id not in (VENDEDOR_SIN_ASIGNAR, None):
-        return "asignada"
-    return "disponible"
-
-
-def sync_ticket_statuses(valor_boleta):
-    boletas.update_many(
-        {},
-        [
-            {
-                "$set": {
-                    "estado": estado_pipeline_expr(valor_boleta)
-                }
-            }
-        ],
-    )
-    invalidate_dashboard_cache()
-
-
-def estado_pipeline_expr(valor_boleta):
-    valor_literal = {"$literal": int(valor_boleta)}
-    return {
-        "$cond": [
-            {"$gte": ["$total_abonado", valor_literal]}, "pagada",
-            {"$cond": [
-                {"$gt": ["$total_abonado", 0]}, "abonando",
-                {"$cond": [
-                    {"$eq": [{"$ifNull": ["$vendedor_id", ""]}, VENDEDOR_LOCAL]}, "separada",
-                    {"$cond": [
-                        {"$ne": [{"$ifNull": ["$vendedor_id", ""]}, ""]}, "asignada",
-                        "disponible"
-                    ]}
-                ]}
-            ]}
-        ]
-    }
-
-
-def current_user():
-    return {"username": USUARIO_SISTEMA, "role": "admin", "nombre": "Sistema"}
-
-
-def has_role(*roles):
-    return True
-
-
-def role_required(*roles):
-    def decorator(view_func):
-        @wraps(view_func)
-        def wrapped(*args, **kwargs):
-            return view_func(*args, **kwargs)
-        return wrapped
-    return decorator
-
-
-def calc_comision_por_boleta(vendidas, tiers=None):
+def calc_comision_por_boleta(vendidas: int, tiers: list[dict] | None = None) -> int:
     if tiers is None:
         config = get_config()
         tiers = config.get("comisiones_tiers", COMISION_DEFAULT_TIERS)
@@ -295,13 +216,13 @@ def get_alertas():
 
 
 
-def get_vendedor_options():
+def get_vendedor_options() -> list[dict]:
     require_collections()
     cursor = vendedores.find({}, {"nombre": 1}).sort("_id", 1)
     return [{"_id": doc["_id"], "nombre": doc.get("nombre", "")} for doc in cursor]
 
 
-def existing_boleta_ids(boleta_ids):
+def existing_boleta_ids(boleta_ids: list[int]) -> list[int]:
     if not boleta_ids:
         return []
 
@@ -310,7 +231,7 @@ def existing_boleta_ids(boleta_ids):
     return [boleta_id for boleta_id in boleta_ids if boleta_id in existing]
 
 
-def get_dashboard_counts(rifa_id=None, valor_boleta=None):
+def get_dashboard_counts(rifa_id: str | None = None, valor_boleta: int | None = None) -> dict:
     require_collections()
     match = {}
     if rifa_id:
@@ -385,7 +306,7 @@ def first_aggregate(collection, pipeline, default=None):
     return next(collection.aggregate(pipeline), None) or default or {}
 
 
-def get_dashboard_stats(force=False):
+def get_dashboard_stats(force: bool = False) -> dict:
     if not force and DASHBOARD_CACHE["data"] and time.monotonic() - DASHBOARD_CACHE["loaded_at"] < DASHBOARD_CACHE_SECONDS:
         return DASHBOARD_CACHE["data"].copy()
     require_collections()
@@ -560,7 +481,7 @@ def get_vendedores_snapshot(config=None):
     }
 
 
-def build_consulta_context(args):
+def build_consulta_context(args: dict) -> dict:
     filters = {
         "numero": args.get("numero", args.get("buscar_numero", "")).strip(),
         "desde": args.get("desde", "").strip(),
@@ -709,7 +630,7 @@ def build_consulta_context(args):
     return filters, query, errors, page, limite, offset, has_filters, numero_exacto
 
 
-def build_page_url(endpoint, filters, page):
+def build_page_url(endpoint: str, filters: dict, page: int) -> str:
     params = {key: value for key, value in filters.items() if value is not None and value != ""}
     params["page"] = page
     return url_for(endpoint, **params)
@@ -752,7 +673,7 @@ def validar_form_abono(form):
     return form_data, valor_abono, boleta_ids, duplicadas, errors
 
 
-def build_abono_preview(form, factura_id=None):
+def build_abono_preview(form: dict, factura_id: int | None = None) -> dict:
     require_collections()
     config = get_config()
     valor_boleta = int(config["valor_boleta"])
@@ -831,7 +752,7 @@ def build_abono_preview(form, factura_id=None):
     return form_data, preview
 
 
-def registrar_abono_lote(boleta_ids, form_data, valor_abono, factura_id=None):
+def registrar_abono_lote(boleta_ids: list[int], form_data: dict, valor_abono: int, factura_id: int | None = None) -> dict:
     config = get_config()
     valor_boleta = int(config["valor_boleta"])
 
@@ -900,7 +821,7 @@ def registrar_abono_lote(boleta_ids, form_data, valor_abono, factura_id=None):
     return result
 
 
-def rollback_pagos_por_factura(factura_id, valor_boleta):
+def rollback_pagos_por_factura(factura_id: int, valor_boleta: int) -> None:
     pipeline = [
         {
             "$set": {
@@ -933,7 +854,7 @@ def rollback_pagos_por_factura(factura_id, valor_boleta):
     invalidate_dashboard_cache()
 
 
-def safe_vendedores_snapshot():
+def safe_vendedores_snapshot() -> list[dict]:
     try:
         return get_vendedores_snapshot()
     except Exception as exc:
@@ -941,7 +862,7 @@ def safe_vendedores_snapshot():
         return [], {"total_asignadas": 0, "total_recaudado": 0, "total_comision": 0, "total_vendedores": 0}
 
 
-def next_factura_id():
+def next_factura_id() -> int:
     result = configuracion.find_one_and_update(
         {"_id": "rifa"},
         {"$inc": {"factura_counter": 1}},
