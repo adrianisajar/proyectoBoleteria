@@ -27,6 +27,7 @@
         <div class="office-card bg-body p-3 p-md-4">
             <h2 class="section-title mb-3">Par&aacute;metros de la rifa</h2>
             <form method="post" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="guardar_config">
                 <div class="row g-3">
                     <div class="col-12">
@@ -54,6 +55,7 @@
         <div class="office-card bg-body p-3 p-md-4">
             <h2 class="section-title mb-3">Datos de la empresa</h2>
             <form method="post" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="guardar_empresa">
                 <div class="row g-3">
                     <div class="col-md-6">
@@ -91,6 +93,7 @@
             <h2 class="section-title mb-3">Comisiones por vendedor</h2>
             <p class="text-secondary small mb-3">Cada vendedor recibe una comisi&oacute;n fija por boleta vendida, seg&uacute;n el n&uacute;mero total de boletas que haya vendido.</p>
             <form method="post" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="guardar_comisiones">
                 <div class="table-responsive">
                     <table class="table table-sm align-middle mb-3">
@@ -151,12 +154,14 @@
                     <i class="bi bi-download me-1"></i>Descargar modelo
                 </a>
                 <form method="post" action="{{ url_for('sincronizar_estados') }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-outline-warning d-inline-flex align-items-center gap-1">
                         <i class="bi bi-arrow-clockwise"></i> Sincronizar estados
                     </button>
                 </form>
             </div>
             <form method="post" action="{{ url_for('importar_rifa_excel') }}" enctype="multipart/form-data" class="border-top pt-3" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="mb-3">
                     <label for="archivo_rifa" class="form-label fw-semibold">Seleccionar archivo Excel (.xlsx)</label>
                     <input type="file" class="form-control" id="archivo_rifa" name="archivo_rifa" accept=".xlsx" required>
@@ -176,6 +181,7 @@
         <div class="office-card bg-body p-3 p-md-4 border border-primary">
             <h2 class="section-title mb-3">Crear nueva rifa</h2>
             <form method="post" action="{{ url_for('nueva_rifa') }}" class="row g-3" autocomplete="off">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="col-md-6">
                     <label for="nombre" class="form-label fw-semibold">Nombre de la rifa</label>
                     <input type="text" class="form-control" id="nombre" name="nombre_rifa_nueva" placeholder="Rifa 2026" required>

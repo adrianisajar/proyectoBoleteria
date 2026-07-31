@@ -327,7 +327,7 @@ function validarTodo() {
   setBtnLoading(btn, true);
   fetch(apiValidar, {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    headers: {"Content-Type": "application/json", "X-CSRF-Token": getCsrfToken()},
     body: JSON.stringify({boletas: filas.map(f => f.boleta)}),
   })
     .then(r => r.json())
@@ -405,7 +405,7 @@ function guardarCambios() {
   setBtnLoading(btn, true);
   fetch(apiValidar, {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    headers: {"Content-Type": "application/json", "X-CSRF-Token": getCsrfToken()},
     body: JSON.stringify({boletas: filas.map(f => f.boleta)}),
   })
     .then(r => r.json())
@@ -462,7 +462,7 @@ function guardarCambios() {
 function ejecutarGuardado(filas, btn) {
   fetch(apiGuardar, {
     method: "POST",
-    headers: {"Content-Type": "application/json"},
+    headers: {"Content-Type": "application/json", "X-CSRF-Token": getCsrfToken()},
     body: JSON.stringify({rows: filas}),
   })
     .then(r => r.json())

@@ -43,6 +43,7 @@
 
 <div class="office-card bg-body p-3 p-md-4 mb-4">
     <form method="post" class="row g-3" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="col-md-5">
             <label for="nombre" class="form-label fw-semibold">Nombre del vendedor</label>
             <div class="position-relative">
@@ -377,7 +378,7 @@
             });
             fetch("/api/validar-boletas-vendedor", {
                 method: "POST",
-                headers: {"Content-Type": "application/json"},
+                headers: {"Content-Type": "application/json", "X-CSRF-Token": getCsrfToken()},
                 body: body,
             })
             .then(function(r) { return r.json(); })

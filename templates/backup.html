@@ -17,6 +17,7 @@
             <h2 class="section-title mb-3">Exportar base de datos</h2>
             <p class="text-secondary small mb-3">Descarga un archivo ZIP con todos los datos del sistema en formato JSON. Incluye boletas, vendedores, facturas y configuración.</p>
             <form method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="accion" value="exportar">
                 <div class="d-grid">
                     <button type="submit" class="btn btn-primary btn-lg d-inline-flex align-items-center justify-content-center gap-2">
@@ -29,6 +30,7 @@
             <h2 class="section-title mb-3">Importar base de datos</h2>
             <p class="text-secondary small mb-3">Suba un archivo ZIP de respaldo para restaurar los datos. <strong class="text-danger">Esto reemplazará todos los datos actuales.</strong></p>
             <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="accion" value="importar">
                 <div class="mb-3">
                     <input type="file" class="form-control" name="archivo" accept=".zip" required>

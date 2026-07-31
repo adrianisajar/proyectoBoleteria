@@ -4,6 +4,7 @@ from flask import Flask, Response
 from pymongo import UpdateOne
 
 from motores.constants import VENDEDOR_LOCAL
+from motores.errores import safe_error_message
 from motores.shared import (
     boletas,
     estado_pipeline_expr,
@@ -108,7 +109,7 @@ def register_routes(app: Flask) -> None:
             try:
                 return _procesar_rows_rapido(rows)
             except Exception as exc:
-                return jsonify({"ok": False, "error": str(exc)}), 500
+                return jsonify({"ok": False, "error": safe_error_message(exc)}), 500
 
         config = get_config()
         return render_template("compradores_rapido.html", valor_boleta=config.get("valor_boleta", 0))
@@ -139,7 +140,7 @@ def register_routes(app: Flask) -> None:
                 )
             }
         except Exception as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 500
+            return jsonify({"ok": False, "error": safe_error_message(exc)}), 500
 
         resultados = {}
         for b in boletas_list:

@@ -6,6 +6,7 @@ import re
 from flask import Flask, Response
 
 from motores.constants import BOLETA_MAX, BOLETA_MIN, CONSULTA_LIMIT_MAX, VENDEDOR_LOCAL
+from motores.errores import safe_error_message
 from motores.shared import (
     boletas,
     build_consulta_context,
@@ -437,7 +438,7 @@ def register_routes(app: Flask) -> None:
                     )
             return jsonify(items)
         except Exception as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 500
+            return jsonify({"ok": False, "error": safe_error_message(exc)}), 500
 
     @app.route("/api/boletas/<int:boleta_id>")
     @role_required("admin", "cajero", "consulta")
@@ -453,7 +454,7 @@ def register_routes(app: Flask) -> None:
                 {"_id": 1, "vendedor_id": 1, "cliente": 1, "estado": 1, "total_abonado": 1, "historial_pagos": 1},
             )
         except Exception as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 500
+            return jsonify({"ok": False, "error": safe_error_message(exc)}), 500
 
         if not doc:
             return jsonify({"ok": False, "error": "No existe la boleta."}), 404
@@ -503,7 +504,7 @@ def register_routes(app: Flask) -> None:
         try:
             docs = {d["_id"]: d for d in boletas.find({"_id": {"$in": int_ids}}, {"_id": 1, "vendedor_id": 1, "estado": 1, "total_abonado": 1})}
         except Exception as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 500
+            return jsonify({"ok": False, "error": safe_error_message(exc)}), 500
         resultados = []
         for b in int_ids:
             doc = docs.get(b)
@@ -537,7 +538,7 @@ def register_routes(app: Flask) -> None:
         try:
             docs = {d["_id"]: d for d in boletas.find({"_id": {"$in": int_ids}}, {"_id": 1, "estado": 1, "vendedor_id": 1, "total_abonado": 1, "cliente": 1})}
         except Exception as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 500
+            return jsonify({"ok": False, "error": safe_error_message(exc)}), 500
         resultados = []
         for b in int_ids:
             doc = docs.get(b)

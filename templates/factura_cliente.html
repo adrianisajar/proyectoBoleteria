@@ -170,6 +170,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <form method="post" action="{{ url_for('anular_factura', factura_id=factura._id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="anulacion_hash" value="{{ anulacion_hash }}">
           <div class="modal-header">
           <h5 class="modal-title text-danger">Anular factura</h5>

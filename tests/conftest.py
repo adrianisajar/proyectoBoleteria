@@ -16,6 +16,9 @@ from database import boletas, configuracion, facturas, rifas, vendedores
 from motores.cache import invalidate_config_cache, invalidate_dashboard_cache
 from optimizar_db import REQUIRED_INDEXES
 
+if any(col is None for col in (boletas, vendedores, configuracion, facturas, rifas)):
+    pytest.skip("MongoDB no disponible: se omiten los tests que requieren base de datos.", allow_module_level=True)
+
 COMISION_TIERS = [
     {"min": 0, "valor": 0},
     {"min": 10, "valor": 10000},

@@ -1,6 +1,6 @@
 import contextlib
 
-from flask import Flask, Response, jsonify
+from flask import Flask, Response, current_app, jsonify
 
 from database import boletas, configuracion, facturas, rifas, vendedores
 from motores.config_service import require_collections
@@ -55,4 +55,5 @@ def register_routes(app: Flask) -> None:
             }
             return jsonify(payload)
         except Exception as exc:
-            return jsonify({"status": "error", "db": str(exc)}), 503
+            current_app.logger.error("Health check fall\u00f3: %s: %s", type(exc).__name__, exc)
+            return jsonify({"status": "error", "db": "no disponible"}), 503

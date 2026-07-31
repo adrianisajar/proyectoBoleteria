@@ -4,7 +4,7 @@
 - **Framework**: Flask (Jinja2 templates, no REST API framework)
 - **Database**: MongoDB via PyMongo (Atlas URI in `.env`)
 - **Python**: 3.14 (from `.venv`)
-- **Tests**: pytest (54 functional tests, real MongoDB on test DB `sistema_boleteria_test`).
+- **Tests**: pytest (58 functional tests, real MongoDB on test DB `sistema_boleteria_test`).
 - **Lint/format**: Ruff (`pyproject.toml`). No typechecker.
 - **CI**: GitHub Actions (`.github/workflows/test.yml`) — lint + pytest on push/PR. Requires secrets `MONGO_URI` y `SECRET_KEY` en el repo.
 
@@ -68,7 +68,7 @@ tests/                pytest suite (conftest seeds/resets test DB per test)
 | Custom port | `PORT=8080 python run_server.py` |
 
 ## Tests (pytest)
-- Suite: `tests/` — 54 tests against real MongoDB, isolated DB `sistema_boleteria_test`.
+- Suite: `tests/` — 58 tests against real MongoDB, isolated DB `sistema_boleteria_test`.
 - `conftest.py` sets `MONGO_DB=sistema_boleteria_test` **before** importing `app` (env var wins over `load_dotenv`), seeds 500 tickets + config + active rifa once per session, and resets collections before each test.
 - `_warm_up()` (con retry ×3) ejecuta un count/find sobre cada colección tras la siembra para mitigar la primera petición fría contra Atlas.
 - Never point tests at the production DB; the suite drops/resets everything in `MONGO_DB`.
@@ -79,7 +79,9 @@ tests/                pytest suite (conftest seeds/resets test DB per test)
 MONGO_URI=mongodb+srv://...
 SECRET_KEY=...
 ```
-Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `SERVER_SELECTION_TIMEOUT_MS` (alias), `MIN_POOL_SIZE` (default 0), `MAX_POOL_SIZE` (default 100), `MONGO_TLS_INSECURE` (default `true`, para clusters Atlas sin CA verificable), `NOMBRE_RIFA`, `VALOR_BOLETA`, `COMISION_POR_BOLETA` (default 10000), `FLASK_HOST`, `FLASK_DEBUG`.
+Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `SERVER_SELECTION_TIMEOUT_MS` (alias), `MIN_POOL_SIZE` (default 0), 
+`MAX_POOL_SIZE` (default 100), `MONGO_TLS_INSECURE` (default `false`; ponla en `true` solo si tu cluster Atlas requiere TLS sin verificación de CA), 
+`NOMBRE_RIFA`, `VALOR_BOLETA`, `COMISION_POR_BOLETA` (default 10000), `FLASK_HOST`, `FLASK_DEBUG`.
 
 **`.gitignore` includes `.env`** — secrets are not tracked.
 

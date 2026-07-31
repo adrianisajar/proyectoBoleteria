@@ -28,7 +28,7 @@ MONGO_DB: str = os.getenv("MONGO_DB", "sistema_boleteria")
 MONGO_TIMEOUT_MS: int = int(os.getenv("SERVER_SELECTION_TIMEOUT_MS", os.getenv("MONGO_TIMEOUT_MS", "5000")))
 MONGO_MIN_POOL_SIZE: int = int(os.getenv("MIN_POOL_SIZE", "0"))
 MONGO_MAX_POOL_SIZE: int = int(os.getenv("MAX_POOL_SIZE", "100"))
-MONGO_TLS_INSECURE: bool = os.getenv("MONGO_TLS_INSECURE", "true").lower() in ("1", "true", "yes")
+MONGO_TLS_INSECURE: bool = os.getenv("MONGO_TLS_INSECURE", "false").lower() in ("1", "true", "yes")
 
 
 def _connect() -> tuple[MongoClient, Database]:

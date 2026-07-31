@@ -12,6 +12,7 @@
 </div>
 
 <form id="formFacturaVendedor" method="post" class="row g-3" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="col-lg-4">
         <div class="office-card bg-body p-3 p-md-4">
             <h2 class="section-title mb-3">Datos del vendedor</h2>
@@ -386,7 +387,7 @@
             try {
                 var res = await fetch("/api/validar-referencias-vendedor", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "application/json", "X-CSRF-Token": getCsrfToken() },
                     body: JSON.stringify({ rows: apiRows })
                 });
                 var data = await res.json();

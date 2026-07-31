@@ -3,6 +3,12 @@ from typing import Any
 from flask import Flask, Response, current_app, jsonify, render_template, request
 
 
+def safe_error_message(exc: Exception, default: str = "Error interno del servidor.") -> str:
+    """Log the exception detail server-side and return a generic client-safe message."""
+    current_app.logger.error("Error interno: %s: %s", type(exc).__name__, exc)
+    return default
+
+
 def _es_solicitud_api() -> bool:
     """Return True when the request expects a JSON error (API path or Accept header)."""
     path = (request.path or "").lower()
@@ -28,7 +34,13 @@ def _render_error(codigo: int, titulo: str, mensaje: str, exc: Exception | None 
 
 
 def register_error_handlers(app: Flask) -> None:
-    """Register consistent responses (HTML or JSON) for 404 and 500 errors."""
+    """Register consistent responses (HTML or JSON) for 400, 404 and 500 errors."""
+
+    @app.errorhandler(400)
+    def bad_request(exc: Any) -> tuple[str | Response, int]:
+        """Render the 400 error response (bad request / CSRF rejection)."""
+        mensaje = getattr(exc, "description", None) or "Solicitud inv\u00e1lida."
+        return _render_error(400, "Solicitud inv\u00e1lida", str(mensaje))
 
     @app.errorhandler(404)
     def not_found(exc: Any) -> tuple[str | Response, int]:

@@ -5,6 +5,7 @@ from flask import Flask
 
 from motores.boletas import register_routes as register_boletas
 from motores.compradores import register_routes as register_compradores
+from motores.csrf import register_csrf
 from motores.errores import register_error_handlers
 from motores.facturacion import register_routes as register_facturacion
 from motores.facturacion_cliente import register_routes as register_facturacion_cliente
@@ -28,6 +29,7 @@ if app.debug:
 register_template_filters(app)
 register_before_request(app)
 register_context_processor(app)
+register_csrf(app)
 
 register_rifas(app)
 register_boletas(app)

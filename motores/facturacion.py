@@ -11,7 +11,6 @@ from motores.shared import (
     abort,
     boletas,
     current_user,
-    estado_pipeline_expr,
     facturas,
     flash,
     get_config,
@@ -21,6 +20,7 @@ from motores.shared import (
     request,
     require_collections,
     role_required,
+    rollback_pagos_por_factura,
     url_for,
     vendedores,
 )
@@ -190,36 +190,8 @@ def register_routes(app: Flask) -> None:
         config_local = get_config()
         valor_boleta_local = int(config_local["valor_boleta"])
 
-        boleta_ids = factura.get("boletas", [])
         try:
-            if boleta_ids:
-                boletas.update_many(
-                    {"_id": {"$in": boleta_ids}},
-                    [
-                        {
-                            "$set": {
-                                "historial_pagos": {
-                                    "$filter": {
-                                        "input": {"$ifNull": ["$historial_pagos", []]},
-                                        "cond": {"$ne": ["$$this.factura_id", factura_id]},
-                                    }
-                                }
-                            }
-                        },
-                        {
-                            "$set": {
-                                "total_abonado": {
-                                    "$reduce": {
-                                        "input": {"$ifNull": ["$historial_pagos", []]},
-                                        "initialValue": 0,
-                                        "in": {"$add": ["$$value", "$$this.valor"]},
-                                    }
-                                }
-                            }
-                        },
-                        {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
-                    ],
-                )
+            rollback_pagos_por_factura(factura_id, valor_boleta_local)
 
             facturas.update_one(
                 {"_id": factura_id},

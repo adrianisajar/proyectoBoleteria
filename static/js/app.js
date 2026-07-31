@@ -5,6 +5,17 @@
     var button = document.getElementById("themeToggle");
     var icon = document.getElementById("themeIcon");
 
+    window.getCsrfToken = function() {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute("content") : "";
+    };
+
+    window.fetchWithCsrf = function(url, options) {
+        options = options || {};
+        options.headers = Object.assign({}, options.headers, { "X-CSRF-Token": window.getCsrfToken() });
+        return fetch(url, options);
+    };
+
     var refreshIcon = function() {
         var theme = root.getAttribute("data-bs-theme");
         icon.className = theme === "dark" ? "bi bi-sun" : "bi bi-moon-stars";

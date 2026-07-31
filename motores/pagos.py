@@ -4,6 +4,7 @@ import re
 from flask import Flask, Response
 
 from motores.constants import BOLETA_MAX, BOLETA_MIN, METODO_TRANSFERENCIA, OPERACIONES_VENDEDOR, VENDEDOR_LOCAL, VENDEDOR_SIN_ASIGNAR
+from motores.errores import safe_error_message
 from motores.shared import (
     boletas,
     estado_pipeline_expr,
@@ -275,7 +276,7 @@ def register_routes(app: Flask) -> None:
             docs = list(vendedores.find(query, {"nombre": 1, "telefono": 1}).sort("_id", 1).limit(20))
             return jsonify([{"_id": d["_id"], "nombre": d.get("nombre", ""), "telefono": d.get("telefono", "")} for d in docs])
         except Exception as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 500
+            return jsonify({"ok": False, "error": safe_error_message(exc)}), 500
 
     @app.route("/api/vendedores/<vendedor_id>/boletas")
     @role_required("admin", "cajero", "consulta")
@@ -302,7 +303,7 @@ def register_routes(app: Flask) -> None:
                 )
             return jsonify({"ok": True, "total": len(boletas_list), "boletas": boletas_list})
         except Exception as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 500
+            return jsonify({"ok": False, "error": safe_error_message(exc)}), 500
 
     @app.route("/api/validar-boletas-vendedor", methods=["POST"])
     @role_required("admin")
@@ -396,4 +397,4 @@ def register_routes(app: Flask) -> None:
                     results.append({"index": i, "referencia": ref, "error": f"La referencia '{ref}' ya existe en otro pago (boleta #{dup['_id']:04d})."})
             return jsonify({"ok": True, "resultados": results})
         except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
+            return jsonify({"ok": False, "error": safe_error_message(e)}), 500
