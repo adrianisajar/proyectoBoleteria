@@ -2,6 +2,7 @@ import logging
 import os
 import threading
 import webbrowser
+
 from waitress import serve
 
 # ── Custom compact logging ──────────────────────────────────────────
@@ -19,15 +20,17 @@ def _status(msg: str):
 
 
 def _ok(msg: str):
-    print(f"  ✓ {msg}")
+    print(f"  [OK] {msg}")
 
 
 def _fail(msg: str):
-    print(f"  ✗ {msg}")
+    print(f"  [FAIL] {msg}")
+
+
 # ─────────────────────────────────────────────────────────────────────
 
 from app import app
-from motores.shared import get_config, sync_ticket_statuses, require_collections
+from motores.shared import get_config, require_collections, sync_ticket_statuses
 
 try:
     _status("Verificando conexión a MongoDB...")
@@ -49,7 +52,7 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
 
-    browser_host = "127.0.0.1" if host == '0.0.0.0' else host
+    browser_host = "127.0.0.1" if host == "0.0.0.0" else host
     abrir_navegador(browser_host, port)
     _ok(f"Servidor iniciado → http://{browser_host}:{port}")
     print()

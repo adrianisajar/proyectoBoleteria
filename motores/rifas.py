@@ -1,23 +1,35 @@
-from datetime import datetime
+from flask import Flask, Response
 
-from motores.constants import CONFIG_ID, COMISION_DEFAULT_TIERS, DEFAULT_CONFIG
+from motores.config_service import get_rifa_activa
+from motores.constants import CONFIG_ID, DEFAULT_CONFIG
 from motores.fechas import now_local
+from motores.shared import (
+    configuracion,
+    crear_nueva_rifa,
+    flash,
+    get_config,
+    importar_modelo_rifa,
+    invalidate_config_cache,
+    invalidate_dashboard_cache,
+    redirect,
+    render_template,
+    request,
+    require_collections,
+    rifas,
+    role_required,
+    sync_ticket_statuses,
+    url_for,
+)
 from motores.validacion import parse_money
 
-from motores.shared import (
-    configuracion, rifas,
-    request, flash, redirect, render_template, url_for,
-    get_config, get_rifa_activa, invalidate_config_cache, invalidate_dashboard_cache,
-    require_collections, role_required, sync_ticket_statuses,
-    importar_modelo_rifa, crear_nueva_rifa,
-)
 
-
-def register_routes(app):
+def register_routes(app: Flask) -> None:
+    """Register the config panel and rifa lifecycle routes."""
 
     @app.route("/configuracion", methods=["GET", "POST"])
     @role_required("admin")
-    def configuracion_panel():
+    def configuracion_panel() -> str | Response:
+        """Config page: company data, rifa params, commission tiers."""
         require_collections()
         config = get_config()
         rifa = get_rifa_activa()
@@ -33,10 +45,13 @@ def register_routes(app):
                     "footer_texto": request.form.get("footer_texto", "").strip(),
                     "observaciones_recaudo": request.form.get("observaciones_recaudo", "").strip(),
                 }
-                configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
-                invalidate_config_cache()
-                invalidate_dashboard_cache()
-                flash("Datos de la empresa guardados.", "success")
+                try:
+                    configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
+                    invalidate_config_cache()
+                    invalidate_dashboard_cache()
+                    flash("Datos de la empresa guardados.", "success")
+                except Exception as exc:
+                    flash(f"Error al guardar los datos de la empresa: {exc}", "danger")
                 return redirect(url_for("configuracion_panel"))
 
             elif action == "guardar_config":
@@ -59,7 +74,11 @@ def register_routes(app):
                         "valor_boleta": valor_boleta,
                         "cantidad_boletas": cantidad_boletas,
                     }
-                    configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
+                    try:
+                        configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
+                    except Exception as exc:
+                        flash(f"Error al guardar los par\u00e1metros: {exc}", "danger")
+                        return redirect(url_for("configuracion_panel"))
                     try:
                         rifas.update_one({"estado": "activa"}, {"$set": {"nombre": nombre, "valor_boleta": valor_boleta, "cantidad_boletas": cantidad_boletas}})
                     except Exception:
@@ -99,7 +118,8 @@ def register_routes(app):
 
     @app.route("/rifas/nueva", methods=["POST"])
     @role_required("admin")
-    def nueva_rifa():
+    def nueva_rifa() -> Response:
+        """Reset the system for a new rifa (confirmation-gated, optional vendor keep)."""
         nombre = request.form.get("nombre_rifa_nueva", "").strip() or f"Rifa {now_local().date().isoformat()}"
         valor_boleta = parse_money(request.form.get("valor_boleta_nueva", ""))
         conservar_vendedores = request.form.get("conservar_vendedores") == "on"
@@ -139,7 +159,8 @@ def register_routes(app):
 
     @app.route("/rifas/importar", methods=["POST"])
     @role_required("admin")
-    def importar_rifa_excel():
+    def importar_rifa_excel() -> Response:
+        """Import vendor assignments from an xlsx modelo-rifa file."""
         archivo = request.files.get("archivo_rifa")
         confirmacion = request.form.get("confirmacion_importacion", "").strip().upper()
 
@@ -182,7 +203,8 @@ def register_routes(app):
 
     @app.route("/rifas/sincronizar-estados", methods=["POST"])
     @role_required("admin")
-    def sincronizar_estados():
+    def sincronizar_estados() -> Response:
+        """Recalculate every ticket state from its total_abonado."""
         try:
             require_collections()
             config = get_config()

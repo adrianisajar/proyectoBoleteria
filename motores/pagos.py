@@ -1,19 +1,32 @@
+import contextlib
 import re
 
-from motores.validacion import parse_boletas
-from motores.constants import OPERACIONES_VENDEDOR, BOLETA_MIN, BOLETA_MAX, VENDEDOR_SIN_ASIGNAR, VENDEDOR_LOCAL, METODO_TRANSFERENCIA
+from flask import Flask, Response
 
+from motores.constants import BOLETA_MAX, BOLETA_MIN, METODO_TRANSFERENCIA, OPERACIONES_VENDEDOR, VENDEDOR_LOCAL, VENDEDOR_SIN_ASIGNAR
 from motores.shared import (
-    boletas, vendedores,
-    request, flash, redirect, render_template, url_for, jsonify,
-    get_config, require_collections, role_required,
+    boletas,
+    estado_pipeline_expr,
+    existing_boleta_ids,
+    flash,
+    get_config,
+    invalidate_dashboard_cache,
+    jsonify,
+    normalize_vendedor_id,
+    redirect,
+    render_template,
+    request,
+    require_collections,
+    role_required,
     safe_vendedores_snapshot,
-    normalize_vendedor_id, existing_boleta_ids,
-    estado_pipeline_expr, invalidate_dashboard_cache,
+    url_for,
+    vendedores,
 )
+from motores.validacion import parse_boletas
 
 
-def _actualizar_estado_boletas(filtro, nuevo_vendedor_id, valor_boleta):
+def _actualizar_estado_boletas(filtro: dict, nuevo_vendedor_id: str, valor_boleta: int) -> None:
+    """Reassign tickets matching filtro to a vendor and recalc their estado."""
     boletas.update_many(
         filtro,
         [
@@ -23,12 +36,14 @@ def _actualizar_estado_boletas(filtro, nuevo_vendedor_id, valor_boleta):
     )
 
 
-def _render_vendedores(form_data):
+def _render_vendedores(form_data: dict) -> str:
+    """Render the vendor panel with the current snapshot and the submitted form data."""
     vendedores_lista, resumen = safe_vendedores_snapshot()
     return render_template("vendedores.html", form=form_data, vendedores_lista=vendedores_lista, resumen=resumen)
 
 
-def _validar_form_vendedor(form_data):
+def _validar_form_vendedor(form_data: dict) -> tuple[str, list[int], list[str]]:
+    """Validate the vendor form and return (vendedor_id, boleta_ids, errors)."""
     errors = []
     vendedor_id = ""
     try:
@@ -57,7 +72,8 @@ def _validar_form_vendedor(form_data):
     return vendedor_id, boleta_ids, errors
 
 
-def _procesar_guardar(vendedor_id, perfil_update):
+def _procesar_guardar(vendedor_id: str, perfil_update: dict) -> None:
+    """Create or update a vendor profile with the given $set document."""
     existe = vendedores.find_one({"_id": vendedor_id}, {"_id": 1})
     vendedores.update_one({"_id": vendedor_id}, perfil_update, upsert=True)
     if existe:
@@ -66,15 +82,12 @@ def _procesar_guardar(vendedor_id, perfil_update):
         flash(f"Vendedor {vendedor_id} creado.", "success")
 
 
-def _boletas_con_pagos(ids):
+def _boletas_con_pagos(ids: list[int]) -> list[int]:
     """Return list of ticket ids that have payments (total_abonado > 0)."""
-    return [
-        b["_id"]
-        for b in boletas.find({"_id": {"$in": ids}, "total_abonado": {"$gt": 0}}, {"_id": 1})
-    ]
+    return [b["_id"] for b in boletas.find({"_id": {"$in": ids}, "total_abonado": {"$gt": 0}}, {"_id": 1})]
 
 
-def _boletas_de_otro_vendedor(ids, vendedor_id):
+def _boletas_de_otro_vendedor(ids: list[int], vendedor_id: str) -> dict:
     """Return dict {ticket_id: owner_id} for tickets assigned to a DIFFERENT vendor."""
     docs = boletas.find(
         {"_id": {"$in": ids}, "vendedor_id": {"$exists": True, "$ne": None, "$nin": ["", vendedor_id]}},
@@ -83,7 +96,8 @@ def _boletas_de_otro_vendedor(ids, vendedor_id):
     return {d["_id"]: d["vendedor_id"] for d in docs}
 
 
-def _procesar_asignar(vendedor_id, boleta_ids, perfil_update, valor_boleta):
+def _procesar_asignar(vendedor_id: str, boleta_ids: list[int], perfil_update: dict, valor_boleta: int) -> None:
+    """Assign tickets to a vendor, blocking tickets with payments and handling reasignment."""
     existentes = existing_boleta_ids(boleta_ids)
     faltantes = len(boleta_ids) - len(existentes)
 
@@ -121,7 +135,8 @@ def _procesar_asignar(vendedor_id, boleta_ids, perfil_update, valor_boleta):
     flash(mensaje, "success")
 
 
-def _procesar_quitar(vendedor_id, boleta_ids, perfil_update, valor_boleta):
+def _procesar_quitar(vendedor_id: str, boleta_ids: list[int], perfil_update: dict, valor_boleta: int) -> None:
+    """Remove ticket assignments from a vendor, rejecting foreign or paid tickets."""
     existentes = existing_boleta_ids(boleta_ids)
     faltantes = len(boleta_ids) - len(existentes)
 
@@ -134,16 +149,15 @@ def _procesar_quitar(vendedor_id, boleta_ids, perfil_update, valor_boleta):
         return
 
     # Validate: tickets must belong to this vendor
-    ajenas = list(boletas.find(
-        {"_id": {"$in": existentes}, "vendedor_id": {"$ne": vendedor_id}},
-        {"_id": 1},
-    ))
+    ajenas = list(
+        boletas.find(
+            {"_id": {"$in": existentes}, "vendedor_id": {"$ne": vendedor_id}},
+            {"_id": 1},
+        )
+    )
     if ajenas:
         ids_ajenas = ", ".join(f"#{b['_id']:04d}" for b in ajenas)
-        raise ValueError(
-            f"Las siguientes boletas no pertenecen a {vendedor_id}: {ids_ajenas}. "
-            "Solo puedes quitar boletas asignadas a este vendedor."
-        )
+        raise ValueError(f"Las siguientes boletas no pertenecen a {vendedor_id}: {ids_ajenas}. Solo puedes quitar boletas asignadas a este vendedor.")
 
     # Validate: cannot remove tickets with payments
     con_pagos = _boletas_con_pagos(existentes)
@@ -160,16 +174,14 @@ def _procesar_quitar(vendedor_id, boleta_ids, perfil_update, valor_boleta):
     flash(mensaje, "success")
 
 
-def _procesar_eliminar(vendedor_id, valor_boleta):
+def _procesar_eliminar(vendedor_id: str, valor_boleta: int) -> None:
+    """Delete a vendor after releasing their assigned tickets (blocks paid tickets)."""
     vendedor_doc = vendedores.find_one({"_id": vendedor_id})
     if not vendedor_doc:
         flash(f"El vendedor {vendedor_id} no existe.", "danger")
         return
 
-    boletas_ids_vendor = [
-        num for num in vendedor_doc.get("boletas_asignadas", [])
-        if isinstance(num, int) and BOLETA_MIN <= num <= BOLETA_MAX
-    ]
+    boletas_ids_vendor = [num for num in vendedor_doc.get("boletas_asignadas", []) if isinstance(num, int) and BOLETA_MIN <= num <= BOLETA_MAX]
 
     # Validate: cannot delete vendor if they have tickets with payments
     if boletas_ids_vendor:
@@ -188,10 +200,13 @@ def _procesar_eliminar(vendedor_id, valor_boleta):
     flash(f"Vendedor {vendedor_id} ({vendedor_doc.get('nombre', '')}) eliminado con {len(boletas_ids_vendor)} boleta(s) liberada(s).", "success")
 
 
-def register_routes(app):
+def register_routes(app: Flask) -> None:
+    """Register the vendor panel, API and validation routes."""
+
     @app.route("/vendedores", methods=["GET", "POST"])
     @role_required("admin")
-    def vendedores_panel():
+    def vendedores_panel() -> str | Response:
+        """Vendor CRUD panel: create, assign/remove ticket blocks, delete."""
         config = get_config()
         valor_boleta = int(config["valor_boleta"])
         form_data = {
@@ -246,43 +261,53 @@ def register_routes(app):
 
     @app.route("/api/vendedores")
     @role_required("admin", "cajero", "consulta")
-    def api_vendedores():
-        require_collections()
-        q = request.args.get("q", "").strip()
-        query = {}
-        if q:
-            query["$or"] = [
-                {"_id": {"$regex": re.escape(q), "$options": "i"}},
-                {"nombre": {"$regex": re.escape(q), "$options": "i"}},
-            ]
-        docs = list(vendedores.find(query, {"nombre": 1, "telefono": 1}).sort("_id", 1).limit(20))
-        return jsonify([{"_id": d["_id"], "nombre": d.get("nombre", ""), "telefono": d.get("telefono", "")} for d in docs])
+    def api_vendedores() -> Response | tuple[Response, int]:
+        """JSON autocomplete of vendors by id or name."""
+        try:
+            require_collections()
+            q = request.args.get("q", "").strip()
+            query = {}
+            if q:
+                query["$or"] = [
+                    {"_id": {"$regex": re.escape(q), "$options": "i"}},
+                    {"nombre": {"$regex": re.escape(q), "$options": "i"}},
+                ]
+            docs = list(vendedores.find(query, {"nombre": 1, "telefono": 1}).sort("_id", 1).limit(20))
+            return jsonify([{"_id": d["_id"], "nombre": d.get("nombre", ""), "telefono": d.get("telefono", "")} for d in docs])
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     @app.route("/api/vendedores/<vendedor_id>/boletas")
     @role_required("admin", "cajero", "consulta")
-    def api_vendedor_boletas(vendedor_id):
+    def api_vendedor_boletas(vendedor_id: str) -> Response | tuple[Response, int]:
+        """JSON list of a vendor's assigned tickets with state/amount/client."""
         require_collections()
         try:
-            docs = list(boletas.find(
-                {"vendedor_id": vendedor_id},
-                {"_id": 1, "estado": 1, "total_abonado": 1, "cliente": 1},
-            ).sort("_id", 1))
+            docs = list(
+                boletas.find(
+                    {"vendedor_id": vendedor_id},
+                    {"_id": 1, "estado": 1, "total_abonado": 1, "cliente": 1},
+                ).sort("_id", 1)
+            )
             boletas_list = []
             for d in docs:
                 cliente = d.get("cliente") or {}
-                boletas_list.append({
-                    "numero": f"{d['_id']:04d}",
-                    "estado": d.get("estado", "disponible"),
-                    "abonado": int(d.get("total_abonado", 0) or 0),
-                    "cliente": cliente.get("nombre", ""),
-                })
+                boletas_list.append(
+                    {
+                        "numero": f"{d['_id']:04d}",
+                        "estado": d.get("estado", "disponible"),
+                        "abonado": int(d.get("total_abonado", 0) or 0),
+                        "cliente": cliente.get("nombre", ""),
+                    }
+                )
             return jsonify({"ok": True, "total": len(boletas_list), "boletas": boletas_list})
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
     @app.route("/api/validar-boletas-vendedor", methods=["POST"])
     @role_required("admin")
-    def api_validar_boletas_vendedor():
+    def api_validar_boletas_vendedor() -> Response | tuple[Response, int]:
+        """Pre-validate tickets for assign/remove operations (per-ticket result)."""
         try:
             data = request.get_json(force=True) or {}
             boletas_list = data.get("boletas", [])
@@ -299,10 +324,13 @@ def register_routes(app):
             return jsonify({"ok": False, "error": "Boleta(s) inv\u00e1lida(s)."}), 400
         if not int_ids:
             return jsonify({"ok": True, "resultados": []})
-        docs = {d["_id"]: d for d in boletas.find(
-            {"_id": {"$in": int_ids}},
-            {"_id": 1, "vendedor_id": 1, "estado": 1, "total_abonado": 1},
-        )}
+        docs = {
+            d["_id"]: d
+            for d in boletas.find(
+                {"_id": {"$in": int_ids}},
+                {"_id": 1, "vendedor_id": 1, "estado": 1, "total_abonado": 1},
+            )
+        }
         v_ids = {d["vendedor_id"] for d in docs.values() if d.get("vendedor_id") and d["vendedor_id"] not in ("", VENDEDOR_LOCAL)}
         v_nombres = {}
         if v_ids:
@@ -329,7 +357,7 @@ def register_routes(app):
             elif operacion == "quitar":
                 if doc.get("vendedor_id") != vendedor_id:
                     item["ok"] = False
-                    item["error"] = f"No pertenece a este vendedor"
+                    item["error"] = "No pertenece a este vendedor"
                 elif doc.get("total_abonado", 0) > 0:
                     item["ok"] = False
                     item["error"] = "Tiene pagos registrados"
@@ -340,7 +368,8 @@ def register_routes(app):
 
     @app.route("/api/validar-referencias-vendedor", methods=["POST"])
     @role_required("admin")
-    def api_validar_referencias_vendedor():
+    def api_validar_referencias_vendedor() -> Response | tuple[Response, int]:
+        """Detect transfer references already used in other payments."""
         try:
             data = request.get_json(force=True) or {}
             rows = data.get("rows", [])
@@ -348,10 +377,8 @@ def register_routes(app):
             return jsonify({"ok": False, "error": "JSON inv\u00e1lido."}), 400
         if not isinstance(rows, list):
             return jsonify({"ok": False, "error": "Par\u00e1metros inv\u00e1lidos."}), 400
-        try:
+        with contextlib.suppress(Exception):
             require_collections()
-        except Exception:
-            pass
         try:
             results = []
             for i, row in enumerate(rows):
@@ -366,13 +393,7 @@ def register_routes(app):
                 elem_match = {"metodo": METODO_TRANSFERENCIA, "referencia": ref}
                 dup = boletas.find_one({"historial_pagos": {"$elemMatch": elem_match}}, {"_id": 1})
                 if dup:
-                    results.append({
-                        "index": i,
-                        "referencia": ref,
-                        "error": f"La referencia '{ref}' ya existe en otro pago (boleta #{dup['_id']:04d})."
-                    })
+                    results.append({"index": i, "referencia": ref, "error": f"La referencia '{ref}' ya existe en otro pago (boleta #{dup['_id']:04d})."})
             return jsonify({"ok": True, "resultados": results})
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
-
-

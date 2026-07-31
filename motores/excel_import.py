@@ -1,17 +1,20 @@
 import re
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
+from typing import Any
 
-from motores.constants import BOLETA_MIN, BOLETA_MAX
+from motores.constants import BOLETA_MAX, BOLETA_MIN
 
 
-def col_to_index(column):
+def col_to_index(column: str) -> int:
+    """Convert Excel column letter ('A', 'BC') to 0-based index."""
     index = 0
     for char in column:
         index = index * 26 + (ord(char) - ord("A") + 1)
     return index - 1
 
 
-def clean_excel_text(value):
+def clean_excel_text(value: Any) -> str:
+    """Normalize a cell value to stripped text; drop trailing '.0' for whole floats."""
     if value is None:
         return ""
     text = str(value).strip()
@@ -20,7 +23,8 @@ def clean_excel_text(value):
     return text.strip()
 
 
-def parse_excel_number(value):
+def parse_excel_number(value: Any) -> int:
+    """Parse a cell to int, tolerating currency symbols and thousand separators."""
     text = clean_excel_text(value).replace("$", "").replace(",", "")
     if text == "":
         return 0
@@ -31,7 +35,8 @@ def parse_excel_number(value):
         return int(digits) if digits not in {"", "-"} else 0
 
 
-def parse_excel_boleta(value):
+def parse_excel_boleta(value: Any) -> int | None:
+    """Parse a ticket number from a cell; return None if invalid or out of 0000-9999."""
     text = clean_excel_text(value).strip().lstrip("'\"")
     if text == "":
         return None
@@ -45,7 +50,8 @@ def parse_excel_boleta(value):
     return number
 
 
-def parse_excel_date(value):
+def parse_excel_date(value: Any) -> str:
+    """Parse a cell date (Excel serial or common text formats) to ISO yyyy-mm-dd."""
     text = clean_excel_text(value)
     if not text:
         return ""

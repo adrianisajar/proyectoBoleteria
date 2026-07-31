@@ -5,7 +5,8 @@ from html import escape
 from flask import Response
 
 
-def column_letter(index):
+def column_letter(index: int) -> str:
+    """Convert 1-based column index to Excel letter (A, B, ..., Z, AA...)."""
     letters = ""
     while index:
         index, remainder = divmod(index - 1, 26)
@@ -13,8 +14,9 @@ def column_letter(index):
     return letters
 
 
-def make_xlsx_response(filename, headers, rows):
-    sheet_rows = [headers] + rows
+def make_xlsx_response(filename: str, headers: list, rows: list) -> Response:
+    """Build a minimal .xlsx (raw XML + zip) and return it as a Flask download response."""
+    sheet_rows = [headers, *rows]
     xml_rows = []
     for r_idx, row in enumerate(sheet_rows, start=1):
         cells = []

@@ -1,0 +1,79 @@
+from database import boletas, configuracion, facturas, rifas, vendedores
+from motores.cache import invalidate_config_cache, invalidate_dashboard_cache
+from motores.config_service import require_collections
+from motores.constants import BOLETA_MAX, BOLETA_MIN, COMISION_DEFAULT_TIERS, CONFIG_ID
+from motores.fechas import now_local
+from motores.modelos import crear_boleta_base
+
+
+def crear_indices_boletas() -> None:
+    """Create all required indexes across the collections (safe to re-run)."""
+    boletas.create_index([("vendedor_id", 1), ("_id", 1)])
+    boletas.create_index([("vendedor_id", 1), ("estado", 1)])
+    boletas.create_index([("estado", 1), ("_id", 1)])
+    boletas.create_index([("total_abonado", 1), ("_id", 1)])
+    boletas.create_index([("historial_pagos.fecha", 1)])
+    boletas.create_index("cliente.telefono")
+    boletas.create_index("cliente.nombre")
+    boletas.create_index("historial_pagos.metodo")
+    boletas.create_index("historial_pagos.referencia")
+    vendedores.create_index("telefono")
+    facturas.create_index([("fecha", -1)])
+    facturas.create_index("tipo")
+    rifas.create_index("estado")
+
+
+def crear_nueva_rifa(
+    nombre: str,
+    valor_boleta: int,
+    conservar_vendedores: bool,
+    cantidad_boletas: int = 10000,
+    premio_mayor: str = "",
+    estado: str = "activa",
+) -> None:
+    """Reset all collections for a new rifa (optionally keeping vendor profiles)."""
+    require_collections()
+    asignaciones = []
+    if conservar_vendedores:
+        asignaciones = list(vendedores.find({}, {"boletas_asignadas": 1}))
+
+    facturas.delete_many({})
+    configuracion.update_one({"_id": CONFIG_ID}, {"$set": {"factura_counter": 0}})
+
+    boletas.delete_many({})
+    boletas.insert_many([crear_boleta_base(numero) for numero in range(BOLETA_MIN, BOLETA_MAX + 1)])
+
+    if conservar_vendedores:
+        for vendedor in asignaciones:
+            ids = [number for number in vendedor.get("boletas_asignadas", []) if isinstance(number, int) and BOLETA_MIN <= number <= BOLETA_MAX]
+            if ids:
+                boletas.update_many({"_id": {"$in": ids}}, {"$set": {"vendedor_id": vendedor["_id"], "estado": "asignada"}})
+    else:
+        vendedores.delete_many({})
+
+    crear_indices_boletas()
+
+    rifas.delete_many({})
+    rifa_doc = {
+        "nombre": nombre,
+        "anio": now_local().year,
+        "valor_boleta": valor_boleta,
+        "cantidad_boletas": cantidad_boletas,
+        "premio_mayor": premio_mayor,
+        "comisiones_tiers": COMISION_DEFAULT_TIERS,
+        "estado": estado,
+        "creada_en": now_local(),
+    }
+    rifas.insert_one(rifa_doc)
+
+    update = {
+        "nombre_rifa": nombre,
+        "valor_boleta": valor_boleta,
+        "cantidad_boletas": cantidad_boletas,
+        "premio_mayor": premio_mayor,
+        "estado": estado,
+        "creada_en": now_local(),
+    }
+    configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
+    invalidate_config_cache()
+    invalidate_dashboard_cache()

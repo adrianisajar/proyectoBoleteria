@@ -1,4 +1,5 @@
-def crear_boleta_base(numero):
+def crear_boleta_base(numero: int) -> dict:
+    """Return a fresh ticket document in 'disponible' state."""
     return {
         "_id": numero,
         "vendedor_id": "",

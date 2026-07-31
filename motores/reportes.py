@@ -1,61 +1,82 @@
-from datetime import date
+import contextlib
 import io
 import re
 import zipfile
+from datetime import date
+from typing import Any
 
-from flask import Response
+from bson import ObjectId, json_util
+from flask import Flask, Response
 
+from motores.config_service import get_rifa_activa, require_collections
 from motores.excel_export import make_xlsx_response
-
 from motores.shared import (
-    boletas, vendedores, configuracion, facturas, rifas,
-    request, flash, redirect, render_template, url_for,
-    get_rifa_activa, require_collections, role_required,
+    boletas,
+    configuracion,
+    facturas,
+    flash,
     get_dashboard_stats,
+    invalidate_config_cache,
+    invalidate_dashboard_cache,
+    invalidate_rifa_cache,
     modelo_rifa_report_rows,
-    invalidate_rifa_cache, invalidate_config_cache, invalidate_dashboard_cache,
+    redirect,
+    render_template,
+    request,
+    rifas,
+    role_required,
+    url_for,
+    vendedores,
 )
-from bson import json_util, ObjectId
 
 
-def _restore_objectids_from_backup(data):
+def _restore_objectids_from_backup(data: dict[str, list[dict[str, Any]]]) -> None:
     """Convert string _id / rifa_id to ObjectId for backward compat with old backups."""
     for name, docs in data.items():
         for doc in docs:
             if isinstance(doc.get("_id"), str) and len(doc["_id"]) == 24:
-                try:
+                with contextlib.suppress(Exception):
                     doc["_id"] = ObjectId(doc["_id"])
-                except Exception:
-                    pass
         if name == "boletas":
             for doc in docs:
                 rifa_id = doc.get("rifa_id")
                 if isinstance(rifa_id, str) and len(rifa_id) == 24:
-                    try:
+                    with contextlib.suppress(Exception):
                         doc["rifa_id"] = ObjectId(rifa_id)
-                    except Exception:
-                        pass
 
 
-def register_routes(app):
+def register_routes(app: Flask) -> None:
+    """Register the dashboard, search, export and backup routes."""
+
     @app.route("/")
-    def home():
+    def home() -> Response:
+        """Redirect root to the dashboard."""
         return redirect(url_for("dashboard"))
 
     @app.route("/dashboard")
     @role_required("admin", "cajero", "consulta")
-    def dashboard():
+    def dashboard() -> str:
+        """Render the dashboard with stats and active rifa info."""
         try:
             stats = get_dashboard_stats()
             rifa = get_rifa_activa()
         except Exception as exc:
             stats = {
-                "recaudo_total": 0, "recaudo_hoy": 0, "pagos_hoy": 0,
-                "pagos_efectivo": 0, "pagos_transferencia": 0,
-                "saldo_pendiente": 0, "vendidas": 0, "pagadas": 0,
-                "disponibles": 0, "abonando": 0, "separadas": 0,
-                "asignadas": 0, "progreso_ventas_pct": 0,
-                "progreso_recaudo_pct": 0, "recaudo_potencial": 0,
+                "recaudo_total": 0,
+                "recaudo_hoy": 0,
+                "pagos_hoy": 0,
+                "pagos_efectivo": 0,
+                "pagos_transferencia": 0,
+                "saldo_pendiente": 0,
+                "vendidas": 0,
+                "pagadas": 0,
+                "disponibles": 0,
+                "abonando": 0,
+                "separadas": 0,
+                "asignadas": 0,
+                "progreso_ventas_pct": 0,
+                "progreso_recaudo_pct": 0,
+                "recaudo_potencial": 0,
                 "ranking": [],
             }
             rifa = {}
@@ -64,7 +85,8 @@ def register_routes(app):
 
     @app.route("/buscar")
     @role_required("admin", "cajero", "consulta")
-    def buscar():
+    def buscar() -> str | Response:
+        """Global search across invoices and vendors."""
         require_collections()
         q = request.args.get("q", "").strip()
         if not q or len(q) < 1:
@@ -81,20 +103,24 @@ def register_routes(app):
                 results["facturas"].append(factura)
         except ValueError:
             pass
-        cursor = facturas.find({
-            "$or": [
-                {"vendedor_nombre": {"$regex": regex, "$options": "i"}},
-                {"cliente.nombre": {"$regex": regex, "$options": "i"}},
-            ]
-        }).limit(20)
+        cursor = facturas.find(
+            {
+                "$or": [
+                    {"vendedor_nombre": {"$regex": regex, "$options": "i"}},
+                    {"cliente.nombre": {"$regex": regex, "$options": "i"}},
+                ]
+            }
+        ).limit(20)
         for f in cursor:
             results["facturas"].append(f)
-        cursor = vendedores.find({
-            "$or": [
-                {"_id": {"$regex": regex, "$options": "i"}},
-                {"nombre": {"$regex": regex, "$options": "i"}},
-            ]
-        }).limit(10)
+        cursor = vendedores.find(
+            {
+                "$or": [
+                    {"_id": {"$regex": regex, "$options": "i"}},
+                    {"nombre": {"$regex": regex, "$options": "i"}},
+                ]
+            }
+        ).limit(10)
         for v in cursor:
             results["vendedores"].append(v)
 
@@ -102,7 +128,8 @@ def register_routes(app):
 
     @app.route("/reportes/modelo-rifa.xlsx")
     @role_required("admin", "cajero", "consulta")
-    def exportar_modelo_rifa():
+    def exportar_modelo_rifa() -> Response:
+        """Download the modelo-rifa Excel report."""
         try:
             headers, rows = modelo_rifa_report_rows()
         except Exception as exc:
@@ -114,11 +141,14 @@ def register_routes(app):
 
     @app.route("/backup", methods=["GET", "POST"])
     @role_required("admin")
-    def backup():
+    def backup() -> str | Response:
+        """Export/import a ZIP backup of all collections."""
         require_collections()
         COLECCIONES = [
-            ("boletas", boletas), ("vendedores", vendedores),
-            ("facturas", facturas), ("rifas", rifas),
+            ("boletas", boletas),
+            ("vendedores", vendedores),
+            ("facturas", facturas),
+            ("rifas", rifas),
             ("configuracion", configuracion),
         ]
         if request.method == "POST":
@@ -143,9 +173,8 @@ def register_routes(app):
                     flash("Seleccione un archivo ZIP.", "danger")
                     return redirect(url_for("backup"))
                 try:
-                    with zipfile.ZipFile(archivo.stream) as zf:
-                        with zf.open("backup.json") as f:
-                            raw = f.read().decode("utf-8")
+                    with zipfile.ZipFile(archivo.stream) as zf, zf.open("backup.json") as f:
+                        raw = f.read().decode("utf-8")
                     data = json_util.loads(raw)
                     # Backward compat: convert string ObjectId for old backups
                     _restore_objectids_from_backup(data)

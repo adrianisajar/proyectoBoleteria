@@ -1,10 +1,11 @@
 import re
 from collections import Counter
 
-from motores.constants import BOLETA_MIN, BOLETA_MAX
+from motores.constants import BOLETA_MAX, BOLETA_MIN
 
 
-def parse_int_filter(value, field_name, errors, min_value=None, max_value=None):
+def parse_int_filter(value: str, field_name: str, errors: list, min_value: int | None = None, max_value: int | None = None) -> int | None:
+    """Parse an integer filter value, appending validation errors as needed."""
     if value == "":
         return None
 
@@ -20,7 +21,8 @@ def parse_int_filter(value, field_name, errors, min_value=None, max_value=None):
     return number
 
 
-def ticket_number_query(value, errors):
+def ticket_number_query(value: str, errors: list) -> tuple[int | dict, bool]:
+    """Build a ticket query from a 1-4 digit input: exact id or $in prefix matches."""
     raw_value = (value or "").strip()
     if raw_value == "":
         return None, False
@@ -52,12 +54,14 @@ def ticket_number_query(value, errors):
     return {"$in": matches}, False
 
 
-def parse_money(value):
+def parse_money(value: str | int | None) -> int:
+    """Extract integer amount from text, ignoring currency symbols and separators."""
     cleaned = re.sub(r"[^\d]", "", value or "")
     return int(cleaned) if cleaned else 0
 
 
-def parse_boletas_detailed(raw_numbers):
+def parse_boletas_detailed(raw_numbers: str) -> tuple[list[int], list[str], list[str], list[int]]:
+    """Parse a raw ticket list into (unique_ids, invalid, out_of_range, duplicates)."""
     parts = [part for part in re.split(r"[\s,;]+", (raw_numbers or "").strip()) if part]
     invalid = [part for part in parts if not part.isdigit()]
     numbers = []
@@ -79,6 +83,7 @@ def parse_boletas_detailed(raw_numbers):
     return unique_numbers, invalid, out_of_range, duplicates
 
 
-def parse_boletas(raw_numbers):
+def parse_boletas(raw_numbers: str) -> tuple[list[int], list[str], list[str]]:
+    """Parse a raw ticket list into (unique_ids, invalid, out_of_range)."""
     boleta_ids, invalid, out_of_range, _duplicates = parse_boletas_detailed(raw_numbers)
     return boleta_ids, invalid, out_of_range

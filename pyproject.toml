@@ -1,0 +1,26 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 160
+extend-exclude = [".agents", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF", "PLC", "PLW", "PIE", "BLE", "S"]
+ignore = [
+  "E501",
+  "BLE001",
+  "S110",
+  "S314",
+  "DTZ001",
+  "DTZ007",
+  "DTZ011",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+"motores/shared.py" = ["E402", "I001", "F401"]
+"run_server.py" = ["E402", "S104"]
+"tests/conftest.py" = ["E402"]
+"build_exe.py" = ["S603"]
+
+[tool.ruff.format]
+quote-style = "double"

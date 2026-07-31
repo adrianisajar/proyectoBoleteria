@@ -1,26 +1,40 @@
 import re
-
 from datetime import datetime
 
-from motores.constants import COMISION_DEFAULT_TIERS, VENDEDOR_LOCAL, METODO_EFECTIVO, METODO_TRANSFERENCIA, USUARIO_SISTEMA
-from motores.fechas import now_local
-from motores.validacion import parse_money
-
-from motores.shared import (
-    boletas, vendedores, facturas,
-    request, flash, redirect, render_template, url_for,
-    require_collections, role_required,
-    next_factura_id, calc_comision_por_boleta, get_config,
-    current_user, estado_pipeline_expr, invalidate_dashboard_cache,
-    rollback_pagos_por_factura,
-    _buscar_transferencia_duplicada,
-    _build_factura_detalle,
-)
+from flask import Flask, Response
 from pymongo import UpdateOne
 from pymongo.errors import BulkWriteError
 
+from motores.constants import COMISION_DEFAULT_TIERS, METODO_EFECTIVO, METODO_TRANSFERENCIA, USUARIO_SISTEMA, VENDEDOR_LOCAL
+from motores.facturacion_common import deduplicar_filas_boleta, validar_filas_transferencia, verificar_boletas_existen
+from motores.fechas import now_local
+from motores.shared import (
+    boletas,
+    build_factura_detalle,
+    calc_comision_por_boleta,
+    current_user,
+    estado_pipeline_expr,
+    facturas,
+    flash,
+    get_config,
+    invalidate_dashboard_cache,
+    next_factura_id,
+    redirect,
+    render_template,
+    request,
+    require_collections,
+    role_required,
+    rollback_pagos_por_factura,
+    url_for,
+    vendedores,
+)
+from motores.validacion import parse_money
 
-def _build_form_data(vendedor_id, fecha, boletas_raw, montos_raw, metodos, referencias, bancos):
+
+def _build_form_data(
+    vendedor_id: str, fecha: str, boletas_raw: list[str], montos_raw: list[str], metodos: list[str], referencias: list[str], bancos: list[str]
+) -> dict:
+    """Build the vendor invoice form context from parallel POST lists."""
     v_nombre = ""
     if vendedor_id:
         v = vendedores.find_one({"_id": vendedor_id}, {"nombre": 1})
@@ -31,13 +45,15 @@ def _build_form_data(vendedor_id, fecha, boletas_raw, montos_raw, metodos, refer
         raw = boletas_raw[i].strip()
         if not raw:
             continue
-        form_rows.append({
-            "boleta": raw,
-            "monto": montos_raw[i] if i < len(montos_raw) else "",
-            "metodo": metodos[i] if i < len(metodos) else "efectivo",
-            "referencia": referencias[i] if i < len(referencias) else "",
-            "banco": bancos[i] if i < len(bancos) else "",
-        })
+        form_rows.append(
+            {
+                "boleta": raw,
+                "monto": montos_raw[i] if i < len(montos_raw) else "",
+                "metodo": metodos[i] if i < len(metodos) else "efectivo",
+                "referencia": referencias[i] if i < len(referencias) else "",
+                "banco": bancos[i] if i < len(bancos) else "",
+            }
+        )
     return {
         "vendedor_id": vendedor_id,
         "vendedor_nombre": v_nombre,
@@ -46,7 +62,8 @@ def _build_form_data(vendedor_id, fecha, boletas_raw, montos_raw, metodos, refer
     }
 
 
-def _render_vendedor_form(form_data, vendedores_list=None):
+def _render_vendedor_form(form_data: dict, vendedores_list: list | None = None) -> str:
+    """Render the vendor invoice form with the given values for a re-render."""
     if vendedores_list is None:
         vendedores_list = list(vendedores.find().sort("_id", 1))
     today = now_local().strftime("%Y-%m-%d")
@@ -55,11 +72,13 @@ def _render_vendedor_form(form_data, vendedores_list=None):
     return render_template("nueva_factura_vendedor.html", vendedores=vendedores_list, today=today, form_data=form_data, valor_boleta=_vb)
 
 
-def register_routes(app):
+def register_routes(app: Flask) -> None:
+    """Register the vendor invoice creation route."""
 
     @app.route("/facturas/nueva/vendedor", methods=["GET", "POST"])
     @role_required("admin", "cajero")
-    def nueva_factura_vendedor():
+    def nueva_factura_vendedor() -> str | Response:
+        """Create a vendor invoice from dynamic rows; register payments + commission."""
         require_collections()
         if request.method == "POST":
             vendedor_id = request.form.get("vendedor_id", "").strip()
@@ -107,32 +126,17 @@ def register_routes(app):
                 ref = referencias[i].strip() if i < len(referencias) else ""
                 banco_val = bancos[i].strip() if i < len(bancos) else ""
                 for p in parts:
-                    rows.append({
-                        "boleta": int(p),
-                        "monto": m,
-                        "metodo": meta,
-                        "referencia": ref,
-                        "banco": banco_val,
-                    })
+                    rows.append(
+                        {
+                            "boleta": int(p),
+                            "monto": m,
+                            "metodo": meta,
+                            "referencia": ref,
+                            "banco": banco_val,
+                        }
+                    )
 
-            for r in rows:
-                if r["metodo"] == METODO_TRANSFERENCIA:
-                    if not r.get("referencia", "").strip():
-                        errors.append(f"Referencia obligatoria para transferencia en boleta #{r['boleta']:04d}.")
-                    if not r.get("banco", "").strip():
-                        errors.append(f"Banco obligatorio para transferencia en boleta #{r['boleta']:04d}.")
-
-            if not errors:
-                seen_refs = set()
-                for r in rows:
-                    if r["metodo"] == METODO_TRANSFERENCIA:
-                        ref_key = (r["referencia"].strip(), r["banco"].strip())
-                        if ref_key in seen_refs:
-                            continue
-                        seen_refs.add(ref_key)
-                        dup = _buscar_transferencia_duplicada(r["referencia"].strip(), r["banco"].strip())
-                        if dup:
-                            errors.append(f"Ya existe un pago por transferencia con referencia {r['referencia'].strip()} y banco {r['banco'].strip()} (boleta #{dup['_id']:04d}).")
+            validar_filas_transferencia(rows, errors)
 
             if errors:
                 for e in errors:
@@ -143,18 +147,11 @@ def register_routes(app):
                 flash("Debe incluir al menos una boleta con un abono v\u00e1lido.", "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
-            seen = set()
-            deduped = []
-            for r in rows:
-                if r["boleta"] not in seen:
-                    seen.add(r["boleta"])
-                    deduped.append(r)
-            rows = deduped
+            rows, _ = deduplicar_filas_boleta(rows)
 
             boleta_ids = [r["boleta"] for r in rows]
-            docs_map = {d["_id"]: d for d in boletas.find({"_id": {"$in": boleta_ids}})}
-            if len(docs_map) != len(boleta_ids):
-                missing = [b for b in boleta_ids if b not in docs_map]
+            docs_map, missing = verificar_boletas_existen(boleta_ids)
+            if missing:
                 flash(f"Boletas no encontradas: {', '.join(f'{b:04d}' for b in missing)}", "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
@@ -190,18 +187,20 @@ def register_routes(app):
                 v_telefono = v.get("telefono", "") if v else ""
 
                 # ── 1. Crear factura "pendiente" antes de tocar las boletas ──
-                facturas.insert_one({
-                    "_id": factura_id,
-                    "tipo": "vendedor",
-                    "estado": "pendiente",
-                    "fecha": now_local() if fecha_dt.date() == now_local().date() else fecha_dt,
-                    "boletas": sorted(boleta_ids),
-                    "detalle": [],
-                    "valor_total": 0,
-                    "vendedor_id": vendedor_id,
-                    "vendedor_nombre": v_nombre,
-                    "vendedor_telefono": v_telefono,
-                })
+                facturas.insert_one(
+                    {
+                        "_id": factura_id,
+                        "tipo": "vendedor",
+                        "estado": "pendiente",
+                        "fecha": now_local() if fecha_dt.date() == now_local().date() else fecha_dt,
+                        "boletas": sorted(boleta_ids),
+                        "detalle": [],
+                        "valor_total": 0,
+                        "vendedor_id": vendedor_id,
+                        "vendedor_nombre": v_nombre,
+                        "vendedor_telefono": v_telefono,
+                    }
+                )
 
                 # ── 2. Validar montos (sin viajes extra a MongoDB) ──
                 sobrepasan = []
@@ -213,10 +212,7 @@ def register_routes(app):
                     if actual + r["monto"] > valor_boleta:
                         sobrepasan.append(r["boleta"])
                 if sobrepasan:
-                    raise ValueError(
-                        f"El abono excede el saldo pendiente en {len(sobrepasan)} boleta(s): "
-                        f"{', '.join(f'#{b:04d}' for b in sobrepasan)}."
-                    )
+                    raise ValueError(f"El abono excede el saldo pendiente en {len(sobrepasan)} boleta(s): {', '.join(f'#{b:04d}' for b in sobrepasan)}.")
 
                 # ── 3. Un solo bulk_write con todos los pagos ──
                 ops = []
@@ -235,22 +231,30 @@ def register_routes(app):
                         if r.get("banco"):
                             pago["banco"] = r["banco"]
 
-                    ops.append(UpdateOne(
-                        {"_id": r["boleta"], "estado": {"$ne": "pagada"}},
-                        [
-                            {"$set": {
-                                "historial_pagos": {"$concatArrays": [
-                                    {"$ifNull": ["$historial_pagos", []]},
-                                    {"$literal": [pago]},
-                                ]},
-                                "total_abonado": {"$add": [
-                                    {"$ifNull": ["$total_abonado", 0]},
-                                    r["monto"],
-                                ]},
-                            }},
-                            {"$set": {"estado": estado_pipeline_expr(valor_boleta)}},
-                        ],
-                    ))
+                    ops.append(
+                        UpdateOne(
+                            {"_id": r["boleta"], "estado": {"$ne": "pagada"}},
+                            [
+                                {
+                                    "$set": {
+                                        "historial_pagos": {
+                                            "$concatArrays": [
+                                                {"$ifNull": ["$historial_pagos", []]},
+                                                {"$literal": [pago]},
+                                            ]
+                                        },
+                                        "total_abonado": {
+                                            "$add": [
+                                                {"$ifNull": ["$total_abonado", 0]},
+                                                r["monto"],
+                                            ]
+                                        },
+                                    }
+                                },
+                                {"$set": {"estado": estado_pipeline_expr(valor_boleta)}},
+                            ],
+                        )
+                    )
 
                 try:
                     boletas.bulk_write(ops, ordered=False)
@@ -261,8 +265,7 @@ def register_routes(app):
                         {"$set": {"estado": "error", "error": "Error de escritura en MongoDB durante el bulk_write."}},
                     )
                     flash(
-                        f"Error al registrar los pagos (factura #{factura_id:05d}). "
-                        "Los pagos se revirtieron automáticamente. Intente de nuevo.",
+                        f"Error al registrar los pagos (factura #{factura_id:05d}). Los pagos se revirtieron automáticamente. Intente de nuevo.",
                         "danger",
                     )
                     return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
@@ -271,33 +274,39 @@ def register_routes(app):
 
                 # ── 4. Calcular comisiones (después de los pagos) ──
                 tiers = config.get("comisiones_tiers", COMISION_DEFAULT_TIERS)
-                existing_vendidas = boletas.count_documents({
-                    "vendedor_id": vendedor_id,
-                    "_id": {"$nin": boleta_ids},
-                    "total_abonado": {"$gte": valor_boleta},
-                })
-                pagadas_en_lote = boletas.count_documents({
-                    "_id": {"$in": boleta_ids},
-                    "total_abonado": {"$gte": valor_boleta},
-                })
+                existing_vendidas = boletas.count_documents(
+                    {
+                        "vendedor_id": vendedor_id,
+                        "_id": {"$nin": boleta_ids},
+                        "total_abonado": {"$gte": valor_boleta},
+                    }
+                )
+                pagadas_en_lote = boletas.count_documents(
+                    {
+                        "_id": {"$in": boleta_ids},
+                        "total_abonado": {"$gte": valor_boleta},
+                    }
+                )
                 total_vendidas = existing_vendidas + pagadas_en_lote
                 comision_por_boleta = calc_comision_por_boleta(total_vendidas, tiers)
                 total_comision = total_vendidas * comision_por_boleta
 
                 # ── 5. Construir detalle y finalizar factura ──
-                detalle = _build_factura_detalle(boleta_ids, factura_id)
+                detalle = build_factura_detalle(boleta_ids, factura_id)
                 valor_total = sum(d["valor"] for d in detalle)
 
                 facturas.update_one(
                     {"_id": factura_id},
-                    {"$set": {
-                        "detalle": detalle,
-                        "valor_total": valor_total,
-                        "estado": "completa",
-                        "comision_por_boleta": comision_por_boleta,
-                        "total_comision": total_comision,
-                        "total_vendidas": total_vendidas,
-                    }},
+                    {
+                        "$set": {
+                            "detalle": detalle,
+                            "valor_total": valor_total,
+                            "estado": "completa",
+                            "comision_por_boleta": comision_por_boleta,
+                            "total_comision": total_comision,
+                            "total_vendidas": total_vendidas,
+                        }
+                    },
                 )
 
                 flash(f"Factura de vendedor N\u00b0 {factura_id:05d} generada.", "success")

@@ -1,40 +1,48 @@
+import contextlib
 import csv
 import io
 import re
 
-from flask import Response
+from flask import Flask, Response
 
-from datetime import datetime
-
-from motores.constants import BOLETA_MIN, BOLETA_MAX, CONSULTA_LIMIT_MAX, VENDEDOR_LOCAL, DEFAULT_CONFIG
-from motores.fechas import now_local
-
+from motores.constants import BOLETA_MAX, BOLETA_MIN, CONSULTA_LIMIT_MAX, VENDEDOR_LOCAL
 from motores.shared import (
-    boletas, vendedores, facturas,
-    request, flash, redirect, render_template, url_for, jsonify,
-    get_config, require_collections, role_required,
-
-    build_consulta_context, build_page_url,
-    get_dashboard_counts, get_vendedor_options,
-    estado_pipeline_expr, invalidate_dashboard_cache,
+    boletas,
+    build_consulta_context,
+    build_page_url,
+    estado_pipeline_expr,
+    facturas,
+    flash,
+    get_config,
+    get_dashboard_counts,
+    get_vendedor_options,
+    invalidate_dashboard_cache,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    require_collections,
+    role_required,
+    url_for,
+    vendedores,
 )
 
 SORT_WHITELIST = {"_id", "vendedor_id", "estado", "total_abonado", "cliente.nombre"}
 
 
-def register_routes(app):
+def register_routes(app: Flask) -> None:
+    """Register the ticket search and ticket management routes."""
 
     @app.route("/consultas")
     @role_required("admin", "cajero", "consulta")
-    def consultas():
+    def consultas() -> str | Response:
+        """Ticket search page with filters, pagination and state metrics."""
         filters, query, errors, page, limite, offset, has_filters, numero_exacto = build_consulta_context(request.args)
 
         counts = {"total": 0, "vendidas": 0, "disponibles": 0, "asignadas": 0, "separadas": 0, "abonando": 0, "pagadas": 0}
         vendedor_options = []
-        try:
+        with contextlib.suppress(Exception):
             vendedor_options = get_vendedor_options()
-        except Exception:
-            pass
         if not numero_exacto:
             try:
                 config = get_config()
@@ -50,7 +58,6 @@ def register_routes(app):
         resultados = []
         total_resultados = 0
         boleta_detalle = None
-
 
         for error in errors:
             flash(error, "warning")
@@ -73,8 +80,8 @@ def register_routes(app):
                 if numero_exacto and isinstance(query.get("_id"), int):
                     boleta_detalle = boletas.find_one({"_id": query["_id"]})
                     if boleta_detalle and boleta_detalle.get("vendedor_id"):
-                            v = vendedores.find_one({"_id": boleta_detalle["vendedor_id"]}, {"nombre": 1})
-                            boleta_detalle["vendedor_nombre"] = v["nombre"] if v else None
+                        v = vendedores.find_one({"_id": boleta_detalle["vendedor_id"]}, {"nombre": 1})
+                        boleta_detalle["vendedor_nombre"] = v["nombre"] if v else None
             except Exception as exc:
                 flash(f"No se pudo ejecutar la consulta: {exc}", "danger")
 
@@ -97,10 +104,7 @@ def register_routes(app):
                 filtered_counts = {
                     "total": sum(r["count"] for r in raw),
                     "disponibles": fc.get("disponible", {}).get("count", 0),
-                    "vendidas": sum(
-                        fc.get(s, {}).get("count", 0)
-                        for s in ("asignada", "separada", "abonando", "pagada")
-                    ),
+                    "vendidas": sum(fc.get(s, {}).get("count", 0) for s in ("asignada", "separada", "abonando", "pagada")),
                     "asignadas": fc.get("asignada", {}).get("count", 0),
                     "separadas": fc.get("separada", {}).get("count", 0),
                     "abonando": fc.get("abonando", {}).get("count", 0),
@@ -157,12 +161,9 @@ def register_routes(app):
 
     @app.route("/consultas/exportar")
     @role_required("admin", "cajero", "consulta")
-    def exportar_consultas():
-        try:
-            config = get_config()
-        except Exception:
-            config = {"valor_boleta": str(DEFAULT_CONFIG["valor_boleta"])}
-        filters, query, errors, _page, _limite, _offset, _has_filters, _numero_exacto = build_consulta_context(request.args)
+    def exportar_consultas() -> Response:
+        """Export filtered ticket results as a semicolon-separated CSV."""
+        _filters, query, errors, _page, _limite, _offset, _has_filters, _numero_exacto = build_consulta_context(request.args)
         if errors:
             flash("Error al exportar: corrija los filtros.", "danger")
             return redirect(url_for("consultas"))
@@ -177,15 +178,17 @@ def register_routes(app):
             for doc in docs:
                 ultimo = doc.get("historial_pagos") or []
                 ultimo_pago = ultimo[-1].get("fecha", "") if ultimo else ""
-                writer.writerow([
-                    f"{doc['_id']:04d}",
-                    doc.get("vendedor_id", ""),
-                    doc.get("estado", ""),
-                    (doc.get("cliente") or {}).get("nombre", ""),
-                    (doc.get("cliente") or {}).get("telefono", ""),
-                    doc.get("total_abonado", 0),
-                    ultimo_pago,
-                ])
+                writer.writerow(
+                    [
+                        f"{doc['_id']:04d}",
+                        doc.get("vendedor_id", ""),
+                        doc.get("estado", ""),
+                        (doc.get("cliente") or {}).get("nombre", ""),
+                        (doc.get("cliente") or {}).get("telefono", ""),
+                        doc.get("total_abonado", 0),
+                        ultimo_pago,
+                    ]
+                )
             csv_content = output.getvalue()
             output.close()
             return Response(
@@ -199,12 +202,14 @@ def register_routes(app):
 
     @app.route("/boletas/<int:boleta_id>/cliente", methods=["POST"])
     @role_required("admin", "cajero")
-    def actualizar_cliente(boleta_id):
+    def actualizar_cliente(boleta_id: int) -> Response:
+        """Legacy alias that forwards to guardar_boleta."""
         return redirect(url_for("guardar_boleta", boleta_id=boleta_id), code=307)
 
     @app.route("/boletas/<int:boleta_id>/guardar", methods=["POST"])
     @role_required("admin", "cajero")
-    def guardar_boleta(boleta_id):
+    def guardar_boleta(boleta_id: int) -> Response:
+        """Save client data (and optional vendor) on a ticket."""
         if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
             flash("El n\u00famero de boleta debe estar entre 0000 y 9999.", "warning")
             return redirect(url_for("consultas"))
@@ -217,9 +222,7 @@ def register_routes(app):
             direccion = request.form.get("direccion", "").strip().upper()
             vendedor_id = request.form.get("vendedor_id", "").strip()
 
-            set_fields = {
-                "cliente": {"nombre": nombre, "telefono": telefono, "direccion": direccion}
-            }
+            set_fields = {"cliente": {"nombre": nombre, "telefono": telefono, "direccion": direccion}}
 
             if vendedor_id:
                 v_exists = vendedores.find_one({"_id": vendedor_id}, {"_id": 1})
@@ -255,7 +258,8 @@ def register_routes(app):
 
     @app.route("/boletas/<int:boleta_id>/pago/<int:idx>/eliminar", methods=["POST"])
     @role_required("admin", "cajero")
-    def eliminar_pago_boleta(boleta_id, idx):
+    def eliminar_pago_boleta(boleta_id: int, idx: int) -> Response:
+        """Remove one payment from a ticket's history and recalc totals (updates factura)."""
         if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
             flash("N\u00famero de boleta inv\u00e1lido.", "warning")
             return redirect(url_for("consultas"))
@@ -269,7 +273,7 @@ def register_routes(app):
 
             pagos = doc.get("historial_pagos") or []
             if idx < 0 or idx >= len(pagos):
-                flash(f"\u00cdndice de pago inv\u00e1lido.", "danger")
+                flash("\u00cdndice de pago inv\u00e1lido.", "danger")
                 return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
 
             pago = pagos[idx]
@@ -303,11 +307,7 @@ def register_routes(app):
                             }
                         }
                     },
-                    {
-                        "$set": {
-                            "estado": estado_pipeline_expr(valor_boleta_local)
-                        }
-                    },
+                    {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
                 ],
             )
 
@@ -335,7 +335,8 @@ def register_routes(app):
 
     @app.route("/boletas/<int:boleta_id>/recalcular", methods=["POST"])
     @role_required("admin", "cajero")
-    def recalcular_boleta(boleta_id):
+    def recalcular_boleta(boleta_id: int) -> Response:
+        """Recompute total_abonado and estado from a ticket's payment history."""
         if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
             flash("N\u00famero de boleta inv\u00e1lido.", "warning")
             return redirect(url_for("consultas"))
@@ -363,11 +364,7 @@ def register_routes(app):
                             }
                         }
                     },
-                    {
-                        "$set": {
-                            "estado": estado_pipeline_expr(valor_boleta_local)
-                        }
-                    },
+                    {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
                 ],
             )
 
@@ -383,7 +380,8 @@ def register_routes(app):
 
     @app.route("/boletas/<int:boleta_id>/limpiar", methods=["POST"])
     @role_required("admin", "cajero")
-    def limpiar_boleta(boleta_id):
+    def limpiar_boleta(boleta_id: int) -> Response:
+        """Clear the client data saved on a ticket."""
         if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
             flash("N\u00famero de boleta inv\u00e1lido.", "warning")
             return redirect(url_for("consultas"))
@@ -408,68 +406,43 @@ def register_routes(app):
 
     @app.route("/api/clientes")
     @role_required("admin", "cajero", "consulta")
-    def api_clientes():
-        require_collections()
-        q = request.args.get("q", "").strip()
-        if len(q) < 2:
-            return jsonify([])
-        query = {
-            "$or": [
-                {"cliente.nombre": {"$regex": re.escape(q), "$options": "i"}},
-                {"cliente.telefono": {"$regex": re.escape(q)}},
-            ]
-        }
-        docs = boletas.find(query, {"cliente": 1}).limit(12)
-        seen = set()
-        items = []
-        for doc in docs:
-            cliente = doc.get("cliente") or {}
-            label = f"{cliente.get('nombre', '')} {cliente.get('telefono', '')}".strip()
-            if label and label not in seen:
-                seen.add(label)
-                items.append({"label": label, "nombre": cliente.get("nombre", ""), "telefono": cliente.get("telefono", ""), "direccion": cliente.get("direccion", "")})
-        return jsonify(items)
-
-    @app.route("/clientes")
-    @app.route("/base-datos")
-    @role_required("admin", "cajero", "consulta")
-    def redirect_old_clientes():
-        return redirect(url_for("consultas"))
-
-    @app.route("/clientes/guardar", methods=["POST"])
-    @app.route("/base-datos/guardar", methods=["POST"])
-    @role_required("admin", "cajero")
-    def redirect_old_clientes_guardar():
-        flash("La p\u00e1gina de Base de Datos fue integrada a Consultas.", "info")
-        return redirect(url_for("consultas"))
-
-    @app.route("/clientes/<int:boleta_id>/pago/<int:idx>/eliminar", methods=["POST"])
-    @app.route("/base-datos/<int:boleta_id>/pago/<int:idx>/eliminar", methods=["POST"])
-    @role_required("admin", "cajero")
-    def redirect_old_eliminar_pago(boleta_id, idx):
-        return redirect(url_for("eliminar_pago_boleta", boleta_id=boleta_id, idx=idx), code=307)
-
-    @app.route("/clientes/<int:boleta_id>/recalcular", methods=["POST"])
-    @app.route("/base-datos/<int:boleta_id>/recalcular", methods=["POST"])
-    @role_required("admin", "cajero")
-    def redirect_old_recalcular(boleta_id):
-        return redirect(url_for("recalcular_boleta", boleta_id=boleta_id), code=307)
-
-    @app.route("/clientes/<int:boleta_id>/limpiar", methods=["POST"])
-    @app.route("/base-datos/<int:boleta_id>/limpiar", methods=["POST"])
-    @role_required("admin", "cajero")
-    def redirect_old_limpiar(boleta_id):
-        return redirect(url_for("limpiar_boleta", boleta_id=boleta_id), code=307)
-
-    @app.route("/base-datos/<int:boleta_id>/vendedor", methods=["POST"])
-    @role_required("admin", "cajero")
-    def redirect_old_vendedor(boleta_id):
-        flash("La p\u00e1gina de Base de Datos fue integrada a Consultas.", "info")
-        return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
+    def api_clientes() -> Response | tuple[Response, int]:
+        """Autocomplete endpoint for saved clients (name/phone, min 2 chars)."""
+        try:
+            require_collections()
+            q = request.args.get("q", "").strip()
+            if len(q) < 2:
+                return jsonify([])
+            query = {
+                "$or": [
+                    {"cliente.nombre": {"$regex": re.escape(q), "$options": "i"}},
+                    {"cliente.telefono": {"$regex": re.escape(q)}},
+                ]
+            }
+            docs = boletas.find(query, {"cliente": 1}).limit(12)
+            seen = set()
+            items = []
+            for doc in docs:
+                cliente = doc.get("cliente") or {}
+                label = f"{cliente.get('nombre', '')} {cliente.get('telefono', '')}".strip()
+                if label and label not in seen:
+                    seen.add(label)
+                    items.append(
+                        {
+                            "label": label,
+                            "nombre": cliente.get("nombre", ""),
+                            "telefono": cliente.get("telefono", ""),
+                            "direccion": cliente.get("direccion", ""),
+                        }
+                    )
+            return jsonify(items)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     @app.route("/api/boletas/<int:boleta_id>")
     @role_required("admin", "cajero", "consulta")
-    def api_boleta(boleta_id):
+    def api_boleta(boleta_id: int) -> Response | tuple[Response, int]:
+        """JSON lookup of a single ticket with vendor/client info."""
         if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
             return jsonify({"ok": False, "error": "Boleta fuera de rango."}), 400
 
@@ -512,7 +485,8 @@ def register_routes(app):
 
     @app.route("/api/validar-boleta-vendedor", methods=["POST"])
     @role_required("admin", "cajero")
-    def validar_boleta_vendedor():
+    def validar_boleta_vendedor() -> Response | tuple[Response, int]:
+        """Pre-validate a list of tickets before a vendor payment (state/ownership)."""
         try:
             data = request.get_json(force=True) or {}
             boletas_list = data.get("boletas", [])
@@ -526,7 +500,10 @@ def register_routes(app):
             int_ids = [int(b) for b in boletas_list if BOLETA_MIN <= int(b) <= BOLETA_MAX]
         except (ValueError, TypeError):
             return jsonify({"ok": False, "error": "Boleta(s) inv\u00e1lida(s)."}), 400
-        docs = {d["_id"]: d for d in boletas.find({"_id": {"$in": int_ids}}, {"_id": 1, "vendedor_id": 1, "estado": 1, "total_abonado": 1})}
+        try:
+            docs = {d["_id"]: d for d in boletas.find({"_id": {"$in": int_ids}}, {"_id": 1, "vendedor_id": 1, "estado": 1, "total_abonado": 1})}
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
         resultados = []
         for b in int_ids:
             doc = docs.get(b)
@@ -543,7 +520,8 @@ def register_routes(app):
 
     @app.route("/api/validar-boleta-cliente", methods=["POST"])
     @role_required("admin", "cajero")
-    def validar_boleta_cliente():
+    def validar_boleta_cliente() -> Response | tuple[Response, int]:
+        """Pre-validate a list of tickets before a customer payment (existence/state)."""
         try:
             data = request.get_json(force=True) or {}
             boletas_list = data.get("boletas", [])
@@ -556,7 +534,10 @@ def register_routes(app):
             int_ids = [int(b) for b in boletas_list if BOLETA_MIN <= int(b) <= BOLETA_MAX]
         except (ValueError, TypeError):
             return jsonify({"ok": False, "error": "Boleta(s) inv\u00e1lida(s)."}), 400
-        docs = {d["_id"]: d for d in boletas.find({"_id": {"$in": int_ids}}, {"_id": 1, "estado": 1, "vendedor_id": 1, "total_abonado": 1, "cliente": 1})}
+        try:
+            docs = {d["_id"]: d for d in boletas.find({"_id": {"$in": int_ids}}, {"_id": 1, "estado": 1, "vendedor_id": 1, "total_abonado": 1, "cliente": 1})}
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
         resultados = []
         for b in int_ids:
             doc = docs.get(b)
@@ -566,5 +547,13 @@ def register_routes(app):
             elif doc.get("estado") == "pagada":
                 resultados.append({"boleta": boleta_str, "ok": False, "error": "Pagada", "warning": True})
             else:
-                resultados.append({"boleta": boleta_str, "ok": True, "estado": doc.get("estado"), "vendedor_id": doc.get("vendedor_id"), "cliente": (doc.get("cliente") or {}).get("nombre", "")})
+                resultados.append(
+                    {
+                        "boleta": boleta_str,
+                        "ok": True,
+                        "estado": doc.get("estado"),
+                        "vendedor_id": doc.get("vendedor_id"),
+                        "cliente": (doc.get("cliente") or {}).get("nombre", ""),
+                    }
+                )
         return jsonify({"ok": True, "resultados": resultados})

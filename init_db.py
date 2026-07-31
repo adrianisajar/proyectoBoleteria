@@ -1,9 +1,8 @@
 import os
-from datetime import datetime
 
 from database import boletas, configuracion, facturas, rifas, vendedores
+from motores.constants import COMISION_DEFAULT_TIERS, DEFAULT_RIFA
 from motores.fechas import now_local
-from motores.constants import COMISION_DEFAULT_TIERS, DEFAULT_RIFA, DEFAULT_CONFIG
 
 CONFIG_ID = "rifa"
 

@@ -16,7 +16,7 @@ SPEC_NAME = "_boleteria_build.spec"
 DIST_DIR = "dist"
 BUILD_DIR = "_pyinstaller_build"
 
-SPEC_TEMPLATE = r'''# -*- mode: python ; coding: utf-8 -*-
+SPEC_TEMPLATE = r"""# -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.building.api import EXE, PYZ
 from PyInstaller.building.build_main import Analysis
 
@@ -53,13 +53,14 @@ exe = EXE(
     argv_emulation=False, target_arch=None,
     codesign_identity=None, entitlements_file=None,
 )
-'''
+"""
 
 
 def main():
     parser = argparse.ArgumentParser(description="Build boleteria.exe")
     parser.add_argument(
-        "--console", action="store_true",
+        "--console",
+        action="store_true",
         help="Show terminal window (default: hidden GUI mode)",
     )
     args = parser.parse_args()
@@ -76,9 +77,10 @@ def main():
 
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "PyInstaller", "--clean",
-             "--distpath", DIST_DIR, "--workpath", BUILD_DIR, SPEC_NAME],
-            capture_output=True, text=True,
+            [sys.executable, "-m", "PyInstaller", "--clean", "--distpath", DIST_DIR, "--workpath", BUILD_DIR, SPEC_NAME],
+            capture_output=True,
+            text=True,
+            check=False,
         )
         print(result.stdout)
         if result.returncode != 0:

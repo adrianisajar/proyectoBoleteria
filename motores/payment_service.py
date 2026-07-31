@@ -1,21 +1,25 @@
 from datetime import datetime
 
 from flask import current_app
+from pymongo.results import BulkWriteResult
 
-from database import boletas, configuracion, vendedores
-from motores.constants import (
-    METODO_TRANSFERENCIA, METODO_EFECTIVO, METODOS_PAGO,
-    USUARIO_SISTEMA, VENDEDOR_LOCAL, VENDEDOR_SIN_ASIGNAR,
-)
+from database import boletas, configuracion
 from motores.auth import current_user
 from motores.cache import invalidate_dashboard_cache
 from motores.config_service import get_config, require_collections
+from motores.constants import (
+    METODO_EFECTIVO,
+    METODO_TRANSFERENCIA,
+    METODOS_PAGO,
+    USUARIO_SISTEMA,
+)
 from motores.fechas import now_local
 from motores.ticket_service import estado_para_total, estado_pipeline_expr
-from motores.validacion import parse_money, parse_boletas_detailed
+from motores.validacion import parse_boletas_detailed, parse_money
 
 
-def _buscar_transferencia_duplicada(ref: str, banco: str = "", exclude_factura_id: int | None = None) -> dict | None:
+def buscar_transferencia_duplicada(ref: str, banco: str = "", exclude_factura_id: int | None = None) -> dict | None:
+    """Check if a transfer reference+banco was already used in another payment."""
     elem_match = {"metodo": METODO_TRANSFERENCIA, "referencia": ref}
     if banco:
         elem_match["banco"] = banco
@@ -24,7 +28,8 @@ def _buscar_transferencia_duplicada(ref: str, banco: str = "", exclude_factura_i
     return boletas.find_one({"historial_pagos": {"$elemMatch": elem_match}}, {"_id": 1})
 
 
-def _build_factura_detalle(boleta_ids: list[int], factura_id: int) -> list[dict]:
+def build_factura_detalle(boleta_ids: list[int], factura_id: int) -> list[dict]:
+    """Build invoice detail lines from historial_pagos of given tickets."""
     docs = list(boletas.find({"_id": {"$in": boleta_ids}}, sort=[("_id", 1)]))
     detalle = []
     for doc in docs:
@@ -44,7 +49,8 @@ def _build_factura_detalle(boleta_ids: list[int], factura_id: int) -> list[dict]
     return detalle
 
 
-def validar_form_abono(form):
+def validar_form_abono(form: dict) -> tuple[dict, int, list[int], list[int], list[str]]:
+    """Normalize an abono form and return (form_data, valor, boletas, not_found, errors)."""
     form_data = {
         "valor": form.get("valor", "").strip(),
         "fecha": form.get("fecha", "").strip() or now_local().date().isoformat(),
@@ -82,6 +88,7 @@ def validar_form_abono(form):
 
 
 def build_abono_preview(form: dict, factura_id: int | None = None) -> dict:
+    """Validate an abono form and return a preview with per-ticket results."""
     require_collections()
     config = get_config()
     valor_boleta = int(config["valor_boleta"])
@@ -138,7 +145,7 @@ def build_abono_preview(form: dict, factura_id: int | None = None) -> dict:
 
         nuevo_total = int(doc.get("total_abonado", 0) or 0) + valor_abono
         if nuevo_total > valor_boleta:
-            preview["excesos"] = preview.get("excesos", []) + [doc]
+            preview["excesos"] = [*preview.get("excesos", []), doc]
             continue
         doc["nuevo_total"] = nuevo_total
         doc["nuevo_estado"] = estado_para_total(nuevo_total, valor_boleta)
@@ -160,7 +167,8 @@ def build_abono_preview(form: dict, factura_id: int | None = None) -> dict:
     return form_data, preview
 
 
-def registrar_abono_lote(boleta_ids: list[int], form_data: dict, valor_abono: int, factura_id: int | None = None) -> dict:
+def registrar_abono_lote(boleta_ids: list[int], form_data: dict, valor_abono: int, factura_id: int | None = None) -> BulkWriteResult:
+    """Register the same abono on many tickets atomically (checks duplicates/overpay)."""
     config = get_config()
     valor_boleta = int(config["valor_boleta"])
 
@@ -169,7 +177,7 @@ def registrar_abono_lote(boleta_ids: list[int], form_data: dict, valor_abono: in
         if not ref:
             raise ValueError("La referencia bancaria es obligatoria para transferencias.")
         banco = form_data.get("banco", "").strip()
-        duplicado = _buscar_transferencia_duplicada(ref, banco, exclude_factura_id=factura_id)
+        duplicado = buscar_transferencia_duplicada(ref, banco, exclude_factura_id=factura_id)
         if duplicado:
             msg = f"Ya existe un pago por transferencia con referencia {ref}"
             if banco:
@@ -197,10 +205,12 @@ def registrar_abono_lote(boleta_ids: list[int], form_data: dict, valor_abono: in
     if factura_id is not None:
         pago["factura_id"] = factura_id
     if valor_abono > 0:
-        sobrepasan = boletas.count_documents({
-            "_id": {"$in": boleta_ids},
-            "total_abonado": {"$gt": valor_boleta - valor_abono},
-        })
+        sobrepasan = boletas.count_documents(
+            {
+                "_id": {"$in": boleta_ids},
+                "total_abonado": {"$gt": valor_boleta - valor_abono},
+            }
+        )
         if sobrepasan:
             raise ValueError(f"El abono de ${valor_abono:,} excede el saldo pendiente de {sobrepasan} boleta(s).")
     result = boletas.update_many(
@@ -212,24 +222,18 @@ def registrar_abono_lote(boleta_ids: list[int], form_data: dict, valor_abono: in
                     "total_abonado": {"$add": [{"$ifNull": ["$total_abonado", 0]}, valor_abono]},
                 }
             },
-            {
-                "$set": {
-                    "estado": estado_pipeline_expr(valor_boleta)
-                }
-            },
+            {"$set": {"estado": estado_pipeline_expr(valor_boleta)}},
         ],
     )
     if result.modified_count < len(boleta_ids):
         skipped = len(boleta_ids) - result.modified_count
-        current_app.logger.warning(
-            "registrar_abono_lote: %d boleta(s) no se actualizaron "
-            "(probablemente ya estaban pagadas)", skipped
-        )
+        current_app.logger.warning("registrar_abono_lote: %d boleta(s) no se actualizaron (probablemente ya estaban pagadas)", skipped)
     invalidate_dashboard_cache()
     return result
 
 
 def rollback_pagos_por_factura(factura_id: int, valor_boleta: int) -> None:
+    """Remove payments tied to a factura from tickets and recompute totals/estado."""
     pipeline = [
         {
             "$set": {
@@ -263,6 +267,7 @@ def rollback_pagos_por_factura(factura_id: int, valor_boleta: int) -> None:
 
 
 def next_factura_id() -> int:
+    """Atomically increment and return the next invoice id from configuracion."""
     result = configuracion.find_one_and_update(
         {"_id": "rifa"},
         {"$inc": {"factura_counter": 1}},

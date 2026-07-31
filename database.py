@@ -1,12 +1,12 @@
-import os
-import sys
-import re
 import logging
-from typing import Optional
-from pymongo import MongoClient
-from pymongo.database import Database
-from pymongo.collection import Collection
+import os
+import re
+import sys
+
 from dotenv import load_dotenv
+from pymongo import MongoClient
+from pymongo.collection import Collection
+from pymongo.database import Database
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,7 +25,10 @@ else:
 
 MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 MONGO_DB: str = os.getenv("MONGO_DB", "sistema_boleteria")
-MONGO_TIMEOUT_MS: int = int(os.getenv("MONGO_TIMEOUT_MS", "5000"))
+MONGO_TIMEOUT_MS: int = int(os.getenv("SERVER_SELECTION_TIMEOUT_MS", os.getenv("MONGO_TIMEOUT_MS", "5000")))
+MONGO_MIN_POOL_SIZE: int = int(os.getenv("MIN_POOL_SIZE", "0"))
+MONGO_MAX_POOL_SIZE: int = int(os.getenv("MAX_POOL_SIZE", "100"))
+MONGO_TLS_INSECURE: bool = os.getenv("MONGO_TLS_INSECURE", "true").lower() in ("1", "true", "yes")
 
 
 def _connect() -> tuple[MongoClient, Database]:
@@ -34,11 +37,16 @@ def _connect() -> tuple[MongoClient, Database]:
         user, pwd, host = m.group(1), m.group(2), m.group(3)
         try:
             client: MongoClient = MongoClient(
-                host=host, port=27017,
-                username=user, password=pwd,
+                host=host,
+                port=27017,
+                username=user,
+                password=pwd,
                 authSource="admin",
-                tls=True, tlsInsecure=True,
+                tls=True,
+                tlsInsecure=MONGO_TLS_INSECURE,
                 serverSelectionTimeoutMS=MONGO_TIMEOUT_MS,
+                minPoolSize=MONGO_MIN_POOL_SIZE,
+                maxPoolSize=MONGO_MAX_POOL_SIZE,
             )
             db: Database = client[MONGO_DB]
             db.list_collection_names()
@@ -47,10 +55,15 @@ def _connect() -> tuple[MongoClient, Database]:
             pass
 
     uri: str = MONGO_URI
-    if "tlsInsecure" not in uri:
+    if MONGO_TLS_INSECURE and "tlsInsecure" not in uri:
         sep = "&" if "?" in uri else "?"
         uri += f"{sep}tlsInsecure=true"
-    client = MongoClient(uri, serverSelectionTimeoutMS=MONGO_TIMEOUT_MS)
+    client = MongoClient(
+        uri,
+        serverSelectionTimeoutMS=MONGO_TIMEOUT_MS,
+        minPoolSize=MONGO_MIN_POOL_SIZE,
+        maxPoolSize=MONGO_MAX_POOL_SIZE,
+    )
     db = client[MONGO_DB]
     return client, db
 

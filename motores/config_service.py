@@ -1,17 +1,20 @@
 import copy
-import time
 import logging
+import time
 
 from database import boletas, configuracion, facturas, rifas, vendedores
-from motores.constants import CONFIG_ID, COMISION_DEFAULT_TIERS, DEFAULT_CONFIG, DEFAULT_RIFA
-from motores.fechas import now_local
 from motores.cache import (
-    CONFIG_CACHE, CONFIG_CACHE_SECONDS,
-    RIFA_CACHE, RIFA_CACHE_SECONDS,
+    CONFIG_CACHE,
+    CONFIG_CACHE_SECONDS,
+    RIFA_CACHE,
+    RIFA_CACHE_SECONDS,
 )
+from motores.constants import COMISION_DEFAULT_TIERS, CONFIG_ID, DEFAULT_CONFIG, DEFAULT_RIFA
+from motores.fechas import now_local
 
 
 def get_rifa_activa(force: bool = False) -> dict:
+    """Return active rifa document with 30s cache."""
     if not force and RIFA_CACHE["data"] and time.monotonic() - RIFA_CACHE["loaded_at"] < RIFA_CACHE_SECONDS:
         return RIFA_CACHE["data"].copy()
 
@@ -39,6 +42,7 @@ def get_rifa_activa(force: bool = False) -> dict:
 
 
 def migrar_config_a_rifa(config_doc: dict) -> dict | None:
+    """Convert legacy config document to rifa collection format."""
     rifa = {
         "nombre": config_doc.get("nombre_rifa", DEFAULT_RIFA["nombre"]),
         "anio": DEFAULT_RIFA["anio"],
@@ -58,6 +62,7 @@ def migrar_config_a_rifa(config_doc: dict) -> dict | None:
 
 
 def migrar_boletas_existentes(rifa_id: str) -> None:
+    """Backfill missing 'rifa_id' on old ticket docs (idempotent)."""
     if boletas is None:
         return
     pendientes = boletas.count_documents({"rifa_id": {"$exists": False}})
@@ -66,26 +71,30 @@ def migrar_boletas_existentes(rifa_id: str) -> None:
 
 
 def require_collections() -> None:
+    """Raise RuntimeError if any DB collection is None (no connection)."""
     required = [boletas, configuracion, facturas, rifas, vendedores]
     if any(collection is None for collection in required):
         raise RuntimeError("No hay conexi\u00f3n activa a MongoDB.")
 
 
 def get_config(force: bool = False) -> dict:
+    """Return merged config (rifa + stored overrides) with 30s cache."""
     if not force and CONFIG_CACHE["data"] and time.monotonic() - CONFIG_CACHE["loaded_at"] < CONFIG_CACHE_SECONDS:
         return copy.deepcopy(CONFIG_CACHE["data"])
 
     rifa = get_rifa_activa(force)
     config = copy.deepcopy(DEFAULT_CONFIG)
-    config.update({
-        "nombre_rifa": rifa.get("nombre", DEFAULT_CONFIG["nombre_rifa"]),
-        "valor_boleta": int(rifa.get("valor_boleta", DEFAULT_CONFIG["valor_boleta"])),
-        "cantidad_boletas": int(rifa.get("cantidad_boletas", 10000)),
-        "premio_mayor": rifa.get("premio_mayor", ""),
-        "estado": rifa.get("estado", "activa"),
-        "comisiones_tiers": rifa.get("comisiones_tiers", COMISION_DEFAULT_TIERS),
-        "rifa_id": rifa.get("_id"),
-    })
+    config.update(
+        {
+            "nombre_rifa": rifa.get("nombre", DEFAULT_CONFIG["nombre_rifa"]),
+            "valor_boleta": int(rifa.get("valor_boleta", DEFAULT_CONFIG["valor_boleta"])),
+            "cantidad_boletas": int(rifa.get("cantidad_boletas", 10000)),
+            "premio_mayor": rifa.get("premio_mayor", ""),
+            "estado": rifa.get("estado", "activa"),
+            "comisiones_tiers": rifa.get("comisiones_tiers", COMISION_DEFAULT_TIERS),
+            "rifa_id": rifa.get("_id"),
+        }
+    )
 
     stored = configuracion.find_one({"_id": CONFIG_ID}) if configuracion is not None else None
     if stored:
@@ -102,7 +111,7 @@ def get_config(force: bool = False) -> dict:
         if stored.get("comisiones_tiers") is not None:
             config["comisiones_tiers"] = stored["comisiones_tiers"]
         for k in ("nombre_empresa", "direccion", "telefono", "ciudad", "footer_texto", "observaciones_recaudo"):
-            if k in stored and stored[k]:
+            if stored.get(k):
                 config[k] = stored[k]
 
     CONFIG_CACHE["data"] = copy.deepcopy(config)

@@ -1,40 +1,53 @@
 from collections import defaultdict
 from datetime import datetime
 
-from motores.constants import VENDEDOR_LOCAL, METODO_EFECTIVO, METODO_TRANSFERENCIA
+from flask import Flask, Response
+
+from motores.constants import METODO_EFECTIVO, VENDEDOR_LOCAL
+from motores.facturacion_common import deduplicar_filas_boleta, validar_filas_transferencia, verificar_boletas_existen
 from motores.fechas import now_local
+from motores.shared import (
+    boletas,
+    build_abono_preview,
+    build_factura_detalle,
+    estado_pipeline_expr,
+    facturas,
+    flash,
+    get_config,
+    next_factura_id,
+    redirect,
+    registrar_abono_lote,
+    render_template,
+    request,
+    require_collections,
+    role_required,
+    rollback_pagos_por_factura,
+    url_for,
+)
 from motores.validacion import parse_money
 
-from motores.shared import (
-    boletas, facturas,
-    request, flash, redirect, render_template, url_for,
-    require_collections, role_required,
-    registrar_abono_lote, next_factura_id, build_abono_preview,
-    rollback_pagos_por_factura,
-    get_config,
-    estado_pipeline_expr,
-    _buscar_transferencia_duplicada,
-    _build_factura_detalle,
-)
 
-
-def _build_cliente_form_rows(boletas_raw, montos_raw, metodos, referencias, bancos):
+def _build_cliente_form_rows(boletas_raw: list[str], montos_raw: list[str], metodos: list[str], referencias: list[str], bancos: list[str]) -> list[dict]:
+    """Build form row dicts from parallel POST lists, skipping empty ticket numbers."""
     form_rows = []
     for i in range(len(boletas_raw)):
         raw = boletas_raw[i].strip()
         if not raw:
             continue
-        form_rows.append({
-            "boleta": raw,
-            "monto": montos_raw[i] if i < len(montos_raw) else "",
-            "metodo": metodos[i] if i < len(metodos) else "efectivo",
-            "referencia": referencias[i] if i < len(referencias) else "",
-            "banco": bancos[i] if i < len(bancos) else "",
-        })
+        form_rows.append(
+            {
+                "boleta": raw,
+                "monto": montos_raw[i] if i < len(montos_raw) else "",
+                "metodo": metodos[i] if i < len(metodos) else "efectivo",
+                "referencia": referencias[i] if i < len(referencias) else "",
+                "banco": bancos[i] if i < len(bancos) else "",
+            }
+        )
     return form_rows
 
 
-def _render_cliente_form(form, form_rows, today):
+def _render_cliente_form(form: dict, form_rows: list[dict], today: str) -> str:
+    """Render the customer invoice form with the given values for a re-render."""
     form_data = {
         "fecha": form.get("fecha", ""),
         "form_rows": form_rows,
@@ -44,11 +57,13 @@ def _render_cliente_form(form, form_rows, today):
     return render_template("nueva_factura_cliente.html", form=form, today=today, form_data=form_data, valor_boleta=_vb_cliente)
 
 
-def register_routes(app):
+def register_routes(app: Flask) -> None:
+    """Register the customer invoice creation route."""
 
     @app.route("/facturas/nueva/cliente", methods=["GET", "POST"])
     @role_required("admin", "cajero")
-    def nueva_factura_cliente():
+    def nueva_factura_cliente() -> str | Response:
+        """Create a customer invoice from dynamic rows (boleta + monto + metodo)."""
         require_collections()
         today = now_local().strftime("%Y-%m-%d")
         form = {"nombre": "", "telefono": "", "direccion": ""}
@@ -113,55 +128,33 @@ def register_routes(app):
                 meta = metodos[i].strip().lower() if i < len(metodos) else METODO_EFECTIVO
                 ref = referencias[i].strip() if i < len(referencias) else ""
                 banco_val = bancos[i].strip() if i < len(bancos) else ""
-                rows.append({
-                    "boleta": num,
-                    "monto": m,
-                    "metodo": meta,
-                    "referencia": ref,
-                    "banco": banco_val,
-                })
+                rows.append(
+                    {
+                        "boleta": num,
+                        "monto": m,
+                        "metodo": meta,
+                        "referencia": ref,
+                        "banco": banco_val,
+                    }
+                )
 
             if not rows:
                 errors.append("Ingrese al menos una boleta.")
 
-            for r in rows:
-                if r["metodo"] == METODO_TRANSFERENCIA:
-                    if not r.get("referencia", "").strip():
-                        errors.append(f"Referencia obligatoria para transferencia en boleta #{r['boleta']:04d}.")
-                    if not r.get("banco", "").strip():
-                        errors.append(f"Banco obligatorio para transferencia en boleta #{r['boleta']:04d}.")
-
-            if not errors:
-                seen_refs = set()
-                for r in rows:
-                    if r["metodo"] == METODO_TRANSFERENCIA:
-                        ref_key = (r["referencia"].strip(), r["banco"].strip())
-                        if ref_key in seen_refs:
-                            continue
-                        seen_refs.add(ref_key)
-                        dup = _buscar_transferencia_duplicada(r["referencia"].strip(), r["banco"].strip())
-                        if dup:
-                            errors.append(f"Ya existe un pago por transferencia con referencia {r['referencia'].strip()} y banco {r['banco'].strip()} (boleta #{dup['_id']:04d}).")
+            validar_filas_transferencia(rows, errors)
 
             if errors:
                 for e in errors:
                     flash(e, "danger")
                 return _render_cliente_form(form, form_rows, today)
 
-            seen = set()
-            deduped = []
-            for r in rows:
-                if r["boleta"] not in seen:
-                    seen.add(r["boleta"])
-                    deduped.append(r)
-            if len(deduped) < len(rows):
-                flash(f"{len(rows) - len(deduped)} boleta(s) duplicada(s) ignorada(s).", "warning")
-            rows = deduped
+            rows, dup_count = deduplicar_filas_boleta(rows)
+            if dup_count:
+                flash(f"{dup_count} boleta(s) duplicada(s) ignorada(s).", "warning")
 
             boleta_ids = [r["boleta"] for r in rows]
-            docs_map = {d["_id"]: d for d in boletas.find({"_id": {"$in": boleta_ids}})}
-            if len(docs_map) != len(boleta_ids):
-                missing = [b for b in boleta_ids if b not in docs_map]
+            docs_map, missing = verificar_boletas_existen(boleta_ids)
+            if missing:
                 flash(f"Boletas no encontradas: {', '.join(f'{b:04d}' for b in missing)}", "danger")
                 return _render_cliente_form(form, form_rows, today)
 
@@ -197,7 +190,7 @@ def register_routes(app):
                         raise ValueError("; ".join(preview.get("errors", [])))
                     registrar_abono_lote(boleta_ids_group, _form_data, preview["valor_abono"], factura_id=factura_id)
 
-                detalle = _build_factura_detalle(boleta_ids, factura_id)
+                detalle = build_factura_detalle(boleta_ids, factura_id)
                 valor_total = sum(d["valor"] for d in detalle)
 
                 factura = {
@@ -251,14 +244,16 @@ def register_routes(app):
         boleta_query = request.args.get("boletas", "").strip()
         form_rows = []
         if boleta_query:
-            for part in boleta_query.split(","):
-                part = part.strip()
+            for raw_part in boleta_query.split(","):
+                part = raw_part.strip()
                 if part:
-                    form_rows.append({
-                        "boleta": part,
-                        "monto": "",
-                        "metodo": "efectivo",
-                        "referencia": "",
-                        "banco": "",
-                    })
+                    form_rows.append(
+                        {
+                            "boleta": part,
+                            "monto": "",
+                            "metodo": "efectivo",
+                            "referencia": "",
+                            "banco": "",
+                        }
+                    )
         return _render_cliente_form(form, form_rows, today)

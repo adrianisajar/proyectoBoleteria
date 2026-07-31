@@ -1,34 +1,44 @@
+import contextlib
 import hashlib
 import re
 from datetime import datetime
 
-from flask import current_app
+from flask import Flask, Response, current_app
 
-from motores.constants import METODO_TRANSFERENCIA, REFERENCIA_N_A, USUARIO_SISTEMA, VENDEDOR_LOCAL
+from motores.constants import METODO_TRANSFERENCIA, USUARIO_SISTEMA, VENDEDOR_LOCAL
 from motores.fechas import now_local
-
 from motores.shared import (
-    boletas, vendedores, facturas,
-    request, flash, redirect, render_template, url_for, abort,
-    require_collections, role_required,
-    current_user, get_config,
-
+    abort,
+    boletas,
+    current_user,
     estado_pipeline_expr,
+    facturas,
+    flash,
+    get_config,
     invalidate_dashboard_cache,
-    rollback_pagos_por_factura,
+    redirect,
+    render_template,
+    request,
+    require_collections,
+    role_required,
+    url_for,
+    vendedores,
 )
 
 
-def _anulacion_hash(factura_id, anulada, secret):
+def _anulacion_hash(factura_id: int, anulada: bool, secret: str) -> str:
+    """Build the short hash that guards an invoice annulment against tampering."""
     raw = f"{factura_id}:{anulada}:{secret}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
-def register_routes(app):
+def register_routes(app: Flask) -> None:
+    """Register the invoice list, detail and annulment routes."""
 
     @app.route("/facturas")
     @role_required("admin", "cajero", "consulta")
-    def facturas_list():
+    def facturas_list() -> str:
+        """List all invoices, searchable by id or client/vendor name."""
         require_collections()
         q = request.args.get("q", "").strip()
         query = {}
@@ -46,21 +56,24 @@ def register_routes(app):
 
     @app.route("/facturas/cliente")
     @role_required("admin", "cajero", "consulta")
-    def facturas_cliente():
+    def facturas_cliente() -> str:
+        """List customer (cliente) invoices."""
         require_collections()
         lista = list(facturas.find({"tipo": "cliente"}).sort([("fecha", -1), ("_id", -1)]).limit(100))
         return render_template("facturas_cliente.html", facturas=lista)
 
     @app.route("/facturas/vendedor")
     @role_required("admin", "cajero", "consulta")
-    def facturas_vendedor():
+    def facturas_vendedor() -> str:
+        """List vendor (vendedor) invoices."""
         require_collections()
         lista = list(facturas.find({"tipo": "vendedor"}).sort([("fecha", -1), ("_id", -1)]).limit(100))
         return render_template("facturas_vendedor.html", facturas=lista)
 
     @app.route("/facturas/<int:factura_id>")
     @role_required("admin", "cajero", "consulta")
-    def ver_factura(factura_id):
+    def ver_factura(factura_id: int) -> str:
+        """Render the printable invoice detail (cliente or vendedor layout)."""
         require_collections()
         factura = facturas.find_one({"_id": factura_id})
         if not factura:
@@ -93,15 +106,12 @@ def register_routes(app):
                 # Y adem�s por factura_id para resolver el orden dentro del mismo d�a
                 fecha_factura_str = factura["fecha"].strftime("%Y-%m-%d") if isinstance(factura["fecha"], datetime) else str(factura["fecha"])[:10]
                 historial_hasta_factura = [
-                    p for p in historial_completo
-                    if (p.get("factura_id") is None or p.get("factura_id", 0) <= factura_id)
-                    and str(p.get("fecha", ""))[:10] <= fecha_factura_str
+                    p
+                    for p in historial_completo
+                    if (p.get("factura_id") is None or p.get("factura_id", 0) <= factura_id) and str(p.get("fecha", ""))[:10] <= fecha_factura_str
                 ]
                 # Pagos de esta factura (para tabla "PAGOS DE ESTA FACTURA")
-                historial_esta_factura = [
-                    p for p in historial_hasta_factura
-                    if p.get("factura_id") == factura_id
-                ]
+                historial_esta_factura = [p for p in historial_hasta_factura if p.get("factura_id") == factura_id]
                 total_hasta_factura = sum(int(p.get("valor", 0) or 0) for p in historial_hasta_factura)
                 saldo_hasta_factura = max(valor_boleta - total_hasta_factura, 0)
                 if total_hasta_factura >= valor_boleta:
@@ -131,7 +141,7 @@ def register_routes(app):
             for d in factura.get("detalle") or []:
                 d["grupo_pago"] = str(d.get("valor", 0))
                 if d.get("metodo") == "transferencia":
-                    d["grupo_transferencia"] = f"{d.get('banco','')}|{d.get('referencia','')}"
+                    d["grupo_transferencia"] = f"{d.get('banco', '')}|{d.get('referencia', '')}"
 
         if factura.get("tipo") == "vendedor":
             total_efectivo = 0
@@ -141,7 +151,7 @@ def register_routes(app):
                 d["grupo_pago"] = str(valor)
                 if d.get("metodo") == METODO_TRANSFERENCIA:
                     total_transferencia += valor
-                    d["grupo_transferencia"] = f"{d.get('banco','')}|{d.get('referencia','')}"
+                    d["grupo_transferencia"] = f"{d.get('banco', '')}|{d.get('referencia', '')}"
                 else:
                     total_efectivo += valor
             ctx["total_efectivo"] = total_efectivo
@@ -154,7 +164,8 @@ def register_routes(app):
 
     @app.route("/facturas/<int:factura_id>/anular", methods=["POST"])
     @role_required("admin")
-    def anular_factura(factura_id):
+    def anular_factura(factura_id: int) -> Response:
+        """Annul an invoice (hash-guarded): roll back payments and recalc ticket states."""
         require_collections()
         factura = facturas.find_one({"_id": factura_id})
         if not factura:
@@ -206,36 +217,30 @@ def register_routes(app):
                                 }
                             }
                         },
-                        {
-                            "$set": {
-                                "estado": estado_pipeline_expr(valor_boleta_local)
-                            }
-                        },
+                        {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
                     ],
                 )
 
             facturas.update_one(
                 {"_id": factura_id},
-                {"$set": {
-                    "anulada": True,
-                    "anulada_en": now_local(),
-                    "anulada_por": user,
-                    "motivo_anulacion": motivo,
-                }},
+                {
+                    "$set": {
+                        "anulada": True,
+                        "anulada_en": now_local(),
+                        "anulada_por": user,
+                        "motivo_anulacion": motivo,
+                    }
+                },
             )
         except Exception as exc:
-            try:
+            with contextlib.suppress(Exception):
                 facturas.update_one(
                     {"_id": factura_id},
                     {"$set": {"anulada": False}},
                 )
-            except Exception:
-                pass
             flash(f"Error al anular la factura N\u00b0 {factura_id:05d}: {exc}", "danger")
             return redirect(url_for("ver_factura", factura_id=factura_id))
 
         invalidate_dashboard_cache()
         flash(f"Factura N\u00b0 {factura_id:05d} anulada.", "success")
         return redirect(url_for("ver_factura", factura_id=factura_id))
-
-
