@@ -24,7 +24,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     env:
-      MONGO_DB: sistema_boleteria_test
       MONGO_URI: ${{ secrets.MONGO_URI }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
     steps:

@@ -4,7 +4,7 @@
 - **Framework**: Flask (Jinja2 templates, no REST API framework)
 - **Database**: MongoDB via PyMongo (Atlas URI in `.env`)
 - **Python**: 3.14 (from `.venv`)
-- **Tests**: pytest (58 functional tests, real MongoDB on test DB `sistema_boleteria_test`).
+- **Tests**: pytest (58 functional tests, real MongoDB, DB de test única por proceso `boleteria_test_<pid>_<ts>`).
 - **Lint/format**: Ruff (`pyproject.toml`). No typechecker.
 - **CI**: GitHub Actions (`.github/workflows/test.yml`) — lint + pytest on push/PR. Requires secrets `MONGO_URI` y `SECRET_KEY` en el repo.
 
@@ -60,7 +60,7 @@ tests/                pytest suite (conftest seeds/resets test DB per test)
 | Install dev deps (incl. pytest) | `pip install -r requirements-dev.txt` |
 | Lint (Ruff) | `python -m ruff check motores tests *.py` |
 | Format check (Ruff) | `python -m ruff format --check motores tests *.py` |
-| Run tests (uses `sistema_boleteria_test` DB) | `pytest` |
+| Run tests (uses DB única por proceso `boleteria_test_<pid>_<ts>`) | `pytest` |
 | Run single test file | `pytest tests/test_vendedores.py` |
 | Initialize DB (destroys existing data) | `python init_db.py` |
 | Validate/create indexes & config | `python optimizar_db.py` |
@@ -68,8 +68,8 @@ tests/                pytest suite (conftest seeds/resets test DB per test)
 | Custom port | `PORT=8080 python run_server.py` |
 
 ## Tests (pytest)
-- Suite: `tests/` — 58 tests against real MongoDB, isolated DB `sistema_boleteria_test`.
-- `conftest.py` sets `MONGO_DB=sistema_boleteria_test` **before** importing `app` (env var wins over `load_dotenv`), seeds 500 tickets + config + active rifa once per session, and resets collections before each test.
+- Suite: `tests/` — 58 tests against real MongoDB, isolated DB `boleteria_test_<pid>_<ts>` (única por proceso: permite CI y corridas locales concurrentes sin pisarse datos; se elimina al terminar la sesión).
+- `conftest.py` sets `MONGO_DB` to esa DB única **before** importing `app` (env var wins over `load_dotenv`), seeds 500 tickets + config + active rifa once per session, and resets collections before each test.
 - `_warm_up()` (con retry ×3) ejecuta un count/find sobre cada colección tras la siembra para mitigar la primera petición fría contra Atlas.
 - Never point tests at the production DB; the suite drops/resets everything in `MONGO_DB`.
 - Coverage: validation parsers, ticket state machine, commission tiers, vendor CRUD + assign/remove/delete rules, customer invoices (full/partial/multiple/rejected cases), vendor invoices (incl. rollback on overpayment), invoice annulment, payment dedup, health/API endpoints, HTML/JSON 404 errors.
@@ -81,7 +81,9 @@ SECRET_KEY=...
 ```
 Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `SERVER_SELECTION_TIMEOUT_MS` (alias), `MIN_POOL_SIZE` (default 0), 
 `MAX_POOL_SIZE` (default 100), `MONGO_TLS_INSECURE` (default `false`; ponla en `true` solo si tu cluster Atlas requiere TLS sin verificación de CA), 
-`NOMBRE_RIFA`, `VALOR_BOLETA`, `COMISION_POR_BOLETA` (default 10000), `FLASK_HOST`, `FLASK_DEBUG`.
+`NOMBRE_RIFA`, `VALOR_BOLETA`, `COMISION_POR_BOLETA` (default 10000), `FLASK_HOST`, `FLASK_DEBUG`,
+`SESSION_COOKIE_SECURE` (default `0`; ponla en `1` si sirves por HTTPS), `SESSION_COOKIE_SAMESITE` (default `Lax`),
+`MAX_CONTENT_LENGTH_MB` (default 16).
 
 **`.gitignore` includes `.env`** — secrets are not tracked.
 

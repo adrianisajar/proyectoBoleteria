@@ -519,7 +519,8 @@
             ];
             let selectedV = null;
             {% if filters.vendedor_id %}
-            selectedV = vendedores.find(function(v) { return v.id === {{ filters.vendedor_id | tojson }}; }) || null;
+            const filterId = {{ filters.vendedor_id | tojson }};
+            selectedV = vendedores.find(v => v.id === filterId) || null;
             {% endif %}
 
             const mostrarSugerencias = (filtro) => {

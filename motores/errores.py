@@ -34,7 +34,7 @@ def _render_error(codigo: int, titulo: str, mensaje: str, exc: Exception | None 
 
 
 def register_error_handlers(app: Flask) -> None:
-    """Register consistent responses (HTML or JSON) for 400, 404 and 500 errors."""
+    """Register consistent responses (HTML or JSON) for 400, 404, 413 and 500 errors."""
 
     @app.errorhandler(400)
     def bad_request(exc: Any) -> tuple[str | Response, int]:
@@ -50,6 +50,13 @@ def register_error_handlers(app: Flask) -> None:
             "Página no encontrada",
             "La página que buscas no existe o fue movida.",
         )
+
+    @app.errorhandler(413)
+    def payload_too_large(exc: Any) -> tuple[str | Response, int]:
+        """Render the 413 error response (upload exceeds MAX_CONTENT_LENGTH)."""
+        limite = current_app.config.get("MAX_CONTENT_LENGTH", 16 * 1024 * 1024)
+        mensaje = f"El archivo supera el tamaño máximo permitido ({int(limite / 1024 / 1024)} MB)."
+        return _render_error(413, "Archivo demasiado grande", mensaje)
 
     @app.errorhandler(500)
     def server_error(exc: Any) -> tuple[str | Response, int]:

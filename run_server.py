@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import threading
 import webbrowser
 
@@ -41,6 +42,8 @@ try:
     _ok("Base de datos lista")
 except Exception as exc:
     _fail(f"Error al conectar: {exc}")
+    _fail("No se puede iniciar el servidor sin conexión a MongoDB.")
+    sys.exit(1)
 
 
 def abrir_navegador(host, port, delay=1.5):

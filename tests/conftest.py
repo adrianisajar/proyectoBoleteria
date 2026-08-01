@@ -1,3 +1,4 @@
+import contextlib
 import os
 import sys
 import time
@@ -6,11 +7,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-os.environ.setdefault("MONGO_DB", "sistema_boleteria_test")
+TEST_DB_NAME = f"boleteria_test_{os.getpid()}_{int(time.time())}"
+os.environ["MONGO_DB"] = TEST_DB_NAME
 os.environ.setdefault("MONGO_TIMEOUT_MS", "8000")
 
 import pytest
 
+import database
 from app import app as flask_app
 from database import boletas, configuracion, facturas, rifas, vendedores
 from motores.cache import invalidate_config_cache, invalidate_dashboard_cache
@@ -127,6 +130,11 @@ def _reset():
 def _session_seed():
     _seed_once()
     yield
+    client = getattr(database, "_client", None)
+    if client is None:
+        return
+    with contextlib.suppress(Exception):
+        client.drop_database(TEST_DB_NAME)
 
 
 @pytest.fixture(autouse=True)
