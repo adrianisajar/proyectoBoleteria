@@ -1,4 +1,5 @@
 import re
+from collections import Counter
 from datetime import datetime
 
 from flask import Flask, Response
@@ -145,6 +146,12 @@ def register_routes(app: Flask) -> None:
 
             if not rows:
                 flash("Debe incluir al menos una boleta con un abono v\u00e1lido.", "danger")
+                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
+
+            contador = Counter(r["boleta"] for r in rows)
+            duplicadas = [b for b, cnt in contador.items() if cnt > 1]
+            if duplicadas:
+                flash(f"Boletas duplicadas en el abono: {', '.join(f'{b:04d}' for b in sorted(duplicadas))}. Elimine las repeticiones.", "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
             rows, _ = deduplicar_filas_boleta(rows)

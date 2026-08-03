@@ -276,6 +276,17 @@
             const filas = abonosBody.querySelectorAll(".fila-abono");
             let hasErrors = false;
 
+            const conteoBoletas = {};
+            const colectarDuplicados = function(num) {
+                conteoBoletas[num] = (conteoBoletas[num] || 0) + 1;
+            };
+            filas.forEach(function(f) {
+                const raw = f.querySelector(".boleta-input").value;
+                const parts = raw.split(/[\s,;]+/).filter(function(p) { return /^\d{1,4}$/.test(p.trim()); });
+                parts.forEach(function(p) { colectarDuplicados(parseInt(p)); });
+            });
+            const numerosDuplicados = Object.keys(conteoBoletas).filter(function(k) { return conteoBoletas[k] > 1; });
+
             for (const f of filas) {
                 const raw = f.querySelector(".boleta-input").value;
                 const parts = raw.split(/[\s,;]+/).filter(function(p) { return /^\d{1,4}$/.test(p.trim()); });
@@ -292,6 +303,10 @@
 
                 for (const p of parts) {
                     const num = parseInt(p);
+                    if (numerosDuplicados.indexOf(String(num)) !== -1) {
+                        errors.push('#' + ("0000" + num).slice(-4) + ' <span class="text-danger">Duplicada</span>');
+                        continue;
+                    }
                     const result = await verificarBoleta(num);
                     if (!result.ok) {
                         errors.push('#' + ("0000" + num).slice(-4) + ' <span class="text-danger">No existe</span>');
@@ -743,13 +758,25 @@
                 return;
             }
             const filas = abonosBody.querySelectorAll(".fila-abono");
+            const boletaSet = new Set();
+            let dupFound = false;
             let totalTickets = 0;
             filas.forEach(function(f) {
                 const raw = f.querySelector(".boleta-input").value;
                 const parts = raw.split(/[\s,;]+/).filter(function(p) { return p.trim() !== "" && /^\d{1,4}$/.test(p.trim()); });
                 const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
                 totalTickets += parts.length;
+                parts.forEach(function(p) {
+                    const num = parseInt(p);
+                    if (boletaSet.has(num)) dupFound = true;
+                    boletaSet.add(num);
+                });
             });
+            if (dupFound) {
+                e.preventDefault();
+                alert("Hay boletas duplicadas en el abono. Elimine las repeticiones antes de generar la factura.");
+                return;
+            }
             if (!totalTickets) {
                 e.preventDefault();
                 alert("Ingrese al menos un n\u00famero de boleta v\u00e1lido con un abono.");

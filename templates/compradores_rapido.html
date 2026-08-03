@@ -408,8 +408,11 @@ function guardarCambios() {
     headers: {"Content-Type": "application/json", "X-CSRF-Token": getCsrfToken()},
     body: JSON.stringify({boletas: filas.map(f => f.boleta)}),
   })
-    .then(r => r.json())
-    .then(data => {
+    .then(r => r.json().then(data => ({ok: r.ok, data: data})))
+    .then(({ok, data}) => {
+      if (!ok || !data.ok) {
+        throw new Error(data.error || "Error al validar.");
+      }
       const res = data.resultados || {};
       let validas = 0, conCliente = 0, inexistentes = 0;
       const detInex = [];
@@ -452,21 +455,28 @@ function guardarCambios() {
       setBtnLoading(btn, false);
       guardando = false;
     })
-    .catch(() => {
-      alert("Error al validar.");
+    .catch((err) => {
+      alert(err.message || "Error al validar.");
       setBtnLoading(btn, false);
       guardando = false;
     });
 }
 
 function ejecutarGuardado(filas, btn) {
+  const confirmBtn = document.getElementById("btnConfirmarGuardar");
+  confirmBtn.disabled = true;
+  confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Guardando...';
+
   fetch(apiGuardar, {
     method: "POST",
     headers: {"Content-Type": "application/json", "X-CSRF-Token": getCsrfToken()},
     body: JSON.stringify({rows: filas}),
   })
-    .then(r => r.json())
-    .then(data => {
+    .then(r => r.json().then(data => ({ok: r.ok, data: data})))
+    .then(({ok, data}) => {
+      if (!ok || !data.ok) {
+        throw new Error(data.error || "Error al guardar.");
+      }
       let html = `<p class="text-success mb-1"><i class="bi bi-check-circle me-1"></i>${data.updated} boleta(s) actualizada(s)</p>`;
       if (data.sin_datos && data.sin_datos.length) {
         html += `<p class="text-info mb-1"><i class="bi bi-info-circle me-1"></i>${data.sin_datos.length} boleta(s) ignoradas (sin datos): ${data.sin_datos.join(", ")}</p>`;
@@ -481,10 +491,16 @@ function ejecutarGuardado(filas, btn) {
 
       document.getElementById("tbodyCompradores").innerHTML = "";
       agregarFilas(5);
-      document.getElementById("btnConfirmarGuardar").disabled = false;
       guardando = false;
     })
-    .catch(() => { alert("Error al guardar."); guardando = false; });
+    .catch((err) => {
+      alert(err.message || "Error al guardar.");
+      guardando = false;
+    })
+    .finally(() => {
+      confirmBtn.innerHTML = "Guardar de todas formas";
+      confirmBtn.disabled = false;
+    });
 }
 
 /* ── pegado ───────────────────────────────────────────── */

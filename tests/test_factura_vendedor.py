@@ -61,6 +61,23 @@ def test_factura_vendedor_boleta_ajena(client):
     assert facturas.count_documents({"tipo": "vendedor"}) == 0
 
 
+def test_factura_vendedor_boleta_duplicada_rechazada(client):
+    _crear_vendedor_con_boletas(ids=(1, 2))
+    resp = _post_factura(client, "VEND01", ["0001", "0001"], ["30000", "30000"])
+    assert resp.status_code == 200
+    assert "duplicadas" in resp.get_data(as_text=True).lower()
+    assert facturas.count_documents({"tipo": "vendedor"}) == 0
+    assert boletas.find_one({"_id": 1})["total_abonado"] == 0
+
+
+def test_factura_vendedor_boleta_duplicada_en_fila_rechazada(client):
+    _crear_vendedor_con_boletas(ids=(1,))
+    resp = _post_factura(client, "VEND01", ["0001, 0001"], ["30000"])
+    assert resp.status_code == 200
+    assert "duplicadas" in resp.get_data(as_text=True).lower()
+    assert facturas.count_documents({"tipo": "vendedor"}) == 0
+
+
 def test_factura_vendedor_sin_vendedor(client):
     resp = _post_factura(client, "", ["0001"], ["70000"])
     assert resp.status_code == 200
