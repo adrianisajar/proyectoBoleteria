@@ -449,63 +449,101 @@
         const previewContent = document.getElementById("previewContent");
         const previewReceipt = document.getElementById("previewReceipt");
 
-        const actualizarPreview = () => {
-            const vValue = getVendedorId();
-            const vNombre = getVendedorNombre();
-            const fechaEl = document.getElementById("fecha");
-            const fecha = fechaEl ? fechaEl.value : "";
-
-            if (!vValue) {
-                previewContent.style.display = "none";
-                previewPlaceholder.style.display = "";
-                return;
-            }
-
+        // Helper: build grouped structure for preview
+        const buildGrupos = () => {
             const filas = abonosBody.querySelectorAll(".fila-abono");
-            const grupos = {};
+            const grupos = {}; // monto -> { efectivo: [], transferencia: { banco|ref: [] } }
             let totalTickets = 0;
-            let hayDatos = false;
 
             filas.forEach(function(f) {
                 const raw = f.querySelector(".boleta-input").value;
                 const parts = raw.split(/[\s,;]+/).filter(function(p) { return /^\d{1,4}$/.test(p.trim()); });
                 if (!parts.length) return;
                 const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
-                hayDatos = true;
-                if (monto > 0) {
-                    if (!grupos[monto]) grupos[monto] = [];
-                    parts.forEach(function(p) { grupos[monto].push(p); totalTickets++; });
+                const metodo = f.querySelector("select[name='metodo[]']").value;
+                if (monto <= 0) return;
+
+                if (!grupos[monto]) {
+                    grupos[monto] = { efectivo: [], transferencia: {} };
                 }
+
+                if (metodo === "transferencia") {
+                    const ref = f.querySelector("input[name='referencia[]']").value.trim();
+                    const banco = f.querySelector("input[name='banco[]']").value.trim();
+                    const key = (banco || "SIN BANCO") + "|" + (ref || "SIN REF");
+                    if (!grupos[monto].transferencia[key]) {
+                        grupos[monto].transferencia[key] = { banco: banco, referencia: ref, boletas: [] };
+                    }
+                    grupos[monto].transferencia[key].boletas.push(...parts);
+                } else {
+                    grupos[monto].efectivo.push(...parts);
+                }
+                totalTickets += parts.length;
             });
 
-            if (!hayDatos) {
-                previewContent.style.display = "none";
-                previewPlaceholder.style.display = "";
-                return;
-            }
+            return { grupos, totalTickets };
+        };
 
-            previewPlaceholder.style.display = "none";
-            previewContent.style.display = "";
-
+        const renderGrupos = (grupos, totalTickets) => {
             var h = "";
             h += '<div class="mb-3 pb-3 border-bottom">';
             h += '  <div class="text-secondary small fw-semibold">Vendedor</div>';
-            h += '  <div class="fw-bold fs-5">' + (vNombre || vValue) + '</div>';
-            h += '  <div class="small text-secondary">' + (fecha || "") + '</div>';
+            h += '  <div class="fw-bold fs-5">' + (getVendedorNombre() || getVendedorId()) + '</div>';
+            h += '  <div class="small text-secondary">' + (document.getElementById("fecha").value || "") + '</div>';
             h += '</div>';
 
             h += '<h6 class="fw-bold mb-2">Grupos de pago</h6>';
 
             var montos = Object.keys(grupos).map(function(m) { return parseInt(m); }).sort(function(a, b) { return a - b; });
             var totalGeneral = 0;
+
             montos.forEach(function(m) {
-                var count = grupos[m].length;
-                var sub = m * count;
+                const grupo = grupos[m];
+                var countEfectivo = grupo.efectivo.length;
+                var countTransferencia = Object.values(grupo.transferencia).reduce(function(s, t) { return s + t.boletas.length; }, 0);
+                var countTotal = countEfectivo + countTransferencia;
+                var sub = m * countTotal;
                 totalGeneral += sub;
-                h += '<div class="d-flex justify-content-between align-items-center p-2 mb-1 rounded" style="background:#f8f9fa;">';
-                h += '  <div><span class="fw-bold">$' + m.toLocaleString("es-CO") + '</span>';
-                h += '    <span class="badge bg-secondary ms-2">' + count + ' boleta' + (count !== 1 ? 's' : '') + '</span></div>';
-                h += '  <div class="fw-bold text-success">$' + sub.toLocaleString("es-CO") + '</div>';
+
+                // Header for this amount
+                h += '<div class="mb-2">';
+                h += '  <div class="d-flex justify-content-between align-items-center p-2 mb-1 rounded" style="background:#f8f9fa;">';
+                h += '    <div><span class="fw-bold">$' + m.toLocaleString("es-CO") + '</span>';
+                h += '      <span class="badge bg-secondary ms-2">' + countTotal + ' boleta' + (countTotal !== 1 ? 's' : '') + '</span></div>';
+                h += '    <div class="fw-bold text-success">$' + sub.toLocaleString("es-CO") + '</div>';
+                h += '  </div>';
+
+                // Efectivo group
+                if (countEfectivo > 0) {
+                    h += '  <div class="ms-3 mb-2 p-2" style="background:#e8f5e9;border-radius:4px;">';
+                    h += '    <div class="fw-bold text-success small">EFECTIVO</div>';
+                    h += '    <div class="boletas-grid">';
+                    grupo.efectivo.forEach(function(p) {
+                        h += '<span>' + p + '</span>';
+                    });
+                    h += '    </div>';
+                    h += '    <div class="fw-bold text-success small mt-1">Subtotal: $' + (m * countEfectivo).toLocaleString("es-CO") + '</div>';
+                    h += '  </div>';
+                }
+
+                // Transferencia groups
+                Object.entries(grupo.transferencia).forEach(function([key, t]) {
+                    const countT = t.boletas.length;
+                    const subT = m * countT;
+                    h += '  <div class="ms-3 mb-2 p-2" style="background:#e3f2fd;border-radius:4px;">';
+                    h += '    <div class="fw-bold text-primary small">TRANSFERENCIA';
+                    if (t.banco) h += ' <span class="text-muted">(' + t.banco + ')</span>';
+                    if (t.referencia) h += ' <span class="text-muted">Ref: ' + t.referencia + '</span>';
+                    h += '    </div>';
+                    h += '    <div class="boletas-grid">';
+                    t.boletas.forEach(function(p) {
+                        h += '<span>' + p + '</span>';
+                    });
+                    h += '    </div>';
+                    h += '    <div class="fw-bold text-primary small mt-1">Subtotal: $' + subT.toLocaleString("es-CO") + '</div>';
+                    h += '  </div>';
+                });
+
                 h += '</div>';
             });
 
@@ -516,7 +554,29 @@
             }
             h += '</div>';
 
-            previewReceipt.innerHTML = h;
+            return h;
+        };
+
+        const actualizarPreview = () => {
+            const vValue = getVendedorId();
+            if (!vValue) {
+                previewContent.style.display = "none";
+                previewPlaceholder.style.display = "";
+                return;
+            }
+
+            const { grupos, totalTickets } = buildGrupos();
+
+            if (totalTickets === 0) {
+                previewContent.style.display = "none";
+                previewPlaceholder.style.display = "";
+                return;
+            }
+
+            previewPlaceholder.style.display = "none";
+            previewContent.style.display = "";
+
+            previewReceipt.innerHTML = renderGrupos(grupos, totalTickets);
         };
 
         const actualizarResumen = () => {
@@ -658,53 +718,18 @@
             const vNombre = getVendedorNombre();
             if (!vIdValue) { alert("Seleccione un vendedor."); return null; }
 
-            const filas = abonosBody.querySelectorAll(".fila-abono");
-            const grupos = {};
-            let totalTickets = 0;
-
-            filas.forEach(function(f) {
-                const raw = f.querySelector(".boleta-input").value;
-                const parts = raw.split(/[\s,;]+/).filter(function(p) { return /^\d{1,4}$/.test(p.trim()); });
-                if (!parts.length) return;
-                const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
-                if (monto <= 0) return;
-
-                if (!grupos[monto]) grupos[monto] = [];
-                parts.forEach(function(p) {
-                    grupos[monto].push(p);
-                    totalTickets++;
-                });
-            });
+            const { grupos, totalTickets } = buildGrupos();
 
             if (!totalTickets) { alert("Ingrese al menos una boleta con un abono v\u00e1lido."); return null; }
 
             const totalGeneral = Object.keys(grupos).reduce(function(s, m) {
-                return s + (parseInt(m) * grupos[m].length);
+                const grupo = grupos[m];
+                const countEfectivo = grupo.efectivo.length;
+                const countTransferencia = Object.values(grupo.transferencia).reduce(function(s, t) { return s + t.boletas.length; }, 0);
+                return s + (parseInt(m) * (countEfectivo + countTransferencia));
             }, 0);
 
-            var html = "";
-            html += '<div class="mb-3 pb-3 border-bottom">';
-            html += '  <div class="text-secondary small fw-semibold">Vendedor</div>';
-            html += '  <div class="fw-bold fs-5">' + vNombre + '</div>';
-            html += '</div>';
-
-            html += '<h6 class="fw-bold mb-2">Grupos de pago</h6>';
-
-            var montos = Object.keys(grupos).map(function(m) { return parseInt(m); }).sort(function(a, b) { return a - b; });
-            montos.forEach(function(m) {
-                var count = grupos[m].length;
-                var sub = m * count;
-                html += '<div class="d-flex justify-content-between align-items-center p-2 mb-1 rounded" style="background:#f8f9fa;">';
-                html += '  <div><span class="fw-bold">$' + m.toLocaleString("es-CO") + '</span>';
-                html += '    <span class="badge bg-secondary ms-2">' + count + ' boleta' + (count !== 1 ? 's' : '') + '</span></div>';
-                html += '  <div class="fw-bold text-success">$' + sub.toLocaleString("es-CO") + '</div>';
-                html += '</div>';
-            });
-
-            html += '<div class="mt-3 pt-2 border-top">';
-            html += '  <div class="d-flex justify-content-between"><span>Cantidad de boletas</span><span class="fw-bold">' + totalTickets + '</span></div>';
-            html += '  <div class="d-flex justify-content-between fs-5 fw-bold border-top pt-2 mt-1"><span>Total recibido</span><span class="text-success">$' + totalGeneral.toLocaleString("es-CO") + '</span></div>';
-            html += '</div>';
+            var html = renderGrupos(grupos, totalTickets);
 
             return html;
         };
