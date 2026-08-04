@@ -11,6 +11,7 @@ from motores.shared import (
     abort,
     boletas,
     current_user,
+    estado_para_total,
     facturas,
     flash,
     get_config,
@@ -116,16 +117,7 @@ def register_routes(app: Flask) -> None:
                 historial_esta_factura = [p for p in historial_hasta_factura if p.get("factura_id") == factura_id]
                 total_hasta_factura = sum(int(p.get("valor", 0) or 0) for p in historial_hasta_factura)
                 saldo_hasta_factura = max(valor_boleta - total_hasta_factura, 0)
-                if total_hasta_factura >= valor_boleta:
-                    estado_historico = "pagada"
-                elif total_hasta_factura > 0:
-                    estado_historico = "abonando"
-                elif doc.get("vendedor_id") == VENDEDOR_LOCAL:
-                    estado_historico = "separada"
-                elif doc.get("vendedor_id"):
-                    estado_historico = "asignada"
-                else:
-                    estado_historico = "disponible"
+                estado_historico = estado_para_total(total_hasta_factura, valor_boleta, None, doc.get("vendedor_id"))
 
                 boletas_info[bid] = {
                     "total_abonado": total_hasta_factura,

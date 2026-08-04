@@ -209,7 +209,7 @@
                 </thead>
                 <tbody>
                     {% for item in resultados %}
-                        {% set ultimo_pago = item.historial_pagos[0] if item.historial_pagos else none %}
+                        {% set ultimo_pago = item.historial_pagos[-1] if item.historial_pagos else none %}
                         <tr>
                             <td class="fw-bold ticket-number">#{{ "%04d"|format(item._id) }}</td>
                             <td>
@@ -218,8 +218,8 @@
                                 </span>
                             </td>
                             <td>{{ vendedor_nombres.get(item.vendedor_id, item.vendedor_id) if item.vendedor_id else "Sin asignar" }}</td>
-                            <td>{{ item.cliente.nombre or "Sin registrar" }}</td>
-                            <td>{{ item.cliente.telefono or "-" }}</td>
+                            <td>{{ (item.cliente or {}).nombre or "Sin registrar" }}</td>
+                            <td>{{ (item.cliente or {}).telefono or "-" }}</td>
                             <td class="text-end fw-bold">{{ item.total_abonado|cop }}</td>
                             <td>
                                 {% if ultimo_pago %}

@@ -8,7 +8,6 @@ from motores.errores import safe_error_message
 from motores.shared import (
     boletas,
     estado_pipeline_expr,
-    existing_boleta_ids,
     flash,
     get_config,
     invalidate_dashboard_cache,
@@ -88,30 +87,28 @@ def _boletas_con_pagos(ids: list[int]) -> list[int]:
     return [b["_id"] for b in boletas.find({"_id": {"$in": ids}, "total_abonado": {"$gt": 0}}, {"_id": 1})]
 
 
-def _boletas_de_otro_vendedor(ids: list[int], vendedor_id: str) -> dict:
-    """Return dict {ticket_id: owner_id} for tickets assigned to a DIFFERENT vendor."""
-    docs = boletas.find(
-        {"_id": {"$in": ids}, "vendedor_id": {"$exists": True, "$ne": None, "$nin": ["", vendedor_id]}},
-        {"_id": 1, "vendedor_id": 1},
-    )
-    return {d["_id"]: d["vendedor_id"] for d in docs}
-
-
 def _procesar_asignar(vendedor_id: str, boleta_ids: list[int], perfil_update: dict, valor_boleta: int) -> None:
     """Assign tickets to a vendor, blocking tickets with payments and handling reasignment."""
-    existentes = existing_boleta_ids(boleta_ids)
+    docs = {
+        d["_id"]: d
+        for d in boletas.find(
+            {"_id": {"$in": boleta_ids}},
+            {"_id": 1, "vendedor_id": 1, "total_abonado": 1},
+        )
+    }
+    existentes = [b for b in boleta_ids if b in docs]
     faltantes = len(boleta_ids) - len(existentes)
 
     if not existentes:
         flash("No se encontraron boletas v\u00e1lidas para asignar.", "warning")
         return
 
-    con_pagos = _boletas_con_pagos(existentes)
+    con_pagos = [b for b in existentes if (docs[b].get("total_abonado") or 0) > 0]
     if con_pagos:
         ids_str = ", ".join(f"#{b:04d}" for b in con_pagos)
         raise ValueError(f"No se pueden asignar boletas con pagos registrados: {ids_str}")
 
-    de_otro = _boletas_de_otro_vendedor(existentes, vendedor_id)
+    de_otro = {b: docs[b]["vendedor_id"] for b in existentes if (docs[b].get("vendedor_id") or "") not in ("", vendedor_id)}
     if de_otro:
         detalles = ", ".join(f"#{b:04d} → {o}" for b, o in de_otro.items())
         flash(f"Atención: estas boletas pertenecen a otro vendedor y serán reasignadas: {detalles}", "warning")
@@ -138,7 +135,14 @@ def _procesar_asignar(vendedor_id: str, boleta_ids: list[int], perfil_update: di
 
 def _procesar_quitar(vendedor_id: str, boleta_ids: list[int], perfil_update: dict, valor_boleta: int) -> None:
     """Remove ticket assignments from a vendor, rejecting foreign or paid tickets."""
-    existentes = existing_boleta_ids(boleta_ids)
+    docs = {
+        d["_id"]: d
+        for d in boletas.find(
+            {"_id": {"$in": boleta_ids}},
+            {"_id": 1, "vendedor_id": 1, "total_abonado": 1},
+        )
+    }
+    existentes = [b for b in boleta_ids if b in docs]
     faltantes = len(boleta_ids) - len(existentes)
 
     if not vendedores.find_one({"_id": vendedor_id}, {"_id": 1}):
@@ -150,18 +154,13 @@ def _procesar_quitar(vendedor_id: str, boleta_ids: list[int], perfil_update: dic
         return
 
     # Validate: tickets must belong to this vendor
-    ajenas = list(
-        boletas.find(
-            {"_id": {"$in": existentes}, "vendedor_id": {"$ne": vendedor_id}},
-            {"_id": 1},
-        )
-    )
+    ajenas = [b for b in existentes if (docs[b].get("vendedor_id") or "") != vendedor_id]
     if ajenas:
-        ids_ajenas = ", ".join(f"#{b['_id']:04d}" for b in ajenas)
+        ids_ajenas = ", ".join(f"#{b:04d}" for b in ajenas)
         raise ValueError(f"Las siguientes boletas no pertenecen a {vendedor_id}: {ids_ajenas}. Solo puedes quitar boletas asignadas a este vendedor.")
 
     # Validate: cannot remove tickets with payments
-    con_pagos = _boletas_con_pagos(existentes)
+    con_pagos = [b for b in existentes if (docs[b].get("total_abonado") or 0) > 0]
     if con_pagos:
         ids_str = ", ".join(f"#{b:04d}" for b in con_pagos)
         raise ValueError(f"No se pueden quitar boletas con pagos registrados: {ids_str}")
@@ -182,7 +181,9 @@ def _procesar_eliminar(vendedor_id: str, valor_boleta: int) -> None:
         flash(f"El vendedor {vendedor_id} no existe.", "danger")
         return
 
-    boletas_ids_vendor = [num for num in vendedor_doc.get("boletas_asignadas", []) if isinstance(num, int) and BOLETA_MIN <= num <= BOLETA_MAX]
+    asignadas_doc = [num for num in vendedor_doc.get("boletas_asignadas", []) if isinstance(num, int) and BOLETA_MIN <= num <= BOLETA_MAX]
+    por_vendedor_id = [d["_id"] for d in boletas.find({"vendedor_id": vendedor_id}, {"_id": 1})]
+    boletas_ids_vendor = sorted(set(asignadas_doc) | set(por_vendedor_id))
 
     # Validate: cannot delete vendor if they have tickets with payments
     if boletas_ids_vendor:

@@ -4,14 +4,15 @@
 <style>
 @media print {
   @page { margin: 2mm; }
+  html, body { min-height: auto !important; height: auto !important; }
   nav, .navbar, .navbar *, .no-print, .modal, .modal-backdrop, .flash-stack,
   .btn, button:not(.no-print), a:not(.no-print),
   [class*="modal"], [id*="modal"] {
     display: none !important;
   }
-  body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-  .app-main { padding: 0 !important; margin: 0 !important; }
-  .container { padding: 0 !important; max-width: none !important; margin: 0 !important; }
+  body { margin: 0 !important; padding: 0 !important; background: #fff !important; min-height: auto !important; height: auto !important; }
+  .app-main { padding: 0 !important; margin: 0 !important; min-height: auto !important; height: auto !important; }
+  .container { padding: 0 !important; max-width: none !important; margin: 0 !important; min-height: auto !important; height: auto !important; }
   .recibo {
     max-width: none !important; width: 100% !important;
     margin: 0 !important; padding: 0 !important;

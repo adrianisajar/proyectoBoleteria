@@ -7,6 +7,8 @@ RIFA_CACHE_SECONDS: int = 30
 DASHBOARD_CACHE: dict = {"data": None, "loaded_at": 0}
 DASHBOARD_CACHE_SECONDS: int = 30
 
+GLOBAL_COUNTS_CACHE: dict = {"data": None, "loaded_at": 0, "valor": None}
+
 
 def invalidate_rifa_cache() -> None:
     """Clear cached rifa data (30s TTL)."""
@@ -15,9 +17,12 @@ def invalidate_rifa_cache() -> None:
 
 
 def invalidate_dashboard_cache() -> None:
-    """Clear cached dashboard stats (30s TTL)."""
+    """Clear cached dashboard stats + global ticket counts (30s TTL)."""
     DASHBOARD_CACHE["data"] = None
     DASHBOARD_CACHE["loaded_at"] = 0
+    GLOBAL_COUNTS_CACHE["data"] = None
+    GLOBAL_COUNTS_CACHE["loaded_at"] = 0
+    GLOBAL_COUNTS_CACHE["valor"] = None
 
 
 def invalidate_config_cache() -> None:

@@ -59,7 +59,6 @@ def get_vendedores_snapshot(config: dict | None = None) -> tuple[list, dict]:
                 {
                     "$group": {
                         "_id": "$vendedor_id",
-                        "boletas_en_sistema": {"$sum": 1},
                         "vendidas": {"$sum": {"$cond": [{"$gte": ["$total_abonado", valor_boleta]}, 1, 0]}},
                         "pagadas": {"$sum": {"$cond": [{"$eq": ["$estado", "pagada"]}, 1, 0]}},
                         "recaudado": {"$sum": {"$ifNull": ["$total_abonado", 0]}},

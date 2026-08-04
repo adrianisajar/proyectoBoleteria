@@ -6,6 +6,7 @@ from database import boletas, vendedores
 from motores.cache import (
     DASHBOARD_CACHE,
     DASHBOARD_CACHE_SECONDS,
+    GLOBAL_COUNTS_CACHE,
 )
 from motores.config_service import get_config, migrar_boletas_existentes, require_collections
 from motores.constants import METODO_EFECTIVO, METODO_TRANSFERENCIA, VENDEDOR_LOCAL
@@ -13,16 +14,21 @@ from motores.fechas import now_local
 
 
 def get_alertas() -> list:
-    """Return active alerts list (placeholder; currently always empty)."""
-    try:
-        return []
-    except Exception:
-        return []
+    """Return active alerts list (currently always empty)."""
+    return []
 
 
 def get_dashboard_counts(rifa_id: str | None = None, valor_boleta: int | None = None) -> dict:
-    """Aggregate ticket counts by state for the given rifa (or all tickets)."""
+    """Aggregate ticket counts by state for the given rifa (or all tickets).
+
+    The global (rifa_id=None) result is cached with a 30s TTL; the dashboard
+    ``get_dashboard_stats`` still caches its own per-rifa snapshot separately.
+    """
     require_collections()
+    if rifa_id is None:
+        cached = GLOBAL_COUNTS_CACHE
+        if cached["data"] and cached["valor"] == valor_boleta and time.monotonic() - cached["loaded_at"] < DASHBOARD_CACHE_SECONDS:
+            return cached["data"].copy()
     match = {}
     if rifa_id:
         match["rifa_id"] = rifa_id
@@ -102,7 +108,7 @@ def get_dashboard_counts(rifa_id: str | None = None, valor_boleta: int | None = 
     separadas = int(stats.get("separadas", 0) or 0)
     asignadas = int(stats.get("asignadas", 0) or 0)
     disponibles = total - pagadas - abonando - separadas - asignadas
-    return {
+    result = {
         "total": total,
         "recaudo_total": int(stats.get("recaudo_total", 0) or 0),
         "saldo_pendiente": int(stats.get("saldo_pendiente", 0) or 0),
@@ -113,6 +119,11 @@ def get_dashboard_counts(rifa_id: str | None = None, valor_boleta: int | None = 
         "vendidas": pagadas + abonando + separadas + asignadas,
         "asignadas": asignadas,
     }
+    if rifa_id is None:
+        GLOBAL_COUNTS_CACHE["data"] = result
+        GLOBAL_COUNTS_CACHE["loaded_at"] = time.monotonic()
+        GLOBAL_COUNTS_CACHE["valor"] = valor_boleta
+    return result
 
 
 def first_aggregate(collection: Collection, pipeline: list, default: dict | None = None) -> dict:
@@ -210,8 +221,8 @@ def get_dashboard_stats(force: bool = False) -> dict:
         "ranking": ranking,
         "valor_boleta": valor_boleta,
         "recaudo_potencial": recaudo_potencial,
-        "progreso_ventas_pct": round((vendidas / total_boletas) * 100, 1) if total_boletas else 0,
-        "progreso_recaudo_pct": round((counts["recaudo_total"] / recaudo_potencial) * 100, 1) if recaudo_potencial else 0,
+        "progreso_ventas_pct": min(round((vendidas / total_boletas) * 100, 1), 100.0) if total_boletas else 0,
+        "progreso_recaudo_pct": min(round((counts["recaudo_total"] / recaudo_potencial) * 100, 1), 100.0) if recaudo_potencial else 0,
         "pagos_efectivo": pagos_efectivo,
         "pagos_transferencia": pagos_transferencia,
         "pagos_otros": pagos_otros,
