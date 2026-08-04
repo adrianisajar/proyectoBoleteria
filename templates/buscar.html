@@ -26,7 +26,7 @@
             <tr>
                 <td class="fw-bold"><a href="{{ url_for('ver_factura', factura_id=f._id) }}">{{ "%05d" % f._id }}</a></td>
                 <td>{{ f.fecha.strftime("%d/%m/%Y %H:%M") }}</td>
-                <td><span class="badge bg-{{ 'primary' if f.tipo == 'cliente' else 'success' }}">{{ f.tipo }}</span></td>
+                <td><span class="badge text-bg-{{ 'primary' if f.tipo == 'cliente' else 'success' }}">{{ f.tipo }}</span></td>
                 <td>{{ f.get("vendedor_nombre", "") or f.get("cliente", {}).get("nombre", "") }}</td>
                 <td class="fw-bold text-end">${{ "{:,}".format(f.valor_total) }}</td>
             </tr>

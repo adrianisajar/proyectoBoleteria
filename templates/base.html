@@ -136,6 +136,19 @@
             z-index: 1;
         }
 
+        /* Contraste: paneles de tono suave definidos por tema (claro/oscuro).
+           Reemplazan fondos claros fijos que dejaban el texto ilegible en modo oscuro. */
+        .panel-muted { background-color: #f8f9fa; }
+        .panel-efectivo { background-color: #e8f5e9; }
+        .panel-transferencia { background-color: #e3f2fd; }
+        [data-bs-theme="dark"] .panel-muted { background-color: var(--bs-secondary-bg-subtle); }
+        [data-bs-theme="dark"] .panel-efectivo { background-color: rgba(var(--bs-success-rgb), 0.18); }
+        [data-bs-theme="dark"] .panel-transferencia { background-color: rgba(var(--bs-info-rgb), 0.18); }
+
+        /* Listado de boletas: números separados como en la factura final (flex + gap). */
+        .boletas-grid { display: flex; flex-wrap: wrap; gap: 0 0.5rem; margin: 0.2rem 0; font-size: 0.78rem; }
+        .boletas-grid span { white-space: nowrap; }
+
         @media (max-width: 575.98px) {
             .metric-value {
                 font-size: 2rem;

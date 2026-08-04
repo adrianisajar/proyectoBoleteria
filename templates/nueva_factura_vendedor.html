@@ -38,7 +38,7 @@
                     <input type="date" class="form-control" id="fecha" name="fecha" value="{{ form_data.fecha or today }}" max="{{ today }}">
                 </div>
                 <div class="col-12">
-                    <div class="bg-light rounded p-3">
+                    <div class="panel-muted rounded p-3">
                         <div class="d-flex justify-content-between mb-2">
                             <span class="text-secondary small">Boletas a abonar</span>
                             <span class="fw-bold" id="resCantidad">0</span>
@@ -83,7 +83,7 @@
                                 <div class="boleta-info text-secondary small mt-1" style="font-size:.65rem;"></div>
                             </td>
                             <td class="text-center">
-                                <span class="badge bg-secondary conteo-boletas" title="Boletas en esta fila">1</span>
+                                <span class="badge text-bg-secondary conteo-boletas" title="Boletas en esta fila">1</span>
                             </td>
                             <td>
                                 <div class="input-group input-group-sm">
@@ -507,19 +507,19 @@
 
                 // Header for this amount
                 h += '<div class="mb-2">';
-                h += '  <div class="d-flex justify-content-between align-items-center p-2 mb-1 rounded" style="background:#f8f9fa;">';
+                h += '  <div class="panel-muted d-flex justify-content-between align-items-center p-2 mb-1 rounded">';
                 h += '    <div><span class="fw-bold">$' + m.toLocaleString("es-CO") + '</span>';
-                h += '      <span class="badge bg-secondary ms-2">' + countTotal + ' boleta' + (countTotal !== 1 ? 's' : '') + '</span></div>';
+                h += '      <span class="badge text-bg-secondary ms-2">' + countTotal + ' boleta' + (countTotal !== 1 ? 's' : '') + '</span></div>';
                 h += '    <div class="fw-bold text-success">$' + sub.toLocaleString("es-CO") + '</div>';
                 h += '  </div>';
 
                 // Efectivo group
                 if (countEfectivo > 0) {
-                    h += '  <div class="ms-3 mb-2 p-2" style="background:#e8f5e9;border-radius:4px;">';
+                    h += '  <div class="panel-efectivo ms-3 mb-2 p-2" style="border-radius:4px;">';
                     h += '    <div class="fw-bold text-success small">EFECTIVO</div>';
                     h += '    <div class="boletas-grid">';
                     grupo.efectivo.forEach(function(p) {
-                        h += '<span>' + p + '</span>';
+                        h += '<span>' + ("0000" + p).slice(-4) + '</span>';
                     });
                     h += '    </div>';
                     h += '    <div class="fw-bold text-success small mt-1">Subtotal: $' + (m * countEfectivo).toLocaleString("es-CO") + '</div>';
@@ -530,14 +530,14 @@
                 Object.entries(grupo.transferencia).forEach(function([key, t]) {
                     const countT = t.boletas.length;
                     const subT = m * countT;
-                    h += '  <div class="ms-3 mb-2 p-2" style="background:#e3f2fd;border-radius:4px;">';
+                    h += '  <div class="panel-transferencia ms-3 mb-2 p-2" style="border-radius:4px;">';
                     h += '    <div class="fw-bold text-primary small">TRANSFERENCIA';
                     if (t.banco) h += ' <span class="text-muted">(' + t.banco + ')</span>';
                     if (t.referencia) h += ' <span class="text-muted">Ref: ' + t.referencia + '</span>';
                     h += '    </div>';
                     h += '    <div class="boletas-grid">';
                     t.boletas.forEach(function(p) {
-                        h += '<span>' + p + '</span>';
+                        h += '<span>' + ("0000" + p).slice(-4) + '</span>';
                     });
                     h += '    </div>';
                     h += '    <div class="fw-bold text-primary small mt-1">Subtotal: $' + subT.toLocaleString("es-CO") + '</div>';

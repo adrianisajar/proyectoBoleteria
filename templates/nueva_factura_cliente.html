@@ -34,7 +34,7 @@
                     <input type="date" class="form-control" id="fecha" name="fecha" value="{{ form_data.fecha or today }}" max="{{ today }}">
                 </div>
                 <div class="col-12">
-                    <div class="bg-light rounded p-3">
+                    <div class="panel-muted rounded p-3">
                         <div class="d-flex justify-content-between mb-2">
                             <span class="text-secondary small">Boletas</span>
                             <span class="fw-bold" id="resCantidad">0</span>
@@ -219,7 +219,7 @@
         var totalGeneral = 0;
         items.forEach(function(it) {
             totalGeneral += it.monto;
-            h += '<div class="d-flex justify-content-between align-items-center p-2 mb-1 rounded" style="background:#f8f9fa;">';
+            h += '<div class="panel-muted d-flex justify-content-between align-items-center p-2 mb-1 rounded">';
             h += '  <div><span class="fw-bold ticket-number">#' + ("0000" + it.boleta).slice(-4) + '</span>';
             if (it.monto > 0) {
                 h += '    <span class="text-success ms-2">$' + it.monto.toLocaleString("es-CO") + '</span>';
@@ -467,7 +467,7 @@
 
         html += '<h6 class="fw-bold mb-2">Boletas</h6>';
         items.forEach(function(it) {
-            html += '<div class="d-flex justify-content-between align-items-center p-2 mb-1 rounded" style="background:#f8f9fa;">';
+            html += '<div class="panel-muted d-flex justify-content-between align-items-center p-2 mb-1 rounded">';
             html += '  <div><span class="fw-bold ticket-number">#' + ("0000" + it.boleta).slice(-4) + '</span>';
             if (it.monto > 0) {
                 html += '    <span class="text-success ms-2">$' + it.monto.toLocaleString("es-CO") + '</span>';

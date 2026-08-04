@@ -124,7 +124,7 @@
             } else {
                 var d = document.createElement("div");
                 d.id = "shortcutsHelp";
-                d.style.cssText = "position:fixed;bottom:20px;right:20px;z-index:9999;background:#fff;border:1px solid #ddd;border-radius:8px;padding:16px;box-shadow:0 4px 12px rgba(0,0,0,.15);max-width:320px;font-size:13px;";
+                d.style.cssText = "position:fixed;bottom:20px;right:20px;z-index:9999;background:var(--bs-body-bg);border:1px solid var(--bs-border-color);color:var(--bs-body-color);border-radius:8px;padding:16px;box-shadow:0 4px 12px rgba(0,0,0,.35);max-width:320px;font-size:13px;";
                 d.innerHTML = "<div class='fw-bold mb-2' style='font-size:14px;'>Atajos de teclado</div>" +
                     "<div class='d-flex justify-content-between mb-1'><kbd>g</kbd> <kbd>c</kbd> <span>Consultas</span></div>" +
                     "<div class='d-flex justify-content-between mb-1'><kbd>g</kbd> <kbd>v</kbd> <span>Vendedores</span></div>" +
