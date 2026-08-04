@@ -144,23 +144,39 @@
                 </div>
                 <div class="modal-body">
                     <p>Se creará un comprobante permanente con la comisión de <strong>{{ d.nombre or d._id }}</strong> por <strong>{{ d.total_comision|cop }}</strong> ({{ d.pagadas }} boleta(s) pagadas × {{ d.comision_por_boleta|cop }}).</p>
-                    <div class="mb-3">
-                        <label for="observaciones" class="form-label fw-semibold">Observaciones</label>
-                        <textarea class="form-control" id="observaciones" name="observaciones" rows="2" placeholder="Opcional"></textarea>
+                    {% if d.liquidacion %}
+                    <div class="alert alert-warning mb-3">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        Este vendedor <strong>ya tiene un comprobante de liquidación generado</strong> (N° {{ "%05d" % d.liquidacion._id }}).<br>
+                        Si continúa, se generará un nuevo comprobante con los datos actualizados.
                     </div>
-                    {% if d.liquidacion and d.liquidacion.estado != "liquidada" %}
-                    <div class="alert alert-warning mb-0">
-                        <i class="bi bi-exclamation-triangle"></i>
-                        Este vendedor ya tiene una liquidación (N° {{ "%05d" % d.liquidacion._id }}). Al generar una nueva quedará registrada la actualizada.
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="confirmarRegen" name="confirmar_regen" value="1">
+                        <label class="form-check-label" for="confirmarRegen">
+                            Confirmo que deseo generar un nuevo comprobante reemplazando el existente.
+                        </label>
                     </div>
                     {% endif %}
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Generar comprobante</button>
+                    <button type="submit" class="btn btn-primary" id="btnGenerarComprobante">Generar comprobante</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
+{% endblock %}
+{% block scripts %}
+{% if d.liquidacion %}
+<script>
+    (() => {
+        const chk = document.getElementById("confirmarRegen");
+        const btn = document.getElementById("btnGenerarComprobante");
+        const update = () => { btn.disabled = !chk.checked; };
+        chk.addEventListener("change", update);
+        update();
+    })();
+</script>
+{% endif %}
 {% endblock %}

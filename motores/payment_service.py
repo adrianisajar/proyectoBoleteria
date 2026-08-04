@@ -19,10 +19,10 @@ from motores.validacion import parse_boletas_detailed, parse_money
 
 
 def buscar_transferencia_duplicada(ref: str, banco: str = "", exclude_factura_id: int | None = None) -> dict | None:
-    """Check if a transfer reference+banco was already used in another payment."""
+    """Check if a transfer reference was already used in another payment (different invoice).
+    Banco is ignored for cross-invoice checks; same ref+banco within same invoice is allowed.
+    """
     elem_match = {"metodo": METODO_TRANSFERENCIA, "referencia": ref}
-    if banco:
-        elem_match["banco"] = banco
     if exclude_factura_id is not None:
         elem_match["factura_id"] = {"$ne": exclude_factura_id}
     return boletas.find_one({"historial_pagos": {"$elemMatch": elem_match}}, {"_id": 1})

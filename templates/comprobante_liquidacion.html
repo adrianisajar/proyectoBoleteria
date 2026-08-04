@@ -3,21 +3,23 @@
 {% block head %}
 <style>
 @media print {
-  @page { margin: 2mm; }
+  @page { margin: 3mm 4mm 1mm 4mm; }
   nav, .navbar, .navbar *, .no-print, .modal, .modal-backdrop, .flash-stack,
   .btn, button:not(.no-print), a:not(.no-print),
   [class*="modal"], [id*="modal"] {
     display: none !important;
   }
-  body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  body { margin: 0 !important; padding: 0 !important; background: #fff !important; min-height: auto !important; }
   .app-main { padding: 0 !important; margin: 0 !important; }
   .container { padding: 0 !important; max-width: none !important; margin: 0 !important; }
   .recibo {
-    max-width: none !important; width: 100% !important;
-    margin: 0 !important; padding: 0 !important;
+    max-width: none !important; width: 96% !important;
+    margin: 0 auto !important; padding: 0 !important;
     font-size: 1.3rem !important;
     line-height: 1.8 !important;
   }
+  .recibo-footer { margin-top: 0.2rem !important; padding-top: 0.2rem !important; padding-bottom: 0 !important; margin-bottom: 0 !important; }
+  .firmas { margin-top: 0.4rem !important; margin-bottom: 0 !important; }
   .recibo-header { margin-bottom: 0.6rem !important; }
   .recibo-empresa { font-size: 1.75rem !important; font-weight: 800 !important; }
   .recibo-titulo { font-size: 1.55rem !important; font-weight: 700 !important; }
@@ -63,6 +65,7 @@
 <div class="recibo">
   <div class="text-end mb-1 no-print">
     <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir</button>
+    <a href="{{ url_for('descargar_liquidacion_pdf', liquidacion_id=liqui._id) }}" class="btn btn-success btn-sm"><i class="bi bi-file-earmark-pdf"></i> Descargar PDF</a>
     <a href="{{ url_for('liquidacion_vendedor', vendedor_id=liqui.vendedor_id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
     <a href="{{ url_for('liquidaciones_panel') }}" class="btn btn-outline-secondary btn-sm">Liquidaciones</a>
   </div>
@@ -120,51 +123,4 @@
   </div>
 </div>
 
-{% if current_user and current_user.role == "admin" and liqui.estado != "liquidada" %}
-<button type="button" class="btn btn-outline-primary btn-sm no-print mt-3 d-inline-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#abonoModal">
-    <i class="bi bi-cash-coin"></i> Registrar abono
-</button>
-
-<div class="modal fade" id="abonoModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <form method="post" action="{{ url_for('abono_liquidacion', liquidacion_id=liqui._id) }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="modal-header">
-                    <h5 class="modal-title">Registrar abono a la liquidación</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="mb-3">Pendiente por pagar: <strong>${{ "{:,}".format(liqui.pendiente_pagar) }}</strong></p>
-                    <div class="mb-3">
-                        <label for="monto" class="form-label fw-semibold">Valor del abono</label>
-                        <input type="text" class="form-control text-end" id="monto" name="monto" inputmode="numeric" required placeholder="Ej: 50000">
-                    </div>
-                    <div class="row g-3 mb-3">
-                        <div class="col-7">
-                            <label for="metodo" class="form-label fw-semibold">Método</label>
-                            <select class="form-select" id="metodo" name="metodo">
-                                <option value="efectivo">Efectivo</option>
-                                <option value="transferencia">Transferencia</option>
-                            </select>
-                        </div>
-                        <div class="col-5">
-                            <label for="fecha" class="form-label fw-semibold">Fecha</label>
-                            <input type="date" class="form-control" id="fecha" name="fecha" value="{{ '' }}">
-                        </div>
-                    </div>
-                    <div>
-                        <label for="abono_obs" class="form-label fw-semibold">Observaciones</label>
-                        <input type="text" class="form-control" id="abono_obs" name="observaciones" placeholder="Opcional" autocomplete="off">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Registrar abono</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-{% endif %}
 {% endblock %}

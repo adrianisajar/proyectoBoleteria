@@ -5,3 +5,4 @@ Werkzeug>=3.0,<4
 dnspython>=2.6,<3
 openpyxl>=3.1,<4
 waitress>=3.0,<4
+pdfkit>=1.0,<2

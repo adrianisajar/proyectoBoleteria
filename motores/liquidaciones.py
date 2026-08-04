@@ -1,14 +1,14 @@
-from flask import Flask, Response
+from flask import Flask, Response, current_app
 
-from motores.constants import METODO_EFECTIVO, METODOS_PAGO
+from database import liquidaciones
 from motores.errores import safe_error_message
 from motores.liquidacion_service import (
     generar_liquidacion,
     get_liquidacion,
     get_liquidacion_detalle,
     get_liquidaciones_resumen,
-    registrar_abono_liquidacion,
 )
+from motores.pdf_service import generar_pdf_liquidacion
 from motores.shared import (
     abort,
     flash,
@@ -20,7 +20,6 @@ from motores.shared import (
     role_required,
     url_for,
 )
-from motores.validacion import parse_money
 
 
 def register_routes(app: Flask) -> None:
@@ -51,6 +50,9 @@ def register_routes(app: Flask) -> None:
     def generar_liquidacion_vendedor(vendedor_id: str) -> Response:
         """Persistir la liquidación del vendedor y redirigir al comprobante."""
         require_collections()
+        if liquidaciones.find_one({"vendedor_id": vendedor_id}) and request.form.get("confirmar_regen") != "1":
+            flash("Ya existe un comprobante para este vendedor. Marque la confirmación para generar uno nuevo.", "warning")
+            return redirect(url_for("liquidacion_vendedor", vendedor_id=vendedor_id))
         observaciones = request.form.get("observaciones", "").strip()
         try:
             doc = generar_liquidacion(vendedor_id, observaciones)
@@ -70,21 +72,19 @@ def register_routes(app: Flask) -> None:
             abort(404)
         return render_template("comprobante_liquidacion.html", liqui=liqui, config=get_config())
 
-    @app.route("/liquidaciones/<int:liquidacion_id>/abono", methods=["POST"])
-    @role_required("admin")
-    def abono_liquidacion(liquidacion_id: int) -> Response:
-        """Registrar un abono (pago parcial) a una liquidación."""
+    @app.route("/liquidaciones/<int:liquidacion_id>/pdf")
+    @role_required("admin", "cajero", "consulta")
+    def descargar_liquidacion_pdf(liquidacion_id: int) -> Response:
+        """Generate and download liquidación comprobante as PDF (server-side via WeasyPrint)."""
         require_collections()
-        monto = parse_money(request.form.get("monto", ""))
-        metodo = request.form.get("metodo", METODO_EFECTIVO).strip().lower()
-        fecha = request.form.get("fecha", "").strip()
-        observaciones = request.form.get("observaciones", "").strip()
-        if metodo not in METODOS_PAGO:
-            metodo = METODO_EFECTIVO
+        liqui = get_liquidacion(liquidacion_id)
+        if not liqui:
+            abort(404)
+        config = get_config()
         try:
-            liqui = registrar_abono_liquidacion(liquidacion_id, monto, metodo=metodo, fecha=fecha, observaciones=observaciones)
+            pdf_bytes = generar_pdf_liquidacion(liqui, config)
         except Exception as exc:
-            flash(f"No se pudo registrar el abono: {safe_error_message(exc)}", "danger")
-            return redirect(url_for("comprobante_liquidacion", liquidacion_id=liquidacion_id))
-        flash(f"Abono de ${monto:,} registrado en la liquidación N° {liquidacion_id:05d}.", "success")
-        return redirect(url_for("liquidacion_vendedor", vendedor_id=liqui["vendedor_id"]))
+            current_app.logger.exception("Error generando PDF liquidación %s", liquidacion_id)
+            abort(500, description=f"Error generando PDF: {exc}")
+        filename = f"LIQ-{liquidacion_id:05d}.pdf"
+        return Response(pdf_bytes, mimetype="application/pdf", headers={"Content-Disposition": f"inline; filename={filename}"})
