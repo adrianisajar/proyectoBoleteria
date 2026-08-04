@@ -134,6 +134,8 @@ def register_routes(app: Flask) -> None:
             if not vendedor_label:
                 vendedor_label = vf
 
+        vendedor_nombres = {v["_id"]: v.get("nombre") or v["_id"] for v in vendedor_options}
+
         return render_template(
             "inicio.html",
             total=counts["total"],
@@ -146,6 +148,7 @@ def register_routes(app: Flask) -> None:
             vendedor_options=vendedor_options,
             filters=filters,
             vendedor_label=vendedor_label,
+            vendedor_nombres=vendedor_nombres,
             resultados=resultados,
             total_resultados=total_resultados,
             page=page,

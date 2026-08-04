@@ -1,4 +1,4 @@
-from database import boletas, configuracion, facturas, rifas, vendedores
+from database import boletas, configuracion, facturas, liquidaciones, rifas, vendedores
 
 # Required indexes per collection: list of (key_spec, name)
 # key_spec is a dict ({"campo": 1|-1}) or a plain string field name.
@@ -25,6 +25,11 @@ REQUIRED_INDEXES = {
     "rifas": [
         ({"estado": 1}, "estado_1"),
     ],
+    "liquidaciones": [
+        ({"vendedor_id": 1}, "vendedor_id_1"),
+        ({"rifa_id": 1}, "rifa_id_1"),
+        ({"fecha": -1}, "fecha_-1"),
+    ],
 }
 
 COLLECTIONS = {
@@ -33,6 +38,7 @@ COLLECTIONS = {
     "facturas": facturas,
     "rifas": rifas,
     "configuracion": configuracion,
+    "liquidaciones": liquidaciones,
 }
 
 

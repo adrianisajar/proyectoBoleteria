@@ -123,8 +123,7 @@
                         <tr>
                             <td>
                                 <div class="d-flex align-items-center gap-2">
-                                    <span class="badge text-bg-secondary">{{ vendedor._id }}</span>
-                                    <span class="small text-secondary">{{ vendedor.nombre or "Sin nombre" }}</span>
+                                    <span class="small text-secondary">{{ vendedor.nombre or vendedor._id }}</span>
                                 </div>
                             </td>
                             <td class="text-end fw-bold ticket-number">{{ vendedor.cantidad }}</td>

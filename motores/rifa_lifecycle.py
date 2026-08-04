@@ -1,4 +1,4 @@
-from database import boletas, configuracion, facturas, rifas, vendedores
+from database import boletas, configuracion, facturas, liquidaciones, rifas, vendedores
 from motores.cache import invalidate_config_cache, invalidate_dashboard_cache
 from motores.config_service import require_collections
 from motores.constants import BOLETA_MAX, BOLETA_MIN, COMISION_DEFAULT_TIERS, CONFIG_ID
@@ -21,6 +21,9 @@ def crear_indices_boletas() -> None:
     facturas.create_index([("fecha", -1)])
     facturas.create_index("tipo")
     rifas.create_index("estado")
+    liquidaciones.create_index([("vendedor_id", 1), ("_id", -1)])
+    liquidaciones.create_index("rifa_id")
+    liquidaciones.create_index([("fecha", -1)])
 
 
 def crear_nueva_rifa(
@@ -38,10 +41,24 @@ def crear_nueva_rifa(
         asignaciones = list(vendedores.find({}, {"boletas_asignadas": 1}))
 
     facturas.delete_many({})
+    liquidaciones.delete_many({})
     configuracion.update_one({"_id": CONFIG_ID}, {"$set": {"factura_counter": 0}})
 
     boletas.delete_many({})
-    boletas.insert_many([crear_boleta_base(numero) for numero in range(BOLETA_MIN, BOLETA_MAX + 1)])
+    rifa_doc = {
+        "nombre": nombre,
+        "anio": now_local().year,
+        "valor_boleta": valor_boleta,
+        "cantidad_boletas": cantidad_boletas,
+        "premio_mayor": premio_mayor,
+        "comisiones_tiers": COMISION_DEFAULT_TIERS,
+        "estado": estado,
+        "creada_en": now_local(),
+    }
+    resultado = rifas.insert_one(rifa_doc)
+    nueva_rifa_id = resultado.inserted_id
+
+    boletas.insert_many([crear_boleta_base(numero, nueva_rifa_id) for numero in range(BOLETA_MIN, BOLETA_MAX + 1)])
 
     if conservar_vendedores:
         for vendedor in asignaciones:
@@ -53,18 +70,7 @@ def crear_nueva_rifa(
 
     crear_indices_boletas()
 
-    rifas.delete_many({})
-    rifa_doc = {
-        "nombre": nombre,
-        "anio": now_local().year,
-        "valor_boleta": valor_boleta,
-        "cantidad_boletas": cantidad_boletas,
-        "premio_mayor": premio_mayor,
-        "comisiones_tiers": COMISION_DEFAULT_TIERS,
-        "estado": estado,
-        "creada_en": now_local(),
-    }
-    rifas.insert_one(rifa_doc)
+    rifas.delete_many({"estado": {"$ne": "activa"}})
 
     update = {
         "nombre_rifa": nombre,

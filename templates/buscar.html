@@ -41,13 +41,12 @@
 <div class="table-responsive mb-4">
     <table class="table table-sm table-hover">
         <thead class="table-light">
-            <tr><th>ID</th><th>Nombre</th><th>Teléfono</th></tr>
+            <tr><th>Vendedor</th><th>Teléfono</th></tr>
         </thead>
         <tbody>
             {% for v in results.vendedores %}
             <tr>
-                <td class="fw-bold">{{ v._id }}</td>
-                <td>{{ v.nombre }}</td>
+                <td class="fw-bold">{{ v.nombre or v._id }}</td>
                 <td>{{ v.telefono or "" }}</td>
             </tr>
             {% endfor %}

@@ -54,7 +54,7 @@ from flask import (
     request,
     url_for,
 )
-from database import boletas, configuracion, facturas, rifas, vendedores
+from database import boletas, configuracion, facturas, rifas, vendedores, liquidaciones
 from motores.constants import (
     BOLETA_MIN,
     BOLETA_MAX,
@@ -96,6 +96,14 @@ from motores.excel_service import (  # re-export
 from motores.rifa_lifecycle import (  # re-export
     crear_indices_boletas,
     crear_nueva_rifa,
+)
+from motores.liquidacion_service import (  # re-export
+    generar_liquidacion,
+    get_liquidacion,
+    get_liquidacion_detalle,
+    get_liquidaciones_resumen,
+    registrar_abono_liquidacion,
+    next_liquidacion_id,
 )
 from motores.flask_integration import (  # re-export
     register_template_filters,

@@ -80,7 +80,7 @@
                     <option value="LOCAL" {% if filters.vendedor_id == "LOCAL" %}selected{% endif %}>LOCAL</option>
                     {% for vendedor in vendedor_options %}
                         <option value="{{ vendedor._id }}" {% if filters.vendedor_id == vendedor._id %}selected{% endif %}>
-                            {{ vendedor._id }}{% if vendedor.nombre %} - {{ vendedor.nombre }}{% endif %}
+                            {{ vendedor.nombre or vendedor._id }}
                         </option>
                     {% endfor %}
                 </select>
@@ -217,7 +217,7 @@
                                     {{ item.estado }}
                                 </span>
                             </td>
-                            <td>{{ item.vendedor_id if item.vendedor_id else "Sin asignar" }}</td>
+                            <td>{{ vendedor_nombres.get(item.vendedor_id, item.vendedor_id) if item.vendedor_id else "Sin asignar" }}</td>
                             <td>{{ item.cliente.nombre or "Sin registrar" }}</td>
                             <td>{{ item.cliente.telefono or "-" }}</td>
                             <td class="text-end fw-bold">{{ item.total_abonado|cop }}</td>
@@ -293,7 +293,7 @@
         <div class="row g-3 mb-4">
             <div class="col-md-4">
                 <div class="text-secondary small fw-semibold">Vendedor asignado</div>
-                <div class="fw-bold">{{ boleta.vendedor_id if boleta.vendedor_id else "Sin asignar" }}</div>
+                <div class="fw-bold">{{ boleta.vendedor_nombre or vendedor_nombres.get(boleta.vendedor_id, boleta.vendedor_id) if boleta.vendedor_id else "Sin asignar" }}</div>
             </div>
             <div class="col-md-4">
                 <div class="text-secondary small fw-semibold">Total abonado</div>

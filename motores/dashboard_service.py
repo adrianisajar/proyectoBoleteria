@@ -7,7 +7,7 @@ from motores.cache import (
     DASHBOARD_CACHE,
     DASHBOARD_CACHE_SECONDS,
 )
-from motores.config_service import get_config, require_collections
+from motores.config_service import get_config, migrar_boletas_existentes, require_collections
 from motores.constants import METODO_EFECTIVO, METODO_TRANSFERENCIA, VENDEDOR_LOCAL
 from motores.fechas import now_local
 
@@ -130,6 +130,9 @@ def get_dashboard_stats(force: bool = False) -> dict:
     rifa_id = config.get("rifa_id")
     today = now_local().date().isoformat()
     counts = get_dashboard_counts(rifa_id, valor_boleta)
+    if rifa_id and counts.get("total", 0) == 0 and boletas.count_documents({}) > 0:
+        migrar_boletas_existentes(rifa_id)
+        counts = get_dashboard_counts(rifa_id, valor_boleta)
     total_boletas = int(counts.get("total", 0) or 0)
     vendidas = int(counts.get("vendidas", 0) or 0)
 

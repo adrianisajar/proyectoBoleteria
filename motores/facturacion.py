@@ -15,6 +15,7 @@ from motores.shared import (
     flash,
     get_config,
     invalidate_dashboard_cache,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -24,6 +25,7 @@ from motores.shared import (
     url_for,
     vendedores,
 )
+from motores.validacion_factura import validar_factura
 
 
 def _anulacion_hash(factura_id: int, anulada: bool, secret: str) -> str:
@@ -161,6 +163,17 @@ def register_routes(app: Flask) -> None:
         template_map = {"cliente": "factura_cliente.html", "vendedor": "factura_vendedor.html"}
         template = template_map.get(factura.get("tipo", ""), "factura_cliente.html")
         return render_template(template, **ctx)
+
+    @app.route("/api/validar-factura", methods=["POST"])
+    @role_required("admin", "cajero")
+    def api_validar_factura() -> Response:
+        """Real-time validation for invoice forms (no writes)."""
+        payload = request.get_json(silent=True) or {}
+        try:
+            resultado = validar_factura(payload)
+        except Exception as exc:
+            return jsonify({"ok": False, "total_errores": 1, "campo_errores": {"form": [f"Error al validar: {exc}"]}, "filas": []}), 500
+        return jsonify(resultado)
 
     @app.route("/facturas/<int:factura_id>/anular", methods=["POST"])
     @role_required("admin")

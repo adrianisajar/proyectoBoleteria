@@ -2,7 +2,7 @@ import copy
 import logging
 import time
 
-from database import boletas, configuracion, facturas, rifas, vendedores
+from database import boletas, configuracion, facturas, liquidaciones, rifas, vendedores
 from motores.cache import (
     CONFIG_CACHE,
     CONFIG_CACHE_SECONDS,
@@ -62,17 +62,17 @@ def migrar_config_a_rifa(config_doc: dict) -> dict | None:
 
 
 def migrar_boletas_existentes(rifa_id: str) -> None:
-    """Backfill missing 'rifa_id' on old ticket docs (idempotent)."""
+    """Backfill missing or stale 'rifa_id' on ticket docs (idempotent)."""
     if boletas is None:
         return
-    pendientes = boletas.count_documents({"rifa_id": {"$exists": False}})
+    pendientes = boletas.count_documents({"rifa_id": {"$ne": rifa_id}})
     if pendientes:
-        boletas.update_many({"rifa_id": {"$exists": False}}, {"$set": {"rifa_id": rifa_id}})
+        boletas.update_many({"rifa_id": {"$ne": rifa_id}}, {"$set": {"rifa_id": rifa_id}})
 
 
 def require_collections() -> None:
     """Raise RuntimeError if any DB collection is None (no connection)."""
-    required = [boletas, configuracion, facturas, rifas, vendedores]
+    required = [boletas, configuracion, facturas, rifas, vendedores, liquidaciones]
     if any(collection is None for collection in required):
         raise RuntimeError("No hay conexi\u00f3n activa a MongoDB.")
 

@@ -132,7 +132,6 @@
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>Vendedor</th>
                         <th>Nombre</th>
                         <th class="text-end">Con abono</th>
                         <th class="text-end">Pagadas</th>
@@ -142,8 +141,7 @@
                 <tbody>
                     {% for item in stats.ranking %}
                         <tr>
-                            <td><span class="badge text-bg-secondary">{{ item._id or "—" }}</span></td>
-                            <td>{{ item.nombre or "-" }}</td>
+                            <td>{{ item.nombre or item._id }}</td>
                             <td class="text-end fw-bold ticket-number">{{ item.vendidas }}</td>
                             <td class="text-end ticket-number">{{ item.pagadas }}</td>
                             <td class="text-end fw-bold text-success">{{ item.recaudo|cop }}</td>

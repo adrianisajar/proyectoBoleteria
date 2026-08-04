@@ -1,6 +1,6 @@
-def crear_boleta_base(numero: int) -> dict:
+def crear_boleta_base(numero: int, rifa_id: object | None = None) -> dict:
     """Return a fresh ticket document in 'disponible' state."""
-    return {
+    doc = {
         "_id": numero,
         "vendedor_id": "",
         "cliente": {"nombre": "", "telefono": "", "direccion": ""},
@@ -8,3 +8,6 @@ def crear_boleta_base(numero: int) -> dict:
         "total_abonado": 0,
         "historial_pagos": [],
     }
+    if rifa_id is not None:
+        doc["rifa_id"] = rifa_id
+    return doc

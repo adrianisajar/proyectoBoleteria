@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Liquidación LIQ-{{ "%05d" % liqui._id }} — {{ super() }}{% endblock %}
+{% block head %}
+<style>
+@media print {
+  @page { margin: 2mm; }
+  nav, .navbar, .navbar *, .no-print, .modal, .modal-backdrop, .flash-stack,
+  .btn, button:not(.no-print), a:not(.no-print),
+  [class*="modal"], [id*="modal"] {
+    display: none !important;
+  }
+  body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  .app-main { padding: 0 !important; margin: 0 !important; }
+  .container { padding: 0 !important; max-width: none !important; margin: 0 !important; }
+  .recibo {
+    max-width: none !important; width: 100% !important;
+    margin: 0 !important; padding: 0 !important;
+    font-size: 1.3rem !important;
+    line-height: 1.8 !important;
+  }
+  .recibo-header { margin-bottom: 0.6rem !important; }
+  .recibo-empresa { font-size: 1.75rem !important; font-weight: 800 !important; }
+  .recibo-titulo { font-size: 1.55rem !important; font-weight: 700 !important; }
+  .recibo-dir { font-size: 1.15rem !important; color: #333 !important; }
+  .recibo-linea { margin: 0.4rem 0 !important; }
+  .recibo-linea-doble { margin: 0.45rem 0 !important; }
+  .recibo-label { color: #222 !important; font-weight: 600 !important; }
+  .recibo > .recibo-label { font-size: 1.5rem !important; font-weight: 700 !important; }
+  .resumen-row { padding: 0.2rem 0 !important; }
+  .recibo-campo { padding: 0.15rem 0 !important; }
+  .obs { margin-top: 0.5rem !important; padding-top: 0.35rem !important; font-size: 1.3rem !important; }
+  .firmas { margin-top: 0.8rem !important; font-size: 1.3rem !important; page-break-inside: avoid !important; break-inside: avoid !important; }
+  .firma-linea { margin-top: 1.5rem !important; }
+  .recibo-footer { margin-top: 0.4rem !important; padding-top: 0.4rem !important; font-size: 1.15rem !important; }
+  div[style*="font-size:0.8rem"] { font-size: 1.3rem !important; }
+  div[style*="font-size:0.75rem"] { font-size: 1.15rem !important; }
+}
+.recibo {
+  max-width: 340px; margin: 0 auto;
+  padding: 1rem 1rem;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+.recibo-header { text-align: center; margin-bottom: 0.8rem; }
+.recibo-empresa { font-size: 1.1rem; font-weight: 800; letter-spacing: 0.05em; }
+.recibo-titulo { font-size: 0.9rem; font-weight: 700; margin-top: 0.25rem; }
+.recibo-dir { font-size: 0.7rem; color: #555; }
+.recibo-linea { border: 0; border-top: 1px dashed #999; margin: 0.6rem 0; }
+.recibo-linea-doble { border: 0; border-top: 3px double #000; margin: 0.6rem 0; }
+.recibo-campo { display: flex; justify-content: space-between; }
+.recibo-label { color: #555; }
+.resumen { border-top: 3px double #000; margin-top: 0.6rem; padding-top: 0.4rem; }
+.resumen-row { display: flex; justify-content: space-between; padding: 0.15rem 0; }
+.total-row { font-size: 0.9rem; font-weight: 800; border-top: 2px solid #000; padding-top: 0.35rem; margin-top: 0.2rem; }
+.obs { margin-top: 0.6rem; padding-top: 0.4rem; border-top: 1px dashed #999; font-size: 0.7rem; color: #555; }
+.firmas { margin-top: 1.8rem; display: flex; justify-content: space-around; text-align: center; font-size: 0.7rem; }
+.firma-linea { width: 8rem; border-top: 1px solid #000; padding-top: 0.25rem; margin-top: 2.5rem; }
+.recibo-footer { text-align: center; margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px dashed #999; font-size: 0.7rem; color: #555; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="recibo">
+  <div class="text-end mb-1 no-print">
+    <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir</button>
+    <a href="{{ url_for('liquidacion_vendedor', vendedor_id=liqui.vendedor_id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
+    <a href="{{ url_for('liquidaciones_panel') }}" class="btn btn-outline-secondary btn-sm">Liquidaciones</a>
+  </div>
+
+  <div class="recibo-header">
+    <div class="recibo-empresa">{{ config.get("nombre_empresa") or config.nombre_rifa or "BOLETERÍA" }}</div>
+    <div class="recibo-titulo">COMPROBANTE DE LIQUIDACIÓN</div>
+    <div class="recibo-dir">
+      {{ config.get("direccion") }}{% if config.get("direccion") and config.get("ciudad") %}, {% endif %}{{ config.get("ciudad") }}
+      {% if config.get("telefono") %}{{ " - " + config.get("telefono") }}{% endif %}
+    </div>
+  </div>
+
+  <hr class="recibo-linea">
+
+  <div class="recibo-campo"><span class="recibo-label">LIQUIDACIÓN</span><span>LIQ-{{ "%05d" % liqui._id }}</span></div>
+  <div class="recibo-campo"><span class="recibo-label">FECHA</span><span>{{ liqui.get("fecha_display", liqui.fecha.strftime("%d/%m/%Y %I:%M %p")) }}</span></div>
+  <div><span class="recibo-label">RIFA</span></div>
+  <div style="font-weight:600">{{ liqui.rifa_nombre or config.nombre_rifa or "Rifa" }}</div>
+
+  <hr class="recibo-linea">
+
+  <div class="recibo-label">VENDEDOR</div>
+  <div style="font-size:0.8rem">{{ liqui.vendedor_nombre or liqui.vendedor_id }}</div>
+
+  <hr class="recibo-linea">
+
+  <div class="recibo-label">DETALLE DE VENTAS</div>
+  <div class="resumen-row"><span>Boletas vendidas</span><span>{{ liqui.boletas_vendidas }}</span></div>
+  <div class="resumen-row"><span>Boletas pagadas</span><span>{{ liqui.boletas_pagadas }}</span></div>
+  <div class="resumen-row"><span>Boletas pendientes</span><span>{{ liqui.boletas_pendientes }}</span></div>
+  <div class="resumen-row"><span>Valor vendido</span><span>${{ "{:,}".format(liqui.valor_vendido) }}</span></div>
+
+  <hr class="recibo-linea">
+
+  <div class="recibo-label">COMISIÓN</div>
+  <div class="recibo-campo"><span class="recibo-label">Comisión por boleta</span><span>{{ liqui.comision_por_boleta|cop }}</span></div>
+  <div class="resumen total-row" style="border-top:3px double #000;padding-top:0.35rem;margin-top:0.4rem;">
+    <div class="resumen-row"><span>Total comisión</span><span>{{ liqui.total_comision|cop }}</span></div>
+    <div class="resumen-row"><span>Valor a pagar</span><span>{{ liqui.pendiente_pagar|cop }}</span></div>
+  </div>
+
+  {% if liqui.estado and liqui.estado != "pendiente" %}
+  <div class="recibo-campo" style="margin-top:0.4rem;"><span class="recibo-label">ESTADO</span><span>LIQUIDACIÓN {{ liqui.estado|upper }}</span></div>
+  {% endif %}
+
+  <div class="firmas">
+    <div><div class="firma-linea">Recibido por</div></div>
+    <div><div class="firma-linea">Vendedor</div></div>
+  </div>
+
+  <div class="recibo-footer">
+    <div style="font-size:0.75rem">LIQ-{{ "%05d" % liqui._id }} · Generado el {{ liqui.generada_en.strftime("%d/%m/%Y %I:%M %p") }}</div>
+    <div>{{ config.get("footer_texto") or "Documento interno, no tiene validez fiscal." }}</div>
+  </div>
+</div>
+
+{% if current_user and current_user.role == "admin" and liqui.estado != "liquidada" %}
+<button type="button" class="btn btn-outline-primary btn-sm no-print mt-3 d-inline-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#abonoModal">
+    <i class="bi bi-cash-coin"></i> Registrar abono
+</button>
+
+<div class="modal fade" id="abonoModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post" action="{{ url_for('abono_liquidacion', liquidacion_id=liqui._id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Registrar abono a la liquidación</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3">Pendiente por pagar: <strong>${{ "{:,}".format(liqui.pendiente_pagar) }}</strong></p>
+                    <div class="mb-3">
+                        <label for="monto" class="form-label fw-semibold">Valor del abono</label>
+                        <input type="text" class="form-control text-end" id="monto" name="monto" inputmode="numeric" required placeholder="Ej: 50000">
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-7">
+                            <label for="metodo" class="form-label fw-semibold">Método</label>
+                            <select class="form-select" id="metodo" name="metodo">
+                                <option value="efectivo">Efectivo</option>
+                                <option value="transferencia">Transferencia</option>
+                            </select>
+                        </div>
+                        <div class="col-5">
+                            <label for="fecha" class="form-label fw-semibold">Fecha</label>
+                            <input type="date" class="form-control" id="fecha" name="fecha" value="{{ '' }}">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="abono_obs" class="form-label fw-semibold">Observaciones</label>
+                        <input type="text" class="form-control" id="abono_obs" name="observaciones" placeholder="Opcional" autocomplete="off">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Registrar abono</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
