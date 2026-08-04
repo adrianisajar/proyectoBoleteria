@@ -189,26 +189,20 @@ def _verificar_boletas_en_db(filas: list[dict], resultados: list[dict], tipo: st
 
 
 def _referencias_duplicadas_en_form(filas: list[dict], resultados: list[dict]) -> None:
-    """Detect the same reference used with different bancos in the same form.
-    Same ref + same banco within the same invoice is allowed (single transfer for multiple tickets).
-    """
-    pares = Counter()
+    """Detect the same reference used twice in the same form."""
+    conteo = Counter()
     for fila in filas:
         if _normalizar_metodo(fila.get("metodo", "")) == METODO_TRANSFERENCIA:
             ref = (fila.get("referencia") or "").strip()
-            banco = (fila.get("banco") or "").strip()
             if ref:
-                pares[(ref, banco)] += 1
-    repetidas = {par for par, count in pares.items() if count > 1}
+                conteo[ref] += 1
+    repetidas = {ref for ref, count in conteo.items() if count > 1}
     if not repetidas:
         return
     for fila, res in zip(filas, resultados, strict=False):
-        if _normalizar_metodo(fila.get("metodo", "")) != METODO_TRANSFERENCIA:
-            continue
         ref = (fila.get("referencia") or "").strip()
-        banco = (fila.get("banco") or "").strip()
-        if (ref, banco) in repetidas and not res["referencia"]:
-            res["referencia"].append(f"La referencia '{ref}' con banco '{banco}' está repetida en esta factura.")
+        if ref in repetidas and not res["referencia"]:
+            res["referencia"].append(f"La referencia '{ref}' est\u00e1 repetida en esta factura.")
 
 
 def validar_factura(payload: dict) -> dict:

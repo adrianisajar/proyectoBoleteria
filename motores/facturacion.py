@@ -7,7 +7,6 @@ from flask import Flask, Response, current_app
 
 from motores.constants import METODO_TRANSFERENCIA, USUARIO_SISTEMA, VENDEDOR_LOCAL
 from motores.fechas import now_local
-from motores.pdf_service import generar_pdf_factura
 from motores.shared import (
     abort,
     boletas,
@@ -164,23 +163,6 @@ def register_routes(app: Flask) -> None:
         template_map = {"cliente": "factura_cliente.html", "vendedor": "factura_vendedor.html"}
         template = template_map.get(factura.get("tipo", ""), "factura_cliente.html")
         return render_template(template, **ctx)
-
-    @app.route("/facturas/<int:factura_id>/pdf")
-    @role_required("admin", "cajero", "consulta")
-    def descargar_factura_pdf(factura_id: int) -> Response:
-        """Generate and download invoice as PDF (server-side via WeasyPrint)."""
-        require_collections()
-        factura = facturas.find_one({"_id": factura_id})
-        if not factura:
-            abort(404)
-        config = get_config()
-        try:
-            pdf_bytes = generar_pdf_factura(factura, config)
-        except Exception as exc:
-            current_app.logger.exception("Error generando PDF factura %s", factura_id)
-            abort(500, description=f"Error generando PDF: {exc}")
-        filename = f"FV-{factura_id:05d}.pdf" if factura.get("tipo") == "vendedor" else f"FC-{factura_id:05d}.pdf"
-        return Response(pdf_bytes, mimetype="application/pdf", headers={"Content-Disposition": f"inline; filename={filename}"})
 
     @app.route("/api/validar-factura", methods=["POST"])
     @role_required("admin", "cajero")

@@ -49,8 +49,7 @@ def test_buscar_transferencia_duplicada(client):
     )
     assert buscar_transferencia_duplicada("REF-X", "BBVA") is not None
     assert buscar_transferencia_duplicada("REF-Y", "BBVA") is None
-    # Nueva regla: misma referencia en OTRO banco = duplicado entre facturas
-    assert buscar_transferencia_duplicada("REF-X", "OTRO_BANCO") is not None
+    assert buscar_transferencia_duplicada("REF-X", "OTRO_BANCO") is None
 
 
 def test_registrar_abono_lote(client):

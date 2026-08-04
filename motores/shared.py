@@ -102,6 +102,7 @@ from motores.liquidacion_service import (  # re-export
     get_liquidacion,
     get_liquidacion_detalle,
     get_liquidaciones_resumen,
+    registrar_abono_liquidacion,
     next_liquidacion_id,
 )
 from motores.flask_integration import (  # re-export

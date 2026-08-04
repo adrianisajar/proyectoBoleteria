@@ -216,9 +216,9 @@ def generar_liquidacion(vendedor_id: str, observaciones: str = "", config: dict 
         "comision_por_boleta": detalle["comision_por_boleta"],
         "tier": detalle["tier"],
         "total_comision": detalle["total_comision"],
-        "total_liquidado": detalle["total_comision"],
-        "pendiente_pagar": 0,
-        "estado": ESTADO_LIQUIDADA,
+        "total_liquidado": 0,
+        "pendiente_pagar": detalle["total_comision"],
+        "estado": ESTADO_PENDIENTE,
         "observaciones": observaciones,
         "boletas_pendientes_lista": [item["numero"] for item in detalle["pendientes_lista"]],
         "pagos": [],
@@ -229,6 +229,51 @@ def generar_liquidacion(vendedor_id: str, observaciones: str = "", config: dict 
     liquidaciones.insert_one(doc)
     invalidate_dashboard_cache()
     return doc
+
+
+def registrar_abono_liquidacion(liquidacion_id: int, monto: int, metodo: str = "efectivo", fecha: str = "", observaciones: str = "") -> dict:
+    """Register a commission payment against a liquidación and update its estado."""
+    require_collections()
+    liqui = liquidaciones.find_one({"_id": liquidacion_id})
+    if not liqui:
+        raise ValueError(f"La liquidación N° {liquidacion_id} no existe.")
+    if liqui.get("estado") == ESTADO_LIQUIDADA:
+        raise ValueError("La liquidación ya está liquidada en su totalidad.")
+
+    total_comision = int(liqui.get("total_comision", 0) or 0)
+    liquidado_actual = int(liqui.get("total_liquidado", 0) or 0)
+    pendiente = max(total_comision - liquidado_actual, 0)
+    if monto <= 0:
+        raise ValueError("El valor del abono debe ser mayor que cero.")
+    if monto > pendiente:
+        raise ValueError(f"El abono de ${monto:,} supera el saldo pendiente de ${pendiente:,}.")
+
+    usuario = (current_user() or {}).get("username", USUARIO_SISTEMA)
+    pago = {
+        "fecha": fecha or now_local().date().isoformat(),
+        "valor": monto,
+        "metodo": metodo,
+        "registrado_en": now_local(),
+        "usuario": usuario,
+        "observaciones": observaciones,
+    }
+    nuevo_liquidado = liquidado_actual + monto
+    nuevo_estado = estado_liquidacion(nuevo_liquidado, total_comision)
+
+    liquidaciones.update_one(
+        {"_id": liquidacion_id},
+        {
+            "$push": {"pagos": pago},
+            "$set": {
+                "total_liquidado": nuevo_liquidado,
+                "pendiente_pagar": max(total_comision - nuevo_liquidado, 0),
+                "estado": nuevo_estado,
+                "actualizada_en": now_local(),
+            },
+        },
+    )
+    invalidate_dashboard_cache()
+    return liquidaciones.find_one({"_id": liquidacion_id})
 
 
 def get_liquidacion(liquidacion_id: int, config: dict | None = None) -> dict | None:

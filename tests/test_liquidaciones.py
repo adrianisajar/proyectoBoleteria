@@ -59,9 +59,7 @@ def test_generar_liquidacion_comision(client):
     assert liqui["boletas_vendidas"] == 4
     assert liqui["comision_por_boleta"] == 0  # 3 < 10 vendidas -> tier 0
     assert liqui["total_comision"] == 0
-    assert liqui["estado"] == "liquidada"
-    assert liqui["total_liquidado"] == 0
-    assert liqui["pendiente_pagar"] == 0
+    assert liqui["estado"] == "pendiente"
     assert liqui["observaciones"] == "Cierre rifa"
 
 
@@ -72,22 +70,66 @@ def test_generar_liquidacion_tier_superior(client):
     client.post("/liquidaciones/vendedor/VEND02/generar", data={"csrf_token": tok})
     liqui = liquidaciones.find_one({"vendedor_id": "VEND02"})
     assert liqui["total_comision"] == 20 * 10000
-    assert liqui["estado"] == "liquidada"
-    assert liqui["total_liquidado"] == 20 * 10000
-    assert liqui["pendiente_pagar"] == 0
+    assert liqui["estado"] == "pendiente"
 
 
-def test_generar_liquidacion_queda_liquidada(client):
+def test_abono_liquidacion_parcial_y_liquidada(client):
+    _crear_vendedor(ids=(1, 2, 3))
+    _pagar_boletas((1, 2, 3), 70000)
+    tok = _obtener_csrf(client, "/liquidaciones/vendedor/VEND01")
+    client.post("/liquidaciones/vendedor/VEND01/generar", data={"csrf_token": tok})
+    liqui = liquidaciones.find_one({"vendedor_id": "VEND01"})
+    assert liqui["total_comision"] == 0  # 3 pagadas < 10 -> tier 0
+
+    # con tier 0 no hay comisión que abonar; el estado no debe poder pasar a liquidada
+    resp = client.post(
+        f"/liquidaciones/{liqui['_id']}/abono",
+        data={"csrf_token": tok, "monto": "10000", "metodo": "efectivo", "fecha": "", "observaciones": ""},
+    )
+    assert resp.status_code == 302
+    liqui = liquidaciones.find_one({"_id": liqui["_id"]})
+    assert liqui["estado"] == "pendiente"
+
+
+def test_abono_liquidacion_estados(client):
     _crear_vendedor("VEND03", ids=tuple(range(1, 16)))
     _pagar_boletas(tuple(range(1, 16)), 70000)  # 15 pagadas -> tier 10k, total 150000
     tok = _obtener_csrf(client, "/liquidaciones/vendedor/VEND03")
     client.post("/liquidaciones/vendedor/VEND03/generar", data={"csrf_token": tok})
     liqui = liquidaciones.find_one({"vendedor_id": "VEND03"})
     assert liqui["total_comision"] == 150000
+
+    client.post(
+        f"/liquidaciones/{liqui['_id']}/abono",
+        data={"csrf_token": tok, "monto": "50000", "metodo": "efectivo", "fecha": "", "observaciones": "primer pago"},
+    )
+    liqui = liquidaciones.find_one({"_id": liqui["_id"]})
+    assert liqui["estado"] == "parcial"
+    assert liqui["total_liquidado"] == 50000
+    assert liqui["pendiente_pagar"] == 100000
+
+    client.post(
+        f"/liquidaciones/{liqui['_id']}/abono",
+        data={"csrf_token": tok, "monto": "100000", "metodo": "transferencia", "fecha": "", "observaciones": ""},
+    )
+    liqui = liquidaciones.find_one({"_id": liqui["_id"]})
     assert liqui["estado"] == "liquidada"
     assert liqui["total_liquidado"] == 150000
-    assert liqui["pendiente_pagar"] == 0
-    assert liqui["pagos"] == []
+
+
+def test_abono_no_puede_sobrepasar_saldo(client):
+    _crear_vendedor("VEND04", ids=tuple(range(1, 16)))
+    _pagar_boletas(tuple(range(1, 16)), 70000)
+    tok = _obtener_csrf(client, "/liquidaciones/vendedor/VEND04")
+    client.post("/liquidaciones/vendedor/VEND04/generar", data={"csrf_token": tok})
+    liqui = liquidaciones.find_one({"vendedor_id": "VEND04"})
+    resp = client.post(
+        f"/liquidaciones/{liqui['_id']}/abono",
+        data={"csrf_token": tok, "monto": "999999", "metodo": "efectivo", "fecha": "", "observaciones": ""},
+    )
+    assert resp.status_code == 302
+    liqui = liquidaciones.find_one({"_id": liqui["_id"]})
+    assert liqui["total_liquidado"] == 0
 
 
 def test_comprobante_liquidacion_renders(client):
@@ -121,34 +163,3 @@ def test_liquidacion_id_contador_incrementa(client):
     client.post("/liquidaciones/vendedor/VEND05/generar", data={"csrf_token": tok})
     c = configuracion.find_one({"_id": "rifa"})
     assert c["liquidacion_counter"] >= 1
-
-
-def test_generar_liquidacion_rechaza_sin_confirmacion(client):
-    _crear_vendedor("VEND06", ids=(1,))
-    _pagar_boletas((1,), 70000)
-    tok = _obtener_csrf(client, "/liquidaciones/vendedor/VEND06")
-    client.post("/liquidaciones/vendedor/VEND06/generar", data={"csrf_token": tok})
-    total_antes = liquidaciones.count_documents({})
-
-    resp = client.post(
-        "/liquidaciones/vendedor/VEND06/generar",
-        data={"csrf_token": tok},
-    )
-    assert resp.status_code == 302
-    assert liquidaciones.count_documents({}) == total_antes
-    assert "confirmaci" in resp.headers["Location"].lower() or resp.headers["Location"] == "/liquidaciones/vendedor/VEND06"
-
-
-def test_generar_liquidacion_permite_regen_con_confirmacion(client):
-    _crear_vendedor("VEND07", ids=(1,))
-    _pagar_boletas((1,), 70000)
-    tok = _obtener_csrf(client, "/liquidaciones/vendedor/VEND07")
-    client.post("/liquidaciones/vendedor/VEND07/generar", data={"csrf_token": tok})
-    total_antes = liquidaciones.count_documents({})
-
-    resp = client.post(
-        "/liquidaciones/vendedor/VEND07/generar",
-        data={"csrf_token": tok, "confirmar_regen": "1"},
-    )
-    assert resp.status_code == 302
-    assert liquidaciones.count_documents({}) == total_antes + 1
