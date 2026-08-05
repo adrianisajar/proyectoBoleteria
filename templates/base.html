@@ -180,13 +180,7 @@
                     </li>
 
                     <a class="nav-link {% if request.endpoint == 'consultas' %}active{% endif %}" href="{{ url_for('consultas') }}">Consultas</a>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['vendedores_panel', 'liquidaciones_panel', 'liquidacion_vendedor', 'comprobante_liquidacion'] %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Vendedores</a>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item {% if request.endpoint == 'vendedores_panel' %}active{% endif %}" href="{{ url_for('vendedores_panel') }}"><i class="bi bi-people me-2"></i>Gestión de vendedores</a></li>
-                            <li><a class="dropdown-item {% if request.endpoint in ['liquidaciones_panel', 'liquidacion_vendedor', 'comprobante_liquidacion'] %}active{% endif %}" href="{{ url_for('liquidaciones_panel') }}"><i class="bi bi-cash-stack me-2"></i>Liquidaciones</a></li>
-                        </ul>
-                    </li>
+                    <a class="nav-link {% if request.endpoint == 'vendedores_panel' %}active{% endif %}" href="{{ url_for('vendedores_panel') }}">Vendedores</a>
                     <a class="nav-link {% if request.endpoint == 'compradores_rapido' %}active{% endif %}" href="{{ url_for('compradores_rapido') }}">Compradores</a>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {% if request.endpoint in ['configuracion_panel', 'backup'] %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Config</a>

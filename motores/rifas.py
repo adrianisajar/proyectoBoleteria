@@ -20,7 +20,7 @@ from motores.shared import (
     sync_ticket_statuses,
     url_for,
 )
-from motores.validacion import parse_money
+from motores.validacion import parse_money, sanitizar_texto
 
 
 def register_routes(app: Flask) -> None:
@@ -38,10 +38,10 @@ def register_routes(app: Flask) -> None:
 
             if action == "guardar_empresa":
                 update = {
-                    "nombre_empresa": request.form.get("nombre_empresa", "").strip(),
-                    "direccion": request.form.get("direccion", "").strip().upper(),
-                    "telefono": request.form.get("telefono", "").strip(),
-                    "ciudad": request.form.get("ciudad", "").strip().upper(),
+                    "nombre_empresa": sanitizar_texto(request.form.get("nombre_empresa", ""), "titulo"),
+                    "direccion": sanitizar_texto(request.form.get("direccion", ""), "address").upper(),
+                    "telefono": sanitizar_texto(request.form.get("telefono", ""), "numbers"),
+                    "ciudad": sanitizar_texto(request.form.get("ciudad", ""), "titulo").upper(),
                     "footer_texto": request.form.get("footer_texto", "").strip(),
                     "observaciones_recaudo": request.form.get("observaciones_recaudo", "").strip(),
                 }
@@ -56,7 +56,7 @@ def register_routes(app: Flask) -> None:
 
             elif action == "guardar_config":
                 valor_boleta = parse_money(request.form.get("valor_boleta", ""))
-                nombre = request.form.get("nombre_rifa", "").strip() or DEFAULT_CONFIG["nombre_rifa"]
+                nombre = sanitizar_texto(request.form.get("nombre_rifa", ""), "titulo") or DEFAULT_CONFIG["nombre_rifa"]
                 cantidad_boletas = parse_money(request.form.get("cantidad_boletas", "")) or 0
 
                 errors = []
@@ -120,13 +120,11 @@ def register_routes(app: Flask) -> None:
     @role_required("admin")
     def nueva_rifa() -> Response:
         """Reset the system for a new rifa (confirmation-gated, optional vendor keep)."""
-        nombre = request.form.get("nombre_rifa_nueva", "").strip() or f"Rifa {now_local().date().isoformat()}"
+        nombre = sanitizar_texto(request.form.get("nombre_rifa_nueva", ""), "titulo") or f"Rifa {now_local().date().isoformat()}"
         valor_boleta = parse_money(request.form.get("valor_boleta_nueva", ""))
         conservar_vendedores = request.form.get("conservar_vendedores") == "on"
         confirmacion = request.form.get("confirmacion", "").strip().upper()
         cantidad_boletas = parse_money(request.form.get("cantidad_boletas", "10000")) or 10000
-        premio_mayor = request.form.get("premio_mayor", "").strip()
-        estado = request.form.get("estado", "activa").strip()
 
         errors = []
         if valor_boleta <= 0:
@@ -147,8 +145,6 @@ def register_routes(app: Flask) -> None:
                 valor_boleta,
                 conservar_vendedores,
                 cantidad_boletas=cantidad_boletas,
-                premio_mayor=premio_mayor,
-                estado=estado,
             )
         except Exception as exc:
             flash(f"No se pudo crear la nueva rifa: {exc}", "danger")

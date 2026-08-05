@@ -2,7 +2,7 @@ import copy
 import logging
 import time
 
-from database import boletas, configuracion, facturas, liquidaciones, rifas, vendedores
+from database import boletas, configuracion, facturas, rifas, vendedores
 from motores.cache import (
     CONFIG_CACHE,
     CONFIG_CACHE_SECONDS,
@@ -72,7 +72,7 @@ def migrar_boletas_existentes(rifa_id: str) -> None:
 
 def require_collections() -> None:
     """Raise RuntimeError if any DB collection is None (no connection)."""
-    required = [boletas, configuracion, facturas, rifas, vendedores, liquidaciones]
+    required = [boletas, configuracion, facturas, rifas, vendedores]
     if any(collection is None for collection in required):
         raise RuntimeError("No hay conexi\u00f3n activa a MongoDB.")
 

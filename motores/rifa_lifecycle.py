@@ -1,4 +1,4 @@
-from database import boletas, configuracion, facturas, liquidaciones, rifas, vendedores
+from database import boletas, configuracion, facturas, rifas, vendedores
 from motores.cache import invalidate_config_cache, invalidate_dashboard_cache
 from motores.config_service import require_collections
 from motores.constants import BOLETA_MAX, BOLETA_MIN, COMISION_DEFAULT_TIERS, CONFIG_ID
@@ -21,9 +21,6 @@ def crear_indices_boletas() -> None:
     facturas.create_index([("fecha", -1)])
     facturas.create_index("tipo")
     rifas.create_index("estado")
-    liquidaciones.create_index([("vendedor_id", 1), ("_id", -1)])
-    liquidaciones.create_index("rifa_id")
-    liquidaciones.create_index([("fecha", -1)])
 
 
 def crear_nueva_rifa(
@@ -41,7 +38,6 @@ def crear_nueva_rifa(
         asignaciones = list(vendedores.find({}, {"boletas_asignadas": 1}))
 
     facturas.delete_many({})
-    liquidaciones.delete_many({})
     configuracion.update_one({"_id": CONFIG_ID}, {"$set": {"factura_counter": 0}})
 
     boletas.delete_many({})

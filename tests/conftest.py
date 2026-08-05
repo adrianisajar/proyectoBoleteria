@@ -15,11 +15,11 @@ import pytest
 
 import database
 from app import app as flask_app
-from database import boletas, configuracion, facturas, liquidaciones, rifas, vendedores
+from database import boletas, configuracion, facturas, rifas, vendedores
 from motores.cache import invalidate_config_cache, invalidate_dashboard_cache
 from optimizar_db import REQUIRED_INDEXES
 
-if any(col is None for col in (boletas, vendedores, configuracion, facturas, rifas, liquidaciones)):
+if any(col is None for col in (boletas, vendedores, configuracion, facturas, rifas)):
     pytest.skip("MongoDB no disponible: se omiten los tests que requieren base de datos.", allow_module_level=True)
 
 COMISION_TIERS = [
@@ -48,7 +48,6 @@ def _warm_up():
     _with_retry(lambda: vendedores.count_documents({}))
     _with_retry(lambda: configuracion.find_one({"_id": "rifa"}))
     _with_retry(lambda: rifas.count_documents({}))
-    _with_retry(lambda: liquidaciones.count_documents({}))
 
 
 def _crear_indices():
@@ -58,7 +57,6 @@ def _crear_indices():
         "facturas": facturas,
         "rifas": rifas,
         "configuracion": configuracion,
-        "liquidaciones": liquidaciones,
     }
     for nombre_col, collection in collections.items():
         if collection is None:
@@ -73,7 +71,6 @@ def _seed_once():
     vendedores.drop()
     facturas.drop()
     rifas.drop()
-    liquidaciones.drop()
     configuracion.drop()
 
     rifa_id = rifas.insert_one(
@@ -111,7 +108,6 @@ def _seed_once():
 
 def _reset():
     facturas.delete_many({})
-    liquidaciones.delete_many({})
     vendedores.delete_many({})
     boletas.update_many(
         {},

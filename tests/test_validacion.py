@@ -1,6 +1,37 @@
 from motores.ticket_service import estado_para_total
-from motores.validacion import parse_boletas_detailed, parse_int_filter, parse_money, ticket_number_query
+from motores.validacion import parse_boletas_detailed, parse_int_filter, parse_money, sanitizar_texto, ticket_number_query
 from motores.vendor_service import calc_comision_por_boleta
+
+
+def test_sanitizar_texto_numbers():
+    assert sanitizar_texto("70.000 abc", "numbers") == "70000"
+    assert sanitizar_texto("", "numbers") == ""
+
+
+def test_sanitizar_texto_name():
+    assert sanitizar_texto("JUAN PÉREZ #1", "name") == "JUAN PÉREZ"
+    assert sanitizar_texto("O'HARA-SMITH", "name") == "O'HARA-SMITH"
+
+
+def test_sanitizar_texto_address():
+    assert sanitizar_texto("CRA 5 #2-30, EDIF. A", "address") == "CRA 5 #2-30, EDIF. A"
+    assert sanitizar_texto("Avenida<>{}", "address") == "Avenida"
+
+
+def test_sanitizar_texto_titulo():
+    assert sanitizar_texto("Rifa 2026 - 'Gran' (premio) & extra", "titulo") == "Rifa 2026 - 'Gran' (premio) & extra"
+    assert sanitizar_texto("a/b?c*d", "titulo") == "abcd"
+
+
+def test_sanitizar_texto_referencia():
+    assert sanitizar_texto("TRF-2026_01.PDF", "referencia") == "TRF-2026_01.PDF"
+    assert sanitizar_texto("ref@#€", "referencia") == "ref"
+
+
+def test_sanitizar_texto_max_len_y_none():
+    assert sanitizar_texto("123456789", "numbers", max_len=4) == "1234"
+    assert sanitizar_texto(None, "numbers") == ""
+    assert sanitizar_texto("  hola  ", "name") == "hola"
 
 
 def test_parse_money():

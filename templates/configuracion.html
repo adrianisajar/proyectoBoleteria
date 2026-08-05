@@ -32,7 +32,7 @@
                 <div class="row g-3">
                     <div class="col-12">
                         <label for="nombre_rifa" class="form-label fw-semibold">Nombre de la rifa</label>
-                        <input type="text" class="form-control" id="nombre_rifa" name="nombre_rifa" value="{{ rifa.nombre }}">
+                        <input type="text" class="form-control" id="nombre_rifa" name="nombre_rifa" value="{{ rifa.nombre }}" data-validation="titulo">
                     </div>
                     <div class="col-md-6">
                         <label for="valor_boleta" class="form-label fw-semibold">Valor boleta</label>
@@ -43,7 +43,7 @@
                     </div>
                     <div class="col-md-6">
                         <label for="cantidad_boletas" class="form-label fw-semibold">Cantidad de boletas</label>
-                        <input type="number" class="form-control" id="cantidad_boletas" name="cantidad_boletas" value="{{ rifa.cantidad_boletas }}" min="1">
+                        <input type="number" class="form-control" id="cantidad_boletas" name="cantidad_boletas" value="{{ rifa.cantidad_boletas }}" min="1" data-validation="numbers">
                     </div>
                     <div class="col-12 d-grid">
                         <button type="submit" class="btn btn-primary">Guardar par&aacute;metros</button>
@@ -60,19 +60,19 @@
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label for="nombre_empresa" class="form-label fw-semibold">Nombre comercial</label>
-                        <input type="text" class="form-control" id="nombre_empresa" name="nombre_empresa" value="{{ config.get('nombre_empresa', '') }}" placeholder="BOLETERÍA LA FORTUNA">
+                        <input type="text" class="form-control" id="nombre_empresa" name="nombre_empresa" value="{{ config.get('nombre_empresa', '') }}" placeholder="BOLETERÍA LA FORTUNA" data-validation="titulo">
                     </div>
                     <div class="col-md-6">
                         <label for="telefono" class="form-label fw-semibold">Teléfono</label>
-                        <input type="text" class="form-control" id="telefono" name="telefono" value="{{ config.get('telefono', '') }}" placeholder="312 456 7890">
+                        <input type="text" class="form-control" id="telefono" name="telefono" value="{{ config.get('telefono', '') }}" placeholder="312 456 7890" data-validation="numbers">
                     </div>
                     <div class="col-md-6">
                         <label for="ciudad" class="form-label fw-semibold">Ciudad</label>
-                        <input type="text" class="form-control" id="ciudad" name="ciudad" value="{{ config.get('ciudad', '') }}" placeholder="BOGOTÁ">
+                        <input type="text" class="form-control" id="ciudad" name="ciudad" value="{{ config.get('ciudad', '') }}" placeholder="BOGOTÁ" data-validation="titulo">
                     </div>
                     <div class="col-md-6">
                         <label for="direccion" class="form-label fw-semibold">Dirección</label>
-                        <input type="text" class="form-control" id="direccion" name="direccion" value="{{ config.get('direccion', '') }}" placeholder="Cra 10 #15-20">
+                        <input type="text" class="form-control" id="direccion" name="direccion" value="{{ config.get('direccion', '') }}" placeholder="Cra 10 #15-20" data-validation="address">
                     </div>
                     <div class="col-12">
                         <label for="footer_texto" class="form-label fw-semibold">Texto pie de factura</label>
@@ -109,7 +109,7 @@
                             <tr>
                                 <td>
                                     <input type="hidden" name="tier_idx" value="{{ loop.index0 }}">
-                                    <input type="number" class="form-control form-control-sm" name="tier_min_{{ loop.index0 }}" value="{{ tier.min }}" min="0" required>
+                                    <input type="number" class="form-control form-control-sm" name="tier_min_{{ loop.index0 }}" value="{{ tier.min }}" min="0" required data-validation="numbers">
                                 </td>
                                 <td>
                                     <div class="input-group input-group-sm">
@@ -184,7 +184,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="col-md-6">
                     <label for="nombre" class="form-label fw-semibold">Nombre de la rifa</label>
-                    <input type="text" class="form-control" id="nombre" name="nombre_rifa_nueva" placeholder="Rifa 2026" required>
+                    <input type="text" class="form-control" id="nombre" name="nombre_rifa_nueva" placeholder="Rifa 2026" required data-validation="titulo">
                 </div>
                 <div class="col-md-3">
                     <label for="valor_boleta_nueva" class="form-label fw-semibold">Valor boleta</label>
@@ -192,21 +192,13 @@
                 </div>
                 <div class="col-md-3">
                     <label for="cantidad_boletas" class="form-label fw-semibold">Cantidad</label>
-                    <input type="number" class="form-control" id="cantidad_boletas" name="cantidad_boletas" value="10000" min="1" max="10000">
+                    <input type="number" class="form-control" id="cantidad_boletas" name="cantidad_boletas" value="10000" min="1" max="10000" data-validation="numbers">
                 </div>
                 <div class="col-md-6">
-                    <label for="premio_mayor" class="form-label fw-semibold">Premio mayor</label>
-                    <input type="text" class="form-control" id="premio_mayor" name="premio_mayor" placeholder="Opcional">
-                </div>
-                <div class="col-md-3">
-                    <label for="estado_nueva" class="form-label fw-semibold">Estado inicial</label>
-                    <input type="hidden" name="estado" value="activa">
-                    <div class="form-control-plaintext fw-semibold">Activa</div>
-                </div>
-                <div class="col-12">
+                    <label for="conservar_vendedores" class="form-label fw-semibold">Conservar asignaciones de vendedores actuales</label>
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="conservar_vendedores" name="conservar_vendedores">
-                        <label class="form-check-label fw-semibold" for="conservar_vendedores">Conservar asignaciones de vendedores actuales</label>
+                        <label class="form-check-label fw-semibold" for="conservar_vendedores">Conservar asignaciones</label>
                     </div>
                     <div class="form-text">Se mantienen las boletas asignadas a cada vendedor. Las boletas se reinician a estado "disponible" sin abonos ni clientes.</div>
                 </div>
@@ -236,7 +228,7 @@ function agregarTier() {
     tr.innerHTML = `
         <td>
             <input type="hidden" name="tier_idx" value="${idx}">
-            <input type="number" class="form-control form-control-sm" name="tier_min_${idx}" value="0" min="0" required autocomplete="off">
+            <input type="number" class="form-control form-control-sm" name="tier_min_${idx}" value="0" min="0" required autocomplete="off" data-validation="numbers">
         </td>
         <td>
             <div class="input-group input-group-sm">

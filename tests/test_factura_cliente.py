@@ -1,7 +1,7 @@
 import hashlib
 
 from app import app as flask_app
-from database import boletas, facturas
+from database import boletas, configuracion, facturas
 
 
 def _post_factura(client, boletas_, montos, metodos=None, referencias=None, bancos=None, nombre="JUAN PEREZ", telefono="3001234567", fecha="2026-07-30"):
@@ -148,3 +148,18 @@ def test_anular_factura_cliente(client):
     assert b["estado"] == "separada"
     f = facturas.find_one({"_id": fid})
     assert f["anulada"] is True
+
+
+def test_factura_id_salta_colision_por_restauracion(client):
+    # Simula una base restaurada: la colección ya tiene facturas con _id >= contador.
+    facturas.insert_one({"_id": 4, "tipo": "cliente"})
+    configuracion.update_one({"_id": "rifa"}, {"$set": {"factura_counter": 3}})
+
+    resp = _post_factura(client, ["0010"], ["70000"])
+    assert resp.status_code == 302
+
+    f = facturas.find_one({"tipo": "cliente", "_id": {"$gt": 4}})
+    assert f is not None
+    assert f["_id"] > 4
+    assert facturas.count_documents({"_id": f["_id"]}) == 1
+    assert configuracion.find_one({"_id": "rifa"})["factura_counter"] >= f["_id"]

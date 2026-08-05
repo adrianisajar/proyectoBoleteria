@@ -79,4 +79,3 @@ vendedores: Collection | None = db["vendedores"] if db is not None else None
 configuracion: Collection | None = db["configuracion"] if db is not None else None
 facturas: Collection | None = db["facturas"] if db is not None else None
 rifas: Collection | None = db["rifas"] if db is not None else None
-liquidaciones: Collection | None = db["liquidaciones"] if db is not None else None

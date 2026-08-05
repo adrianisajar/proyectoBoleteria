@@ -16,6 +16,7 @@ from motores.shared import (
     require_collections,
     role_required,
 )
+from motores.validacion import sanitizar_texto
 
 
 def _procesar_rows_rapido(rows: list) -> dict:
@@ -34,9 +35,9 @@ def _procesar_rows_rapido(rows: list) -> dict:
             if isinstance(bid, int):
                 not_found.append(bid)
             continue
-        nombre = (row.get("nombre") or "").strip().upper()
-        telefono = (row.get("telefono") or "").strip()
-        direccion = (row.get("direccion") or "").strip().upper()
+        nombre = sanitizar_texto(row.get("nombre"), "name").upper()
+        telefono = sanitizar_texto(row.get("telefono"), "numbers")
+        direccion = sanitizar_texto(row.get("direccion"), "address").upper()
         if not nombre and not telefono and not direccion:
             ids_sin_datos.append(bid)
             continue

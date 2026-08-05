@@ -104,14 +104,76 @@
         refreshTicketStats();
     });
 
-    document.querySelectorAll("[data-money-input]").forEach(function(input) {
-        var formatMoney = function() {
-            var digits = input.value.replace(/\D/g, "");
-            input.value = digits ? Number(digits).toLocaleString("es-CO") : "";
-        };
-        input.addEventListener("input", formatMoney);
-        input.addEventListener("blur", formatMoney);
-        formatMoney();
+    var formatMoneyField = function(input) {
+        var digits = input.value.replace(/\D/g, "");
+        input.value = digits ? Number(digits).toLocaleString("es-CO") : "";
+    };
+
+    var SANITIZERS = {
+        numbers: function(v) { return v.replace(/[^0-9]/g, ""); },
+        name: function(v) { return v.replace(/[^A-Za-z\u00c1\u00c9\u00cd\u00d3\u00da\u00dc\u00d1\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f1 .'-]/g, ""); },
+        address: function(v) { return v.replace(/[^A-Za-z\u00c1\u00c9\u00cd\u00d3\u00da\u00dc\u00d1\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f10-9 .,#\/-]/g, ""); },
+        titulo: function(v) { return v.replace(/[^A-Za-z\u00c1\u00c9\u00cd\u00d3\u00da\u00dc\u00d1\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f10-9 .,'&\-()]/g, ""); },
+        referencia: function(v) { return v.replace(/[^A-Za-z0-9_\-.\/]/g, ""); },
+        tickets: function(v) { return v.replace(/[^0-9,\s;]/g, ""); }
+    };
+
+    var inputValidationMode = function(t) {
+        if (t.dataset.moneyInput !== undefined) return "money";
+        var mode = t.dataset.validation;
+        return mode && SANITIZERS[mode] ? mode : null;
+    };
+
+    var applySanitized = function(input, mode) {
+        var old = input.value;
+        var cleaned = SANITIZERS[mode](old);
+        if (input.maxLength > 0 && cleaned.length > input.maxLength) cleaned = cleaned.slice(0, input.maxLength);
+        if (cleaned === old) return;
+        var pos = input.selectionStart != null ? input.selectionStart : old.length;
+        var keptBefore = SANITIZERS[mode](old.slice(0, pos)).length;
+        input.value = cleaned;
+        var np = Math.min(keptBefore, cleaned.length);
+        input.selectionStart = input.selectionEnd = np;
+    };
+
+    document.addEventListener("input", function(e) {
+        var t = e.target;
+        if (!t || !t.matches("input, textarea")) return;
+        var mode = inputValidationMode(t);
+        if (!mode) return;
+        if (mode === "money") { formatMoneyField(t); return; }
+        applySanitized(t, mode);
+    });
+
+    document.addEventListener("blur", function(e) {
+        var t = e.target;
+        if (!t || !t.matches("input")) return;
+        if (t.dataset.moneyInput !== undefined) formatMoneyField(t);
+    }, true);
+
+    document.addEventListener("paste", function(e) {
+        var t = e.target;
+        if (!t || !t.matches("input, textarea")) return;
+        var mode = inputValidationMode(t);
+        if (!mode || mode === "money") return;
+        if (t.closest && t.closest("#tbodyCompradores")) return;
+        e.preventDefault();
+        var cb = e.clipboardData || window.clipboardData;
+        var text = cb && cb.getData ? (cb.getData("text") || "") : "";
+        var cleaned = SANITIZERS[mode](text);
+        if (t.maxLength > 0) cleaned = cleaned.slice(0, t.maxLength);
+        var start = t.selectionStart || 0;
+        var end = t.selectionEnd != null ? t.selectionEnd : start;
+        t.value = t.value.slice(0, start) + cleaned + t.value.slice(end);
+        var np = start + cleaned.length;
+        t.selectionStart = t.selectionEnd = np;
+        t.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    document.querySelectorAll("[data-money-input]").forEach(formatMoneyField);
+    document.querySelectorAll("[data-validation]").forEach(function(input) {
+        var mode = inputValidationMode(input);
+        if (mode && mode !== "money") applySanitized(input, mode);
     });
 
     document.addEventListener("keydown", function(e) {

@@ -78,7 +78,7 @@
                     <tbody id="abonosBody">
                         <tr class="fila-abono">
                             <td>
-                                <input type="text" class="form-control form-control-sm ticket-number boleta-input" name="boleta[]" placeholder="0001, 0002, 0003" inputmode="numeric" required disabled autocomplete="off">
+                                <input type="text" class="form-control form-control-sm ticket-number boleta-input" name="boleta[]" placeholder="0001, 0002, 0003" inputmode="numeric" required disabled autocomplete="off" data-validation="tickets">
                                 <div class="boleta-warnings text-danger small mt-1"></div>
                                 <div class="boleta-info text-secondary small mt-1" style="font-size:.65rem;"></div>
                             </td>
@@ -98,11 +98,11 @@
                                 </select>
                             </td>
                             <td class="ref-cell">
-                                <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="TX-000" autocomplete="off">
+                                <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="TX-000" autocomplete="off" data-validation="referencia">
                                 <div class="ref-errors text-danger small mt-1"></div>
                             </td>
                             <td class="banco-cell">
-                                <input type="text" class="form-control form-control-sm" name="banco[]" placeholder="Banco" list="listaBancos" autocomplete="off">
+                                <input type="text" class="form-control form-control-sm" name="banco[]" placeholder="Banco" list="listaBancos" autocomplete="off" data-validation="name">
                                 <div class="banco-errors text-danger small mt-1"></div>
                             </td>
                             <td>

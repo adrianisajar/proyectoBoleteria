@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import current_app
 from pymongo.results import BulkWriteResult
 
-from database import boletas, configuracion
+from database import boletas, configuracion, facturas
 from motores.auth import current_user
 from motores.cache import invalidate_dashboard_cache
 from motores.config_service import get_config, require_collections
@@ -267,11 +267,19 @@ def rollback_pagos_por_factura(factura_id: int, valor_boleta: int) -> None:
 
 
 def next_factura_id() -> int:
-    """Atomically increment and return the next invoice id from configuracion."""
-    result = configuracion.find_one_and_update(
-        {"_id": "rifa"},
-        {"$inc": {"factura_counter": 1}},
-        upsert=True,
-        return_document=True,
-    )
-    return result["factura_counter"] if result else 1
+    """Return the next invoice id, skipping ids already present.
+
+    The stored counter can drift below existing ids after a DB restore/import
+    (e.g. ``facturas`` restored without a matching ``factura_counter``); in that
+    case we keep incrementing until a free id is found (self-healing).
+    """
+    while True:
+        result = configuracion.find_one_and_update(
+            {"_id": "rifa"},
+            {"$inc": {"factura_counter": 1}},
+            upsert=True,
+            return_document=True,
+        )
+        candidate = int(result["factura_counter"] if result else 1)
+        if facturas.count_documents({"_id": candidate}) == 0:
+            return candidate

@@ -2,7 +2,7 @@ import contextlib
 
 from flask import Flask, Response, current_app, jsonify
 
-from database import boletas, configuracion, facturas, liquidaciones, rifas, vendedores
+from database import boletas, configuracion, facturas, rifas, vendedores
 from motores.config_service import require_collections
 from motores.constants import CONFIG_ID
 from optimizar_db import REQUIRED_INDEXES
@@ -13,7 +13,6 @@ _COLLECTIONS = {
     "facturas": facturas,
     "rifas": rifas,
     "configuracion": configuracion,
-    "liquidaciones": liquidaciones,
 }
 
 

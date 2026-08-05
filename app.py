@@ -11,7 +11,6 @@ from motores.facturacion import register_routes as register_facturacion
 from motores.facturacion_cliente import register_routes as register_facturacion_cliente
 from motores.facturacion_vendedor import register_routes as register_facturacion_vendedor
 from motores.health import register_routes as register_health
-from motores.liquidaciones import register_routes as register_liquidaciones
 from motores.pagos import register_routes as register_pagos
 from motores.reportes import register_routes as register_reportes
 from motores.rifas import register_routes as register_rifas
@@ -40,7 +39,6 @@ register_csrf(app)
 register_rifas(app)
 register_boletas(app)
 register_pagos(app)
-register_liquidaciones(app)
 register_facturacion(app)
 register_facturacion_cliente(app)
 register_facturacion_vendedor(app)

@@ -1,6 +1,6 @@
 import os
 
-from database import boletas, configuracion, facturas, liquidaciones, rifas, vendedores
+from database import boletas, configuracion, facturas, rifas, vendedores
 from motores.constants import COMISION_DEFAULT_TIERS, DEFAULT_RIFA
 from motores.fechas import now_local
 
@@ -22,9 +22,6 @@ def crear_indices():
     facturas.create_index([("fecha", -1)])
     facturas.create_index("tipo")
     rifas.create_index("estado")
-    liquidaciones.create_index([("vendedor_id", 1), ("_id", -1)])
-    liquidaciones.create_index("rifa_id")
-    liquidaciones.create_index([("fecha", -1)])
 
 
 def crear_rifa():
@@ -74,7 +71,6 @@ def inicializar_rifa():
     boletas.delete_many({})
     vendedores.delete_many({})
     facturas.delete_many({})
-    liquidaciones.delete_many({})
     rifas.delete_many({})
     configuracion.delete_many({})
 

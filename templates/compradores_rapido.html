@@ -98,10 +98,10 @@ function rowHTML(idx) {
   const n = idx + 1;
   return `<tr>
     <td class="text-center text-muted small">${n}</td>
-    <td><input type="text" class="form-control form-control-sm boleta-input" inputmode="numeric" maxlength="4" autocomplete="off"></td>
-    <td><input type="text" class="form-control form-control-sm nombre-input" autocomplete="off"></td>
-    <td><input type="text" class="form-control form-control-sm direccion-input" autocomplete="off"></td>
-    <td><input type="text" class="form-control form-control-sm telefono-input" inputmode="numeric" autocomplete="off"></td>
+    <td><input type="text" class="form-control form-control-sm boleta-input" inputmode="numeric" maxlength="4" autocomplete="off" data-validation="numbers"></td>
+    <td><input type="text" class="form-control form-control-sm nombre-input" autocomplete="off" data-validation="name"></td>
+    <td><input type="text" class="form-control form-control-sm direccion-input" autocomplete="off" data-validation="address"></td>
+    <td><input type="text" class="form-control form-control-sm telefono-input" inputmode="numeric" autocomplete="off" data-validation="numbers"></td>
     <td class="text-center estado-cell"><span class="text-muted small">--</span></td>
     <td class="text-center"><button type="button" class="btn btn-outline-danger btn-sm py-0 px-1 btn-eliminar-fila">&times;</button></td>
   </tr>`;

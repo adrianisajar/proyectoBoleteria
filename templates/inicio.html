@@ -66,7 +66,7 @@
     <form action="{{ url_for('consultas') }}" method="get" class="row g-3 align-items-end" autocomplete="off">
         <div class="col-sm-6 col-lg-2">
             <label for="numero" class="form-label fw-semibold">Número o parte</label>
-            <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="numero" name="numero" value="{{ filters.numero }}" placeholder="0001">
+            <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="numero" name="numero" value="{{ filters.numero }}" placeholder="0001" data-validation="numbers">
         </div>
         <div class="col-sm-6 col-lg-3">
             <label for="vendedorSearch" class="form-label fw-semibold">Vendedor</label>
@@ -136,7 +136,7 @@
         </div>
         <div class="col-sm-6 col-lg-2">
             <label for="telefono" class="form-label fw-semibold">Teléfono</label>
-            <input type="text" class="form-control" id="telefono" name="telefono" value="{{ filters.telefono }}" placeholder="300">
+            <input type="text" class="form-control" id="telefono" name="telefono" value="{{ filters.telefono }}" placeholder="300" data-validation="numbers">
         </div>
         <div class="col-sm-6 col-lg-3">
             <label for="pago_metodo" class="form-label fw-semibold">Método pago</label>
@@ -149,7 +149,7 @@
 
         <div class="col-sm-6 col-lg-3">
             <label for="referencia" class="form-label fw-semibold">Referencia</label>
-            <input type="text" class="form-control" id="referencia" name="referencia" value="{{ filters.referencia }}" placeholder="TX-9981">
+            <input type="text" class="form-control" id="referencia" name="referencia" value="{{ filters.referencia }}" placeholder="TX-9981" data-validation="referencia">
         </div>
         <div class="col-sm-6 col-lg-2">
             <label for="limite" class="form-label fw-semibold">Límite</label>
@@ -309,15 +309,15 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="col-lg-3">
                 <label for="detalleNombre" class="form-label fw-semibold">Nombre cliente</label>
-                <input type="text" class="form-control text-uppercase" id="detalleNombre" name="nombre" value="{{ boleta.cliente.nombre }}" placeholder="Nombre completo">
+                <input type="text" class="form-control text-uppercase" id="detalleNombre" name="nombre" value="{{ boleta.cliente.nombre }}" placeholder="Nombre completo" data-validation="name">
             </div>
             <div class="col-lg-2">
                 <label for="detalleTelefono" class="form-label fw-semibold">Teléfono</label>
-                <input type="tel" class="form-control" id="detalleTelefono" name="telefono" value="{{ boleta.cliente.telefono }}" placeholder="3001234567">
+                <input type="tel" class="form-control" id="detalleTelefono" name="telefono" value="{{ boleta.cliente.telefono }}" placeholder="3001234567" data-validation="numbers">
             </div>
             <div class="col-lg-2">
                 <label for="detalleDireccion" class="form-label fw-semibold">Dirección</label>
-                <input type="text" class="form-control text-uppercase" id="detalleDireccion" name="direccion" value="{{ boleta.cliente.direccion }}" placeholder="Dirección">
+                <input type="text" class="form-control text-uppercase" id="detalleDireccion" name="direccion" value="{{ boleta.cliente.direccion }}" placeholder="Dirección" data-validation="address">
             </div>
             <div class="col-lg-3">
                 <label for="detalleVendedorSearch" class="form-label fw-semibold">Vendedor</label>

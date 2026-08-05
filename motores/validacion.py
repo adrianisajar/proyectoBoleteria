@@ -3,6 +3,24 @@ from collections import Counter
 
 from motores.constants import BOLETA_MAX, BOLETA_MIN
 
+TEXT_SANITIZERS: dict[str, str] = {
+    "numbers": r"[^0-9]",
+    "name": r"[^A-Za-z\u00c1\u00c9\u00cd\u00d3\u00da\u00dc\u00d1\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f1 .'\-]",
+    "address": r"[^A-Za-z\u00c1\u00c9\u00cd\u00d3\u00da\u00dc\u00d1\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f10-9 .,#/\-]",
+    "titulo": r"[^A-Za-z\u00c1\u00c9\u00cd\u00d3\u00da\u00dc\u00d1\u00e1\u00e9\u00ed\u00f3\u00fa\u00fc\u00f10-9 .,'&\-()]",
+    "referencia": r"[^A-Za-z0-9_\-./]",
+}
+
+
+def sanitizar_texto(value: str | None, modo: str = "numbers", max_len: int | None = None) -> str:
+    """Strip characters not allowed by the given mode (mirrors frontend data-validation)."""
+    pattern = TEXT_SANITIZERS.get(modo)
+    if pattern is not None:
+        value = re.sub(pattern, "", value or "")
+    if max_len is not None:
+        value = (value or "")[:max_len]
+    return (value or "").strip()
+
 
 def parse_int_filter(value: str, field_name: str, errors: list, min_value: int | None = None, max_value: int | None = None) -> int | None:
     """Parse an integer filter value, appending validation errors as needed."""

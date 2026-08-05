@@ -22,7 +22,7 @@ from motores.shared import (
     url_for,
     vendedores,
 )
-from motores.validacion import parse_boletas
+from motores.validacion import parse_boletas, sanitizar_texto
 
 
 def _actualizar_estado_boletas(filtro: dict, nuevo_vendedor_id: str, valor_boleta: int) -> None:
@@ -223,8 +223,8 @@ def register_routes(app: Flask) -> None:
             form_data.update(
                 {
                     "vendedor_id": request.form.get("vendedor_id", ""),
-                    "nombre": request.form.get("nombre", "").strip(),
-                    "telefono": request.form.get("telefono", "").strip(),
+                    "nombre": sanitizar_texto(request.form.get("nombre", ""), "name"),
+                    "telefono": sanitizar_texto(request.form.get("telefono", ""), "numbers"),
                     "operacion": request.form.get("operacion", "").strip().lower(),
                     "boletas": request.form.get("boletas", "").strip(),
                 }

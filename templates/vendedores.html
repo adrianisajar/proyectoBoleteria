@@ -47,7 +47,7 @@
         <div class="col-md-5">
             <label for="nombre" class="form-label fw-semibold">Nombre del vendedor</label>
             <div class="position-relative">
-                <input type="text" class="form-control text-uppercase" id="nombre" name="nombre" value="{{ form.nombre }}" placeholder="Nombre completo" required autocomplete="off">
+                <input type="text" class="form-control text-uppercase" id="nombre" name="nombre" value="{{ form.nombre }}" placeholder="Nombre completo" required autocomplete="off" data-validation="name">
                 <div class="list-group position-absolute w-100 shadow-sm rounded-2"
                      id="vendedorSugerencias" style="display:none; z-index:1050; max-height:200px; overflow-y:auto;"></div>
             </div>
@@ -59,7 +59,7 @@
         </div>
         <div class="col-md-3">
             <label for="telefono" class="form-label fw-semibold">Teléfono</label>
-            <input type="tel" class="form-control" id="telefono" name="telefono" value="{{ form.telefono }}" placeholder="Opcional">
+            <input type="tel" class="form-control" id="telefono" name="telefono" value="{{ form.telefono }}" placeholder="Opcional" data-validation="numbers">
         </div>
         <div class="col-md-2">
             <label for="operacion" class="form-label fw-semibold">Operación</label>
@@ -89,6 +89,7 @@
                 name="boletas"
                 rows="5"
                 placeholder="1, 0050, 432, 9999"
+                data-validation="tickets"
             >{{ form.boletas }}</textarea>
         </div>
     </form>
@@ -123,7 +124,8 @@
                         <tr>
                             <td>
                                 <div class="d-flex align-items-center gap-2">
-                                    <span class="small text-secondary">{{ vendedor.nombre or vendedor._id }}</span>
+                                    <span class="badge text-bg-secondary">{{ vendedor._id }}</span>
+                                    <span class="small text-secondary">{{ vendedor.nombre or "Sin nombre" }}</span>
                                 </div>
                             </td>
                             <td class="text-end fw-bold ticket-number">{{ vendedor.cantidad }}</td>
