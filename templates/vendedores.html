@@ -69,6 +69,7 @@
                     <option value="asignar" {% if form.operacion == "asignar" %}selected{% endif %}>Asignar</option>
                     <option value="quitar" {% if form.operacion == "quitar" %}selected{% endif %}>Quitar</option>
                     <option value="eliminar" {% if form.operacion == "eliminar" %}selected{% endif %}>Eliminar vendedor</option>
+                    <option value="registrar_fecha_adquisicion" {% if form.operacion == "registrar_fecha_adquisicion" %}selected{% endif %}>Registrar fecha de adquisición</option>
                 </select>
         </div>
         <div class="col-md-2 d-grid align-self-end">
@@ -78,7 +79,7 @@
             </button>
         </div>
 
-        <div class="col-12">
+        <div class="col-12" id="divBoletasTexto">
             <div class="d-flex flex-column flex-sm-row justify-content-between gap-2 mb-2">
                 <label for="boletas" class="form-label fw-semibold mb-0">Boletas a operar</label>
                 <span class="badge text-bg-light border align-self-start" id="contadorBoletas">0 detectadas</span>
@@ -91,6 +92,35 @@
                 placeholder="1, 0050, 432, 9999"
                 data-validation="tickets"
             >{{ form.boletas }}</textarea>
+        </div>
+
+        <div class="col-12" id="divBoletasFecha" style="display:none;">
+            <div class="d-flex flex-column flex-sm-row align-items-sm-end justify-content-between gap-2 mb-2">
+                <div>
+                    <label for="fechaAdquisicion" class="form-label fw-semibold mb-0">Fecha de adquisición</label>
+                    <div class="text-secondary small">La fecha en que cada boleta salió del vendedor / fue entregada al comprador.</div>
+                </div>
+                <span class="badge text-bg-light border align-self-start align-self-sm-auto" id="contadorBoletasFecha">0 seleccionadas</span>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <input type="date" class="form-control" id="fechaAdquisicion" name="fecha_adquisicion" max="{{ now_local_date }}" autocomplete="off">
+                </div>
+                <div class="col-md-8">
+                    <div class="border rounded-2 overflow-hidden">
+                        <div class="d-flex align-items-center justify-content-between px-2 py-1 bg-body-secondary border-bottom">
+                            <label class="form-check-label small fw-semibold mb-0">
+                                <input class="form-check-input me-1 align-middle" type="checkbox" id="fechaSelTodas">
+                                Seleccionar todas
+                            </label>
+                            <button type="button" class="btn btn-link btn-sm p-0 text-secondary" id="fechaDeseleccionar">Ninguna</button>
+                        </div>
+                        <div id="listaBoletasFecha" class="p-1" style="max-height:260px;overflow-y:auto;">
+                            <div class="text-secondary small p-2" id="fechaBoletasEmpty">Seleccione un vendedor para cargar sus boletas.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </form>
 </div>
@@ -124,8 +154,9 @@
                         <tr>
                             <td>
                                 <div class="d-flex align-items-center gap-2">
-                                    <span class="badge text-bg-secondary">{{ vendedor._id }}</span>
+                                    <span class="badge {% if vendedor.es_local %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ vendedor._id }}</span>
                                     <span class="small text-secondary">{{ vendedor.nombre or "Sin nombre" }}</span>
+                                    {% if vendedor.es_local %}<span class="badge text-bg-light border">Sistema</span>{% endif %}
                                 </div>
                             </td>
                             <td class="text-end fw-bold ticket-number">{{ vendedor.cantidad }}</td>
@@ -180,6 +211,7 @@
                                 <th>Estado</th>
                                 <th>Abonado</th>
                                 <th>Cliente</th>
+                                <th>Fech. adq.</th>
                             </tr>
                         </thead>
                         <tbody id="modalBoletasBody"></tbody>
@@ -221,6 +253,14 @@
         const telefono = document.getElementById("telefono");
         const operacion = document.getElementById("operacion");
         const boletas = document.getElementById("boletas");
+
+        const divBoletasTexto = document.getElementById("divBoletasTexto");
+        const divBoletasFecha = document.getElementById("divBoletasFecha");
+        const fechaAdquisicion = document.getElementById("fechaAdquisicion");
+        const listaBoletasFecha = document.getElementById("listaBoletasFecha");
+        const contadorBoletasFecha = document.getElementById("contadorBoletasFecha");
+        const fechaSelTodas = document.getElementById("fechaSelTodas");
+        const fechaDeseleccionar = document.getElementById("fechaDeseleccionar");
 
         const generarId = (name) => {
             return name.trim().replace(/\s+/g, "_").toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
@@ -272,6 +312,7 @@
             vendedorIdPreview.textContent = id;
             vendedorIdPreview.className = "badge text-bg-primary fw-normal font-monospace";
             vendedorSug.style.display = "none";
+            if (isFechaOp(operacion.value)) refreshFechaBoletas();
         };
 
         nombre.addEventListener("input", function() {
@@ -322,7 +363,7 @@
                 const origNombre = button.dataset.nombre || "";
                 nombre.value = origNombre;
                 telefono.value = button.dataset.telefono || "";
-                operacion.value = "guardar";
+                operacion.value = origId === {{ VENDEDOR_LOCAL | tojson }} ? "asignar" : "guardar";
                 if (origId) {
                     selectedVendedor = { id: origId, nombre: origNombre };
                     vendedorIdInput.value = origId;
@@ -332,6 +373,7 @@
                     selectedVendedor = null;
                     actualizarId();
                 }
+                toggleFechaUi();
                 nombre.focus();
             });
         });
@@ -347,6 +389,83 @@
             actualizarContador();
         });
         actualizarContador();
+
+        /* ── Operación: registrar fecha de adquisición ── */
+        const isFechaOp = (op) => op === "registrar_fecha_adquisicion";
+        const hoyLocal = new Date();
+        const hoyISO = hoyLocal.getFullYear() + "-" + String(hoyLocal.getMonth() + 1).padStart(2, "0") + "-" + String(hoyLocal.getDate()).padStart(2, "0");
+
+        const contarFechaSeleccionadas = () => {
+            const n = document.querySelectorAll(".fecha-check:checked").length;
+            contadorBoletasFecha.textContent = `${n} seleccionada${n === 1 ? "" : "s"}`;
+            validarFechaCampo(operacion.value);
+        };
+
+        const renderFechaBoletas = (boletasList) => {
+            listaBoletasFecha.innerHTML = boletasList.map(function(b) {
+                const badgeClass = b.estado === "pagada" ? "text-bg-success" : b.estado === "abonando" ? "text-bg-warning" : b.estado === "asignada" ? "text-bg-primary" : b.estado === "separada" ? "text-bg-info" : "text-bg-secondary";
+                const fid = "fcb-" + b.numero;
+                return '<div class="d-flex align-items-center gap-2 px-2 py-1 border-bottom mb-0">' +
+                    '<input class="form-check-input mt-0 fecha-check flex-shrink-0" type="checkbox" name="boletas_fecha[]" value="' + b.numero + '" data-fecha="' + escAttr(b.fecha_adquisicion || "") + '" id="' + fid + '">' +
+                    '<label class="form-check-label small flex-grow-1 d-flex justify-content-between align-items-center gap-2 mb-0" for="' + fid + '">' +
+                        '<span class="fw-bold ticket-number">#' + b.numero + '</span>' +
+                        '<span class="badge rounded-pill ' + badgeClass + ' text-uppercase">' + b.estado + '</span>' +
+                        '<span class="text-secondary small">' + (b.fecha_adquisicion || "—") + '</span>' +
+                    '</label>' +
+                '</div>';
+            }).join("");
+        };
+
+        let fechaRefreshTimer = null;
+        const refreshFechaBoletas = () => {
+            clearTimeout(fechaRefreshTimer);
+            fechaRefreshTimer = setTimeout(() => {
+                const vId = vendedorIdInput.value.trim();
+                if (!isFechaOp(operacion.value) || !vId) {
+                    listaBoletasFecha.innerHTML = '<div class="text-secondary small p-2">Seleccione un vendedor para cargar sus boletas.</div>';
+                    contadorBoletasFecha.textContent = "0 seleccionadas";
+                    return;
+                }
+                listaBoletasFecha.innerHTML = '<div class="text-center text-secondary small p-3"><span class="spinner-border spinner-border-sm me-1"></span>Cargando...</div>';
+                fetch("/api/vendedores/" + encodeURIComponent(vId) + "/boletas")
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data.ok || !data.boletas || !data.boletas.length) {
+                            listaBoletasFecha.innerHTML = '<div class="text-secondary small p-2">Este vendedor no tiene boletas asignadas.</div>';
+                            contadorBoletasFecha.textContent = "0 seleccionadas";
+                            return;
+                        }
+                        renderFechaBoletas(data.boletas);
+                        contadorBoletasFecha.textContent = "0 seleccionadas";
+                    })
+                    .catch(() => {
+                        listaBoletasFecha.innerHTML = '<div class="text-danger small p-2">Error al cargar las boletas.</div>';
+                    });
+            }, 300);
+        };
+
+        const toggleFechaUi = () => {
+            const fechaOp = isFechaOp(operacion.value);
+            divBoletasTexto.style.display = fechaOp ? "none" : "";
+            divBoletasFecha.style.display = fechaOp ? "" : "none";
+            if (fechaOp) {
+                fechaSelTodas.checked = false;
+                refreshFechaBoletas();
+            }
+        };
+
+        listaBoletasFecha.addEventListener("change", function(e) {
+            if (e.target.classList.contains("fecha-check")) contarFechaSeleccionadas();
+        });
+        fechaSelTodas.addEventListener("change", function() {
+            document.querySelectorAll(".fecha-check").forEach(c => { c.checked = fechaSelTodas.checked; });
+            contarFechaSeleccionadas();
+        });
+        fechaDeseleccionar.addEventListener("click", function() {
+            fechaSelTodas.checked = false;
+            document.querySelectorAll(".fecha-check").forEach(c => { c.checked = false; });
+            contarFechaSeleccionadas();
+        });
 
         /* ── Validación servidor (debounced) ── */
         const debounce = function(fn, ms) {
@@ -437,6 +556,7 @@
                             '<td><span class="badge rounded-pill ' + badgeClass + ' text-uppercase">' + b.estado + '</span></td>',
                             '<td class="fw-bold text-success">$' + Number(b.abonado).toLocaleString("es-CO") + '</td>',
                             '<td>' + (b.cliente || "Sin cliente") + '</td>',
+                            '<td class="small">' + (b.fecha_adquisicion || '<span class="text-muted">&mdash;</span>') + '</td>',
                         ].join("");
                         modalBody.appendChild(tr);
                     });
@@ -491,7 +611,7 @@
         };
 
         const opsConBoletas = {"asignar": true, "quitar": true};
-        const opsConNombre = {"guardar": true, "asignar": true, "quitar": true, "eliminar": true};
+        const opsConNombre = {"guardar": true, "asignar": true, "quitar": true, "eliminar": true, "registrar_fecha_adquisicion": true};
         const necesitaBoletas = function(op) { return !!opsConBoletas[op]; };
         const necesitaNombre = function(op) { return !!opsConNombre[op]; };
 
@@ -525,6 +645,10 @@
                     }
                 }
             }
+            const vIdActual = vendedorIdInput.value.trim().toUpperCase();
+            if (vIdActual === {{ VENDEDOR_LOCAL | tojson }} && (op === "guardar" || op === "eliminar")) {
+                errors.push("{{ VENDEDOR_LOCAL_LABEL }} es un vendedor del sistema: solo puede asignar, quitar boletas o registrar fecha de adquisici\u00f3n.");
+            }
             mostrarErrores("nombre", errors);
         };
 
@@ -555,11 +679,29 @@
             mostrarErrores("boletas", errors);
         };
 
+        const validarFechaCampo = (op) => {
+            const errors = [];
+            if (!isFechaOp(op)) {
+                mostrarErrores("fechaAdquisicion", []);
+                return;
+            }
+            if (!fechaAdquisicion.value) {
+                errors.push("La fecha de adquisición es obligatoria.");
+            } else if (fechaAdquisicion.value > hoyISO) {
+                errors.push("La fecha no puede ser posterior a hoy.");
+            }
+            if (!document.querySelectorAll(".fecha-check:checked").length) {
+                errors.push("Seleccione al menos una boleta del vendedor.");
+            }
+            mostrarErrores("fechaAdquisicion", errors);
+        };
+
         const validarFormulario = (op) => {
             limpiarErrores();
             validarOperacionCampo(op);
             validarNombreCampo(op);
             validarBoletasCampo(op);
+            validarFechaCampo(op);
             var ok = true;
             Object.keys(errorLists).forEach(function(k) {
                 const ul = errorLists[k];
@@ -587,6 +729,31 @@
             e.preventDefault();
             const vName = nombre.value.trim();
             const vId = vendedorIdInput.value || vName;
+
+            if (op === "registrar_fecha_adquisicion") {
+                const checked = Array.from(document.querySelectorAll(".fecha-check:checked"));
+                const conFecha = checked.filter(c => c.dataset.fecha);
+                if (conFecha.length) {
+                    confirmTitle.textContent = "Confirmar fecha de adquisición";
+                    confirmBody.innerHTML = `<div class="mb-3">
+                        <p class="mb-2">Se registrará la fecha <strong>${fechaAdquisicion.value}</strong> en <strong>${checked.length}</strong> boleta(s) de <strong class="text-uppercase">${vName}</strong>.</p>
+                        <div class="alert alert-warning py-2 small mb-0">
+                            <i class="bi bi-exclamation-triangle me-1"></i>Las siguientes boletas ya tienen fecha de adquisición y serán sobrescritas:
+                            <div class="ticket-number mt-1">${conFecha.map(c => "#" + c.value).join(" ")}</div>
+                        </div>
+                    </div>`;
+                    confirmBtn.className = "btn btn-primary";
+                    confirmBtn.textContent = "Sí, registrar";
+                    confirmBtn.disabled = false;
+                    pendingSubmit = () => { submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...'; form.submit(); };
+                    bootstrap.Modal.getOrCreateInstance(confirmModal).show();
+                } else {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...';
+                    form.submit();
+                }
+                return;
+            }
 
             if (op === "eliminar") {
                 confirmTitle.textContent = "Eliminar vendedor";
@@ -654,6 +821,8 @@
             validarOperacionCampo(this.value);
             validarNombreCampo(this.value);
             validarBoletasCampo(this.value);
+            validarFechaCampo(this.value);
+            toggleFechaUi();
             fetchServerValidation();
         });
 
@@ -661,6 +830,8 @@
         validarOperacionCampo(operacion.value);
         validarNombreCampo(operacion.value);
         validarBoletasCampo(operacion.value);
+        validarFechaCampo(operacion.value);
+        toggleFechaUi();
         }
 
         const buscarInput = document.getElementById("buscarVendedor");

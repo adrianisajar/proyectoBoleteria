@@ -4,6 +4,7 @@ from flask import Flask, g
 
 from motores.auth import current_user, has_role
 from motores.config_service import get_config
+from motores.constants import VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
 from motores.dashboard_service import get_alertas
 
 
@@ -50,4 +51,6 @@ def register_context_processor(app: Flask) -> None:
             "current_user": getattr(g, "current_user", current_user()),
             "can": has_role,
             "alertas": get_alertas,
+            "VENDEDOR_LOCAL": VENDEDOR_LOCAL,
+            "VENDEDOR_LOCAL_LABEL": VENDEDOR_LOCAL_LABEL,
         }

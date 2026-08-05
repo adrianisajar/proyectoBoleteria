@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 
 from flask import url_for
 
@@ -14,6 +15,7 @@ from motores.constants import (
 from motores.validacion import parse_int_filter, parse_money, ticket_number_query
 
 ABONADO_OP_MAP = {"gte": "$gte", "lte": "$lte", "eq": "$eq"}
+FECHA_ADQ_OP_MAP = {"gte": "$gte", "lte": "$lte", "eq": "$eq"}
 
 
 def build_consulta_context(args: dict) -> dict:
@@ -32,6 +34,8 @@ def build_consulta_context(args: dict) -> dict:
         "abono_estado": args.get("abono_estado", "").strip(),
         "abonado_op": args.get("abonado_op", "").strip(),
         "abonado_valor": args.get("abonado_valor", "").strip(),
+        "fecha_adquisicion_op": args.get("fecha_adquisicion_op", "").strip(),
+        "fecha_adquisicion": args.get("fecha_adquisicion", "").strip(),
         "saldo_estado": args.get("saldo_estado", "").strip(),
         "limite": args.get("limite", str(CONSULTA_LIMIT_DEFAULT)).strip(),
     }
@@ -112,7 +116,7 @@ def build_consulta_context(args: dict) -> dict:
     elif filters["saldo_estado"]:
         errors.append("Filtro de saldo inválido.")
 
-    abonado_op = filters["abonado_op"]
+    abonado_op = filters["abonado_op"] or "eq"
     abonado_valor_raw = filters["abonado_valor"]
     if abonado_valor_raw:
         if abonado_op not in ("gte", "lte", "eq"):
@@ -123,6 +127,19 @@ def build_consulta_context(args: dict) -> dict:
                 query["total_abonado"] = {ABONADO_OP_MAP[abonado_op]: abonado_valor}
             else:
                 errors.append("Valor de abonado inválido.")
+
+    fecha_adq_op = filters["fecha_adquisicion_op"]
+    fecha_adq_raw = filters["fecha_adquisicion"]
+    if fecha_adq_raw:
+        if fecha_adq_op not in ("gte", "lte", "eq"):
+            errors.append("Operador de fecha de adquisición inválido.")
+        else:
+            try:
+                datetime.strptime(fecha_adq_raw, "%Y-%m-%d")
+            except ValueError:
+                errors.append("La fecha de adquisición debe tener formato AAAA-MM-DD.")
+            else:
+                query["fecha_adquisicion"] = {FECHA_ADQ_OP_MAP[fecha_adq_op]: fecha_adq_raw}
 
     if filters["estado"]:
         if filters["estado"] == "disponible":

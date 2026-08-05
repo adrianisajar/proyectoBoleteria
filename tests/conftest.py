@@ -95,6 +95,7 @@ def _seed_once():
             "estado": "disponible",
             "total_abonado": 0,
             "historial_pagos": [],
+            "fecha_adquisicion": None,
         }
         for n in range(N_BOLETAS)
     ]
@@ -118,6 +119,7 @@ def _reset():
                 "estado": "disponible",
                 "total_abonado": 0,
                 "historial_pagos": [],
+                "fecha_adquisicion": None,
             }
         },
     )

@@ -4,7 +4,7 @@ from flask import flash
 
 from database import boletas, vendedores
 from motores.config_service import get_config, require_collections
-from motores.constants import COMISION_DEFAULT_TIERS, VENDEDOR_LOCAL
+from motores.constants import COMISION_DEFAULT_TIERS, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
 
 
 def normalize_vendedor_id(value: str) -> str:
@@ -88,6 +88,37 @@ def get_vendedores_snapshot(config: dict | None = None) -> tuple[list, dict]:
     total_recaudado = 0
     total_comision = 0
 
+    # LOCAL is a system vendor (no DB doc): show it first with its own stats.
+    local_match = {"vendedor_id": VENDEDOR_LOCAL}
+    if rifa_id:
+        local_match["rifa_id"] = rifa_id
+    local_docs = boletas.find(local_match, {"_id": 1, "total_abonado": 1}).sort("_id", 1)
+    local_ids = [doc["_id"] for doc in local_docs]
+    local_stats = stats_by_vendor.get(
+        VENDEDOR_LOCAL,
+        {"vendidas": 0, "pagadas": 0, "recaudado": 0, "saldo_pendiente": 0},
+    )
+    local_recaudado = int(local_stats.get("recaudado", 0) or 0)
+    total_asignadas += len(local_ids)
+    total_recaudado += local_recaudado
+    lista.append(
+        {
+            "_id": VENDEDOR_LOCAL,
+            "nombre": VENDEDOR_LOCAL_LABEL,
+            "telefono": "",
+            "cantidad": len(local_ids),
+            "preview": local_ids[:12],
+            "vendidas": int(local_stats.get("vendidas", 0) or 0),
+            "pagadas": int(local_stats.get("pagadas", 0) or 0),
+            "pendientes_fisicas": max(len(local_ids) - int(local_stats.get("vendidas", 0) or 0), 0),
+            "recaudado": local_recaudado,
+            "saldo_pendiente": int(local_stats.get("saldo_pendiente", 0) or 0),
+            "comision_por_boleta": 0,
+            "comision": 0,
+            "es_local": True,
+        }
+    )
+
     cursor = vendedores.find({}, {"nombre": 1, "telefono": 1, "boletas_asignadas": 1}).sort("_id", 1)
     for vendedor in cursor:
         asignadas = sorted(vendedor.get("boletas_asignadas") or [])
@@ -125,7 +156,7 @@ def get_vendedores_snapshot(config: dict | None = None) -> tuple[list, dict]:
         "total_asignadas": total_asignadas,
         "total_recaudado": total_recaudado,
         "total_comision": total_comision,
-        "total_vendedores": len(lista),
+        "total_vendedores": sum(1 for v in lista if v["_id"] != VENDEDOR_LOCAL),
     }
 
 

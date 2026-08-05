@@ -36,9 +36,9 @@
         <tr>
           <th style="width:50px;">#</th>
           <th style="width:100px;">Boleta</th>
-          <th style="width:250px;">Comprador</th>
-          <th style="width:250px;">Direcci&oacute;n</th>
+          <th style="width:220px;">Comprador</th>
           <th style="width:160px;">Tel&eacute;fono</th>
+          <th style="width:220px;">Direcci&oacute;n</th>
           <th style="width:90px;">Estado</th>
           <th style="width:50px;"></th>
         </tr>
@@ -100,8 +100,8 @@ function rowHTML(idx) {
     <td class="text-center text-muted small">${n}</td>
     <td><input type="text" class="form-control form-control-sm boleta-input" inputmode="numeric" maxlength="4" autocomplete="off" data-validation="numbers"></td>
     <td><input type="text" class="form-control form-control-sm nombre-input" autocomplete="off" data-validation="name"></td>
-    <td><input type="text" class="form-control form-control-sm direccion-input" autocomplete="off" data-validation="address"></td>
     <td><input type="text" class="form-control form-control-sm telefono-input" inputmode="numeric" autocomplete="off" data-validation="numbers"></td>
+    <td><input type="text" class="form-control form-control-sm direccion-input" autocomplete="off" data-validation="address"></td>
     <td class="text-center estado-cell"><span class="text-muted small">--</span></td>
     <td class="text-center"><button type="button" class="btn btn-outline-danger btn-sm py-0 px-1 btn-eliminar-fila">&times;</button></td>
   </tr>`;
@@ -231,6 +231,25 @@ function onTelefonoInput(tr, immediate) {
 
 /* ── navegación por teclado ──────────────────────────── */
 
+function agregarNuevaFila() {
+  agregarFilas(1);
+  const tbody = document.getElementById("tbodyCompradores");
+  return tbody.lastElementChild;
+}
+
+function navegarConComa(tr, idx) {
+  const inputs = Array.from(tr.querySelectorAll("input"));
+  if (idx < inputs.length - 1) {
+    inputs[idx + 1].focus();
+    return;
+  }
+  const nextTr = tr.nextElementSibling || agregarNuevaFila();
+  if (nextTr) {
+    const ni = nextTr.querySelectorAll("input");
+    if (ni.length) ni[0].focus();
+  }
+}
+
 function onKeyNav(e) {
   const tr = e.target.closest("tr");
   if (!tr || e.target.tagName !== "INPUT") return;
@@ -240,15 +259,7 @@ function onKeyNav(e) {
 
   if (e.key === ",") {
     e.preventDefault();
-    if (idx < inputs.length - 1) {
-      inputs[idx + 1].focus();
-    } else {
-      const nextTr = tr.nextElementSibling;
-      if (nextTr) {
-        const ni = nextTr.querySelectorAll("input");
-        if (ni.length) ni[0].focus();
-      }
-    }
+    navegarConComa(tr, idx);
     return;
   }
 
@@ -573,8 +584,11 @@ document.getElementById("tbodyCompradores").addEventListener("focusout", functio
   if (e.target.classList.contains("boleta-input")) onBoletaInput(tr, true);
   else if (e.target.classList.contains("telefono-input")) onTelefonoInput(tr, true);
   else if (e.target.classList.contains("nombre-input") && e.target.value.trim()) {
-    const bi = tr.querySelector(".boleta-input");
-    if (bi) bi.focus();
+    const rt = e.relatedTarget;
+    if (rt && !(rt.closest && rt.closest("#tbodyCompradores"))) {
+      const bi = tr.querySelector(".boleta-input");
+      if (bi) bi.focus();
+    }
   }
 });
 

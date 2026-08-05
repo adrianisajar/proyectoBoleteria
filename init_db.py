@@ -60,6 +60,7 @@ def crear_boleta(numero, rifa_id):
         "estado": "disponible",
         "total_abonado": 0,
         "historial_pagos": [],
+        "fecha_adquisicion": None,
     }
 
 

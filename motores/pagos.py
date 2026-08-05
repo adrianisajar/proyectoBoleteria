@@ -1,10 +1,12 @@
 import contextlib
 import re
+from datetime import datetime
 
 from flask import Flask, Response
 
-from motores.constants import BOLETA_MAX, BOLETA_MIN, METODO_TRANSFERENCIA, OPERACIONES_VENDEDOR, VENDEDOR_LOCAL, VENDEDOR_SIN_ASIGNAR
+from motores.constants import BOLETA_MAX, BOLETA_MIN, METODO_TRANSFERENCIA, OPERACIONES_VENDEDOR, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL, VENDEDOR_SIN_ASIGNAR
 from motores.errores import safe_error_message
+from motores.fechas import now_local
 from motores.shared import (
     boletas,
     estado_pipeline_expr,
@@ -27,19 +29,25 @@ from motores.validacion import boletas_incompletas, parse_boletas, sanitizar_tex
 
 def _actualizar_estado_boletas(filtro: dict, nuevo_vendedor_id: str, valor_boleta: int) -> None:
     """Reassign tickets matching filtro to a vendor and recalc their estado."""
-    boletas.update_many(
-        filtro,
-        [
-            {"$set": {"vendedor_id": nuevo_vendedor_id}},
-            {"$set": {"estado": estado_pipeline_expr(valor_boleta)}},
-        ],
-    )
+    pipeline = [
+        {"$set": {"vendedor_id": nuevo_vendedor_id}},
+        {"$set": {"estado": estado_pipeline_expr(valor_boleta)}},
+    ]
+    if nuevo_vendedor_id == VENDEDOR_SIN_ASIGNAR:
+        pipeline.append({"$set": {"fecha_adquisicion": None}})
+    boletas.update_many(filtro, pipeline)
 
 
 def _render_vendedores(form_data: dict) -> str:
     """Render the vendor panel with the current snapshot and the submitted form data."""
     vendedores_lista, resumen = safe_vendedores_snapshot()
-    return render_template("vendedores.html", form=form_data, vendedores_lista=vendedores_lista, resumen=resumen)
+    return render_template(
+        "vendedores.html",
+        form=form_data,
+        vendedores_lista=vendedores_lista,
+        resumen=resumen,
+        now_local_date=now_local().strftime("%Y-%m-%d"),
+    )
 
 
 def _validar_form_vendedor(form_data: dict) -> tuple[str, list[int], list[str]]:
@@ -77,6 +85,8 @@ def _validar_form_vendedor(form_data: dict) -> tuple[str, list[int], list[str]]:
 
 def _procesar_guardar(vendedor_id: str, perfil_update: dict) -> None:
     """Create or update a vendor profile with the given $set document."""
+    if vendedor_id == VENDEDOR_LOCAL:
+        raise ValueError("LOCAL es un vendedor del sistema y no se puede editar.")
     existe = vendedores.find_one({"_id": vendedor_id}, {"_id": 1})
     vendedores.update_one({"_id": vendedor_id}, perfil_update, upsert=True)
     if existe:
@@ -120,14 +130,15 @@ def _procesar_asignar(vendedor_id: str, boleta_ids: list[int], perfil_update: di
         {"_id": {"$ne": vendedor_id}},
         {"$pull": {"boletas_asignadas": {"$in": existentes}}},
     )
-    vendedores.update_one(
-        {"_id": vendedor_id},
-        {
-            "$set": perfil_update["$set"],
-            "$addToSet": {"boletas_asignadas": {"$each": existentes}},
-        },
-        upsert=True,
-    )
+    if vendedor_id != VENDEDOR_LOCAL:
+        vendedores.update_one(
+            {"_id": vendedor_id},
+            {
+                "$set": perfil_update["$set"],
+                "$addToSet": {"boletas_asignadas": {"$each": existentes}},
+            },
+            upsert=True,
+        )
     _actualizar_estado_boletas({"_id": {"$in": existentes}}, vendedor_id, valor_boleta)
     invalidate_dashboard_cache()
     mensaje = f"{len(existentes)} boleta(s) asignada(s) a {vendedor_id}."
@@ -148,7 +159,7 @@ def _procesar_quitar(vendedor_id: str, boleta_ids: list[int], perfil_update: dic
     existentes = [b for b in boleta_ids if b in docs]
     faltantes = len(boleta_ids) - len(existentes)
 
-    if not vendedores.find_one({"_id": vendedor_id}, {"_id": 1}):
+    if vendedor_id != VENDEDOR_LOCAL and not vendedores.find_one({"_id": vendedor_id}, {"_id": 1}):
         flash(f"El vendedor {vendedor_id} no existe.", "danger")
         return
 
@@ -168,7 +179,8 @@ def _procesar_quitar(vendedor_id: str, boleta_ids: list[int], perfil_update: dic
         ids_str = ", ".join(f"#{b:04d}" for b in con_pagos)
         raise ValueError(f"No se pueden quitar boletas con pagos registrados: {ids_str}")
 
-    vendedores.update_one({"_id": vendedor_id}, {"$pull": {"boletas_asignadas": {"$in": existentes}}})
+    if vendedor_id != VENDEDOR_LOCAL:
+        vendedores.update_one({"_id": vendedor_id}, {"$pull": {"boletas_asignadas": {"$in": existentes}}})
     _actualizar_estado_boletas({"_id": {"$in": existentes}, "vendedor_id": vendedor_id}, VENDEDOR_SIN_ASIGNAR, valor_boleta)
     invalidate_dashboard_cache()
     mensaje = f"{len(existentes)} boleta(s) quitada(s) de {vendedor_id}."
@@ -179,6 +191,8 @@ def _procesar_quitar(vendedor_id: str, boleta_ids: list[int], perfil_update: dic
 
 def _procesar_eliminar(vendedor_id: str, valor_boleta: int) -> None:
     """Delete a vendor after releasing their assigned tickets (blocks paid tickets)."""
+    if vendedor_id == VENDEDOR_LOCAL:
+        raise ValueError("LOCAL es un vendedor del sistema y no se puede eliminar.")
     vendedor_doc = vendedores.find_one({"_id": vendedor_id})
     if not vendedor_doc:
         flash(f"El vendedor {vendedor_id} no existe.", "danger")
@@ -203,6 +217,47 @@ def _procesar_eliminar(vendedor_id: str, valor_boleta: int) -> None:
     vendedores.delete_one({"_id": vendedor_id})
     invalidate_dashboard_cache()
     flash(f"Vendedor {vendedor_id} ({vendedor_doc.get('nombre', '')}) eliminado con {len(boletas_ids_vendor)} boleta(s) liberada(s).", "success")
+
+
+def _procesar_registrar_fecha(vendedor_id: str, form_data: dict) -> None:
+    """Register the acquisition date on tickets that belong to the given vendor."""
+    fecha_raw = form_data.get("fecha_adquisicion", "").strip()
+    if not fecha_raw:
+        raise ValueError("La fecha de adquisición es obligatoria.")
+    try:
+        fecha_dt = datetime.strptime(fecha_raw, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError("La fecha de adquisición debe tener formato AAAA-MM-DD.") from exc
+    if fecha_dt.date() > now_local().date():
+        raise ValueError("La fecha de adquisición no puede ser posterior a hoy.")
+
+    try:
+        boleta_ids = [int(b) for b in form_data.getlist("boletas_fecha[]") if str(b).strip()]
+    except (ValueError, TypeError) as exc:
+        raise ValueError("Boleta(s) inválida(s) en la selección.") from exc
+    if not boleta_ids:
+        raise ValueError("Seleccione al menos una boleta del vendedor.")
+
+    if vendedor_id != VENDEDOR_LOCAL and not vendedores.find_one({"_id": vendedor_id}, {"_id": 1}):
+        raise ValueError(f"El vendedor {vendedor_id} no existe.")
+
+    docs = {d["_id"]: d for d in boletas.find({"_id": {"$in": boleta_ids}}, {"_id": 1, "vendedor_id": 1})}
+    ajenas = [b for b in boleta_ids if (docs.get(b) or {}).get("vendedor_id", "") != vendedor_id]
+    if ajenas:
+        ids_ajenas = ", ".join(f"#{b:04d}" for b in sorted(ajenas))
+        raise ValueError(f"No se pueden registrar fechas en boletas que no pertenecen a {vendedor_id}: {ids_ajenas}")
+    existentes = [b for b in boleta_ids if b in docs]
+    faltantes = len(boleta_ids) - len(existentes)
+
+    result = boletas.update_many(
+        {"_id": {"$in": existentes}, "vendedor_id": vendedor_id},
+        {"$set": {"fecha_adquisicion": fecha_raw}},
+    )
+    invalidate_dashboard_cache()
+    mensaje = f"Fecha de adquisición {fecha_raw} registrada en {result.modified_count} boleta(s) de {vendedor_id}."
+    if faltantes:
+        mensaje += f" {faltantes} no existían en la colección boletas."
+    flash(mensaje, "success")
 
 
 def register_routes(app: Flask) -> None:
@@ -256,6 +311,8 @@ def register_routes(app: Flask) -> None:
                     _procesar_quitar(vendedor_id, boleta_ids, perfil_update, valor_boleta)
                 elif operacion == "eliminar":
                     _procesar_eliminar(vendedor_id, valor_boleta)
+                elif operacion == "registrar_fecha_adquisicion":
+                    _procesar_registrar_fecha(vendedor_id, request.form)
             except Exception as exc:
                 flash(f"No se pudo aplicar la operaci\u00f3n del vendedor: {exc}", "danger")
                 return _render_vendedores(form_data)
@@ -278,6 +335,13 @@ def register_routes(app: Flask) -> None:
                     {"nombre": {"$regex": re.escape(q), "$options": "i"}},
                 ]
             docs = list(vendedores.find(query, {"nombre": 1, "telefono": 1}).sort("_id", 1).limit(20))
+            local_entry = {
+                "_id": VENDEDOR_LOCAL,
+                "nombre": VENDEDOR_LOCAL_LABEL,
+                "telefono": "",
+            }
+            if not q or VENDEDOR_LOCAL.lower() in q.lower() or VENDEDOR_LOCAL_LABEL.lower() in q.lower():
+                docs.insert(0, local_entry)
             return jsonify([{"_id": d["_id"], "nombre": d.get("nombre", ""), "telefono": d.get("telefono", "")} for d in docs])
         except Exception as exc:
             return jsonify({"ok": False, "error": safe_error_message(exc)}), 500
@@ -291,7 +355,7 @@ def register_routes(app: Flask) -> None:
             docs = list(
                 boletas.find(
                     {"vendedor_id": vendedor_id},
-                    {"_id": 1, "estado": 1, "total_abonado": 1, "cliente": 1},
+                    {"_id": 1, "estado": 1, "total_abonado": 1, "cliente": 1, "fecha_adquisicion": 1},
                 ).sort("_id", 1)
             )
             boletas_list = []
@@ -303,6 +367,7 @@ def register_routes(app: Flask) -> None:
                         "estado": d.get("estado", "disponible"),
                         "abonado": int(d.get("total_abonado", 0) or 0),
                         "cliente": cliente.get("nombre", ""),
+                        "fecha_adquisicion": d.get("fecha_adquisicion") or "",
                     }
                 )
             return jsonify({"ok": True, "total": len(boletas_list), "boletas": boletas_list})

@@ -9,7 +9,7 @@ from motores.cache import (
     GLOBAL_COUNTS_CACHE,
 )
 from motores.config_service import get_config, migrar_boletas_existentes, require_collections
-from motores.constants import METODO_EFECTIVO, METODO_TRANSFERENCIA, VENDEDOR_LOCAL
+from motores.constants import METODO_EFECTIVO, METODO_TRANSFERENCIA, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
 from motores.fechas import now_local
 
 
@@ -209,7 +209,7 @@ def get_dashboard_stats(force: bool = False) -> dict:
                 nombres[doc["_id"]] = doc.get("nombre", "")
         for item in ranking:
             item["nombre"] = nombres.get(
-                item["_id"], "Oficina local" if item["_id"] == VENDEDOR_LOCAL else "Sin registrar" if item["_id"] in ("", None) else ""
+                item["_id"], VENDEDOR_LOCAL_LABEL if item["_id"] == VENDEDOR_LOCAL else "Sin registrar" if item["_id"] in ("", None) else ""
             )
 
     recaudo_potencial = total_boletas * valor_boleta

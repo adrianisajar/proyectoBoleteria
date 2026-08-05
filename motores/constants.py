@@ -6,6 +6,7 @@ CONFIG_ID = "rifa"
 
 # ── Vendor ──
 VENDEDOR_LOCAL = "LOCAL"
+VENDEDOR_LOCAL_LABEL = "Local"
 VENDEDOR_SIN_ASIGNAR = ""
 
 # ── Payment ──
@@ -30,7 +31,7 @@ BOLETA_MIN = 0
 BOLETA_MAX = 9999
 
 # ── Vendor operations ──
-OPERACIONES_VENDEDOR = {"guardar", "asignar", "quitar", "eliminar"}
+OPERACIONES_VENDEDOR = {"guardar", "asignar", "quitar", "eliminar", "registrar_fecha_adquisicion"}
 
 # ── Query limits ──
 CONSULTA_LIMIT_DEFAULT = 50

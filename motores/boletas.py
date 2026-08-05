@@ -5,7 +5,7 @@ import re
 
 from flask import Flask, Response
 
-from motores.constants import BOLETA_MAX, BOLETA_MIN, VENDEDOR_LOCAL
+from motores.constants import BOLETA_MAX, BOLETA_MIN, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
 from motores.errores import safe_error_message
 from motores.shared import (
     boletas,
@@ -73,6 +73,7 @@ def register_routes(app: Flask) -> None:
                     "estado": 1,
                     "total_abonado": 1,
                     "historial_pagos": 1,
+                    "fecha_adquisicion": 1,
                 }
 
                 total_resultados = boletas.count_documents(query)
@@ -125,7 +126,7 @@ def register_routes(app: Flask) -> None:
         if vf == "__":
             vendedor_label = "Sin asignar"
         elif vf == VENDEDOR_LOCAL:
-            vendedor_label = "LOCAL"
+            vendedor_label = VENDEDOR_LOCAL_LABEL
         elif vf:
             for v in vendedor_options:
                 if v["_id"] == vf:
@@ -135,6 +136,7 @@ def register_routes(app: Flask) -> None:
                 vendedor_label = vf
 
         vendedor_nombres = {v["_id"]: v.get("nombre") or v["_id"] for v in vendedor_options}
+        vendedor_nombres[VENDEDOR_LOCAL] = VENDEDOR_LOCAL_LABEL
 
         return render_template(
             "inicio.html",
@@ -454,7 +456,7 @@ def register_routes(app: Flask) -> None:
             require_collections()
             doc = boletas.find_one(
                 {"_id": boleta_id},
-                {"_id": 1, "vendedor_id": 1, "cliente": 1, "estado": 1, "total_abonado": 1, "historial_pagos": 1},
+                {"_id": 1, "vendedor_id": 1, "cliente": 1, "estado": 1, "total_abonado": 1, "historial_pagos": 1, "fecha_adquisicion": 1},
             )
         except Exception as exc:
             return jsonify({"ok": False, "error": safe_error_message(exc)}), 500
@@ -479,6 +481,7 @@ def register_routes(app: Flask) -> None:
                 "vendedor_nombre": v_nombre,
                 "estado": doc.get("estado", ""),
                 "total_abonado": int(doc.get("total_abonado", 0) or 0),
+                "fecha_adquisicion": doc.get("fecha_adquisicion") or "",
                 "cliente": {
                     "nombre": cliente.get("nombre", ""),
                     "telefono": cliente.get("telefono", ""),

@@ -7,6 +7,7 @@ def crear_boleta_base(numero: int, rifa_id: object | None = None) -> dict:
         "estado": "disponible",
         "total_abonado": 0,
         "historial_pagos": [],
+        "fecha_adquisicion": None,
     }
     if rifa_id is not None:
         doc["rifa_id"] = rifa_id

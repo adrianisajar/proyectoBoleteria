@@ -6,7 +6,7 @@ from flask import Flask, Response
 from pymongo import UpdateOne
 from pymongo.errors import BulkWriteError
 
-from motores.constants import COMISION_DEFAULT_TIERS, METODO_EFECTIVO, METODO_TRANSFERENCIA, USUARIO_SISTEMA, VENDEDOR_LOCAL
+from motores.constants import COMISION_DEFAULT_TIERS, METODO_EFECTIVO, METODO_TRANSFERENCIA, USUARIO_SISTEMA, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
 from motores.facturacion_common import deduplicar_filas_boleta, validar_filas_transferencia, verificar_boletas_existen
 from motores.fechas import now_local
 from motores.shared import (
@@ -32,12 +32,20 @@ from motores.shared import (
 from motores.validacion import es_boleta_completa, parse_money
 
 
+def _vendedores_con_local() -> list[dict]:
+    """Return the vendor list (for selects/autocomplete) including the LOCAL system vendor."""
+    lista = list(vendedores.find().sort("_id", 1))
+    return [*[{"_id": VENDEDOR_LOCAL, "nombre": VENDEDOR_LOCAL_LABEL}], *lista]
+
+
 def _build_form_data(
     vendedor_id: str, fecha: str, boletas_raw: list[str], montos_raw: list[str], metodos: list[str], referencias: list[str], bancos: list[str]
 ) -> dict:
     """Build the vendor invoice form context from parallel POST lists."""
     v_nombre = ""
-    if vendedor_id:
+    if vendedor_id == VENDEDOR_LOCAL:
+        v_nombre = VENDEDOR_LOCAL_LABEL
+    elif vendedor_id:
         v = vendedores.find_one({"_id": vendedor_id}, {"nombre": 1})
         if v:
             v_nombre = v.get("nombre", vendedor_id)
@@ -66,7 +74,7 @@ def _build_form_data(
 def _render_vendedor_form(form_data: dict, vendedores_list: list | None = None) -> str:
     """Render the vendor invoice form with the given values for a re-render."""
     if vendedores_list is None:
-        vendedores_list = list(vendedores.find().sort("_id", 1))
+        vendedores_list = _vendedores_con_local()
     today = now_local().strftime("%Y-%m-%d")
     _cfg = get_config()
     _vb = int(_cfg.get("valor_boleta", 10000) or 10000)
@@ -91,7 +99,7 @@ def register_routes(app: Flask) -> None:
             bancos = request.form.getlist("banco[]")
 
             form_data = _build_form_data(vendedor_id, fecha, boletas_raw, montos_raw, metodos, referencias, bancos)
-            _vendedores_list = list(vendedores.find().sort("_id", 1))
+            _vendedores_list = _vendedores_con_local()
 
             if not vendedor_id:
                 flash("Debe seleccionar un vendedor.", "danger")
@@ -195,8 +203,12 @@ def register_routes(app: Flask) -> None:
                 valor_boleta = int(config["valor_boleta"])
 
                 v = vendedores.find_one({"_id": vendedor_id})
-                v_nombre = v.get("nombre", vendedor_id) if v else vendedor_id
-                v_telefono = v.get("telefono", "") if v else ""
+                if vendedor_id == VENDEDOR_LOCAL:
+                    v_nombre = VENDEDOR_LOCAL_LABEL
+                    v_telefono = ""
+                else:
+                    v_nombre = v.get("nombre", vendedor_id) if v else vendedor_id
+                    v_telefono = v.get("telefono", "") if v else ""
 
                 # ── 1. Crear factura "pendiente" antes de tocar las boletas ──
                 facturas.insert_one(
@@ -300,8 +312,12 @@ def register_routes(app: Flask) -> None:
                     }
                 )
                 total_vendidas = existing_vendidas + pagadas_en_lote
-                comision_por_boleta = calc_comision_por_boleta(total_vendidas, tiers)
-                total_comision = total_vendidas * comision_por_boleta
+                if vendedor_id == VENDEDOR_LOCAL:
+                    comision_por_boleta = 0
+                    total_comision = 0
+                else:
+                    comision_por_boleta = calc_comision_por_boleta(total_vendidas, tiers)
+                    total_comision = total_vendidas * comision_por_boleta
 
                 # ── 5. Construir detalle y finalizar factura ──
                 detalle = build_factura_detalle(boleta_ids, factura_id)
@@ -334,7 +350,7 @@ def register_routes(app: Flask) -> None:
                 flash(f"Error al generar la factura: {exc}", "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
-        vendedores_list = list(vendedores.find().sort("_id", 1))
+        vendedores_list = _vendedores_con_local()
         today = now_local().strftime("%Y-%m-%d")
         _cfg = get_config()
         _vb = int(_cfg.get("valor_boleta", 10000) or 10000)

@@ -44,13 +44,15 @@ def _procesar_rows_rapido(rows: list) -> dict:
         ops.append(
             UpdateOne(
                 {"_id": bid},
-                {
-                    "$set": {
-                        "cliente.nombre": nombre,
-                        "cliente.telefono": telefono,
-                        "cliente.direccion": direccion,
+                [
+                    {
+                        "$set": {
+                            "cliente.nombre": nombre,
+                            "cliente.telefono": telefono,
+                            "cliente.direccion": direccion,
+                        }
                     }
-                },
+                ],
             )
         )
         if nombre:
