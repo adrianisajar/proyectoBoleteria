@@ -1,4 +1,7 @@
-from database import boletas
+from conftest import _seed_once
+
+from database import boletas, rifas
+from motores.config_service import get_rifa_activa
 
 
 def test_health(client):
@@ -73,3 +76,28 @@ def test_404_renders_error_page(client):
     resp = client.get("/ruta/inexistente")
     assert resp.status_code == 404
     assert "Página no encontrada" in resp.get_data(as_text=True)
+
+
+def test_nueva_rifa_actualiza_parametros(client):
+    client.get("/configuracion")
+    with client.session_transaction() as s:
+        tok = s["_csrf_token"]
+    try:
+        resp = client.post(
+            "/rifas/nueva",
+            data={
+                "csrf_token": tok,
+                "nombre_rifa_nueva": "Rifa de prueba",
+                "valor_boleta_nueva": "50.000",
+                "cantidad_boletas": "8000",
+                "confirmacion": "NUEVA RIFA",
+            },
+        )
+        assert resp.status_code == 302
+        rifa = get_rifa_activa(force=True)
+        assert rifa["nombre"] == "Rifa de prueba"
+        assert rifa["valor_boleta"] == 50000
+        assert rifa["cantidad_boletas"] == 8000
+        assert rifas.count_documents({"estado": "activa"}) == 1
+    finally:
+        _seed_once()

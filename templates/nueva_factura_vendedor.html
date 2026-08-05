@@ -380,22 +380,6 @@
                 });
             }
 
-            const refCount = {};
-            transferRows.forEach(function(r) {
-                if (!r.referencia) return;
-                refCount[r.referencia] = (refCount[r.referencia] || 0) + 1;
-            });
-            var dupRefs = Object.keys(refCount).filter(function(k) { return refCount[k] > 1; });
-            if (dupRefs.length) {
-                hasErrors = true;
-                transferRows.forEach(function(r) {
-                    if (r.referencia && dupRefs.indexOf(r.referencia) !== -1) {
-                        var el = r.element.querySelector(".ref-errors");
-                        if (el) el.innerHTML = '<i class="bi bi-x-circle me-1"></i>La referencia "' + r.referencia + '" est\u00e1 duplicada en esta factura.';
-                    }
-                });
-            }
-
             var apiRows = transferRows.map(function(r) {
                 return { metodo: "transferencia", referencia: r.referencia, banco: r.banco };
             });

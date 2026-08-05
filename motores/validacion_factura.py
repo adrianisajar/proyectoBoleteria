@@ -188,23 +188,6 @@ def _verificar_boletas_en_db(filas: list[dict], resultados: list[dict], tipo: st
                 res["boletas"].append(f"#{num:04d} pertenece a {v_nombre or 'sin asignar'} y no a este vendedor.")
 
 
-def _referencias_duplicadas_en_form(filas: list[dict], resultados: list[dict]) -> None:
-    """Detect the same reference used twice in the same form."""
-    conteo = Counter()
-    for fila in filas:
-        if _normalizar_metodo(fila.get("metodo", "")) == METODO_TRANSFERENCIA:
-            ref = (fila.get("referencia") or "").strip()
-            if ref:
-                conteo[ref] += 1
-    repetidas = {ref for ref, count in conteo.items() if count > 1}
-    if not repetidas:
-        return
-    for fila, res in zip(filas, resultados, strict=False):
-        ref = (fila.get("referencia") or "").strip()
-        if ref in repetidas and not res["referencia"]:
-            res["referencia"].append(f"La referencia '{ref}' est\u00e1 repetida en esta factura.")
-
-
 def validar_factura(payload: dict) -> dict:
     """Validate a full invoice form without writing.
 
@@ -244,8 +227,6 @@ def validar_factura(payload: dict) -> dict:
         _validar_fecha(payload.get("fecha", ""), campo_errores)
         resultados = _validar_filas_cliente(filas, valor_boleta, campo_errores, duplicados)
         _verificar_boletas_en_db(filas, resultados, "cliente", duplicados=duplicados)
-
-    _referencias_duplicadas_en_form(filas, resultados)
 
     if not any(fila.get("boletas", "").strip() for fila in filas):
         campo_errores.setdefault("boletas", []).append("Ingrese al menos una boleta.")

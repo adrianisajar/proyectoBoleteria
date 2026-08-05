@@ -41,6 +41,7 @@ def crear_nueva_rifa(
     configuracion.update_one({"_id": CONFIG_ID}, {"$set": {"factura_counter": 0}})
 
     boletas.delete_many({})
+    rifas.delete_many({})
     rifa_doc = {
         "nombre": nombre,
         "anio": now_local().year,
@@ -65,8 +66,6 @@ def crear_nueva_rifa(
         vendedores.delete_many({})
 
     crear_indices_boletas()
-
-    rifas.delete_many({"estado": {"$ne": "activa"}})
 
     update = {
         "nombre_rifa": nombre,

@@ -179,6 +179,24 @@ def test_validar_factura_vendedor_ok_local(client):
     assert data["total_errores"] == 0
 
 
+def test_validar_factura_referencia_repetida_en_misma_factura_ok(client):
+    resp = _validar(
+        client,
+        {
+            "tipo": "cliente",
+            "nombre": "JUAN PEREZ",
+            "fecha": "2026-07-30",
+            "filas": [
+                {"boletas": "0010", "monto": "30000", "metodo": "transferencia", "referencia": "REF-DUP", "banco": "BANCOLOMBIA"},
+                {"boletas": "0011", "monto": "20000", "metodo": "transferencia", "referencia": "REF-DUP", "banco": "BANCOLOMBIA"},
+            ],
+        },
+    )
+    data = resp.get_json()
+    assert data["can_submit"] is True
+    assert data["total_errores"] == 0
+
+
 def test_validar_factura_vendedor_monto_multiplica(client):
     resp = _validar(
         client,
