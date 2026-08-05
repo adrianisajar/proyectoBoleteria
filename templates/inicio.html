@@ -154,6 +154,7 @@
         <div class="col-sm-6 col-lg-2">
             <label for="limite" class="form-label fw-semibold">Límite</label>
             <select class="form-select" id="limite" name="limite">
+                <option value="0" {% if limite == 0 %}selected{% endif %}>Todo</option>
                 <option value="50" {% if limite == 50 %}selected{% endif %}>50</option>
                 <option value="100" {% if limite == 100 %}selected{% endif %}>100</option>
                 <option value="200" {% if limite == 200 %}selected{% endif %}>200</option>
@@ -172,7 +173,7 @@
     </form>
 </div>
 
-<div id="resultados" class="office-card bg-body overflow-hidden mb-4"{% if not has_filters %} style="display:none"{% endif %}>
+<div id="resultados" class="office-card bg-body overflow-hidden mb-4">
     <div class="p-3 p-md-4 border-bottom d-flex flex-column flex-md-row justify-content-between gap-2">
         <div>
             <h2 class="h5 mb-0">Resultados</h2>
@@ -462,7 +463,7 @@
 {% endblock %}
 
 {% block scripts %}
-{% if total_resultados > 0 %}
+{% if has_filters and total_resultados > 0 %}
 <script>
     (function() {
         var el = document.getElementById("resultados");

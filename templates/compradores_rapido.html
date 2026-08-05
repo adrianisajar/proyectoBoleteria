@@ -238,6 +238,20 @@ function onKeyNav(e) {
   const idx = inputs.indexOf(e.target);
   if (idx < 0) return;
 
+  if (e.key === ",") {
+    e.preventDefault();
+    if (idx < inputs.length - 1) {
+      inputs[idx + 1].focus();
+    } else {
+      const nextTr = tr.nextElementSibling;
+      if (nextTr) {
+        const ni = nextTr.querySelectorAll("input");
+        if (ni.length) ni[0].focus();
+      }
+    }
+    return;
+  }
+
   if (e.key === "Enter") {
     e.preventDefault();
     const nextTr = tr.nextElementSibling;

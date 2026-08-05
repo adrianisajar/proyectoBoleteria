@@ -5,7 +5,7 @@ import re
 
 from flask import Flask, Response
 
-from motores.constants import BOLETA_MAX, BOLETA_MIN, CONSULTA_LIMIT_MAX, VENDEDOR_LOCAL
+from motores.constants import BOLETA_MAX, BOLETA_MIN, VENDEDOR_LOCAL
 from motores.errores import safe_error_message
 from motores.shared import (
     boletas,
@@ -86,7 +86,7 @@ def register_routes(app: Flask) -> None:
             except Exception as exc:
                 flash(f"No se pudo ejecutar la consulta: {exc}", "danger")
 
-        total_pages = max(1, (total_resultados + limite - 1) // limite)
+        total_pages = 1 if limite == 0 else max(1, (total_resultados + limite - 1) // limite)
         if page > total_pages and total_resultados:
             return redirect(build_page_url("consultas", filters, total_pages))
 
@@ -174,7 +174,7 @@ def register_routes(app: Flask) -> None:
         try:
             require_collections()
             projection = {"_id": 1, "vendedor_id": 1, "cliente": 1, "estado": 1, "total_abonado": 1, "historial_pagos": 1}
-            docs = list(boletas.find(query, projection).sort("_id", 1).limit(CONSULTA_LIMIT_MAX))
+            docs = list(boletas.find(query, projection).sort("_id", 1))
 
             output = io.StringIO()
             writer = csv.writer(output, delimiter=";")

@@ -41,7 +41,7 @@ def build_consulta_context(args: dict) -> dict:
     numero_query, numero_exacto = ticket_number_query(filters["numero"], errors)
     desde = parse_int_filter(filters["desde"], "Desde", errors, BOLETA_MIN, BOLETA_MAX)
     hasta = parse_int_filter(filters["hasta"], "Hasta", errors, BOLETA_MIN, BOLETA_MAX)
-    limite = parse_int_filter(filters["limite"], "Límite", errors, 1, CONSULTA_LIMIT_MAX) or CONSULTA_LIMIT_DEFAULT
+    limite = 0 if filters["limite"] in ("0", "todo") else parse_int_filter(filters["limite"], "Límite", errors, 1, CONSULTA_LIMIT_MAX) or CONSULTA_LIMIT_DEFAULT
 
     if filters["estado"]:
         if filters["estado"] in ESTADOS_BOLETA:
