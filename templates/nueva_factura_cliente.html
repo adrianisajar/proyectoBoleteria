@@ -194,7 +194,7 @@
 
         filas.forEach(function(f) {
             const raw = f.querySelector(".boleta-input").value.trim();
-            if (!/^\d{1,4}$/.test(raw)) return;
+            if (!/^\d{4}$/.test(raw)) return;
             hayDatos = true;
             const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
             items.push({ boleta: parseInt(raw), monto: monto });
@@ -246,7 +246,7 @@
         let tickets = 0;
         filas.forEach(function(f) {
             const val = f.querySelector(".boleta-input").value.trim();
-            if (val) tickets++;
+            if (/^\d{4}$/.test(val)) tickets++;
             const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
             total += monto;
         });
@@ -322,7 +322,7 @@
             warningsEl.innerHTML = "";
             infoEl.textContent = "";
 
-            if (!/^\d{1,4}$/.test(raw)) continue;
+            if (!/^\d{4}$/.test(raw)) continue;
 
             const num = parseInt(raw);
             const result = await verificarBoleta(num);
@@ -450,7 +450,7 @@
         const items = [];
         filas.forEach(function(f) {
             const raw = f.querySelector(".boleta-input").value.trim();
-            if (!/^\d{1,4}$/.test(raw)) return;
+            if (!/^\d{4}$/.test(raw)) return;
             const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
             items.push({ boleta: parseInt(raw), monto: monto });
         });
@@ -534,7 +534,7 @@
         const filas = abonosBody.querySelectorAll(".fila-abono");
         let hasTicket = false;
         filas.forEach(function(f) {
-            if (/^\d{1,4}$/.test(f.querySelector(".boleta-input").value.trim())) hasTicket = true;
+            if (/^\d{4}$/.test(f.querySelector(".boleta-input").value.trim())) hasTicket = true;
         });
         if (!hasTicket) {
             e.preventDefault();

@@ -78,6 +78,15 @@ def test_factura_vendedor_boleta_duplicada_en_fila_rechazada(client):
     assert facturas.count_documents({"tipo": "vendedor"}) == 0
 
 
+def test_factura_vendedor_boleta_incompleta_rechazada(client):
+    _crear_vendedor_con_boletas(ids=(1,))
+    resp = _post_factura(client, "VEND01", ["0"], ["30000"])
+    assert resp.status_code == 200
+    assert "4 d\u00edgitos" in resp.get_data(as_text=True)
+    assert facturas.count_documents({"tipo": "vendedor"}) == 0
+    assert boletas.find_one({"_id": 0}) is None or boletas.find_one({"_id": 0})["total_abonado"] == 0
+
+
 def test_factura_vendedor_sin_vendedor(client):
     resp = _post_factura(client, "", ["0001"], ["70000"])
     assert resp.status_code == 200

@@ -29,7 +29,7 @@ from motores.shared import (
     url_for,
     vendedores,
 )
-from motores.validacion import parse_money
+from motores.validacion import es_boleta_completa, parse_money
 
 
 def _build_form_data(
@@ -114,7 +114,12 @@ def register_routes(app: Flask) -> None:
             errors = []
             rows = []
             for i in range(len(boletas_raw)):
-                parts = [p.strip() for p in re.split(r"[\s,;]+", boletas_raw[i]) if p.strip().isdigit()]
+                tokens = [p.strip() for p in re.split(r"[\s,;]+", boletas_raw[i]) if p.strip()]
+                incompletas = [t for t in tokens if not es_boleta_completa(t)]
+                parts = [t for t in tokens if es_boleta_completa(t)]
+                if incompletas:
+                    errors.append(f"Boleta(s) con formato inv\u00e1lido (escriba los 4 d\u00edgitos): {', '.join(incompletas[:8])}.")
+                    continue
                 if not parts:
                     continue
                 m = parse_money(montos_raw[i]) if i < len(montos_raw) else 0

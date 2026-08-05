@@ -24,7 +24,7 @@ from motores.shared import (
     rollback_pagos_por_factura,
     url_for,
 )
-from motores.validacion import parse_money
+from motores.validacion import es_boleta_completa, parse_money
 
 
 def _build_cliente_form_rows(boletas_raw: list[str], montos_raw: list[str], metodos: list[str], referencias: list[str], bancos: list[str]) -> list[dict]:
@@ -118,8 +118,8 @@ def register_routes(app: Flask) -> None:
                 except (ValueError, TypeError):
                     errors.append(f"'{raw}' no es un n\u00famero de boleta v\u00e1lido.")
                     continue
-                if num < 0 or num > 9999:
-                    errors.append(f"#{num:04d} est\u00e1 fuera del rango 0000-9999.")
+                if not es_boleta_completa(raw):
+                    errors.append(f"'{raw}' no es una boleta v\u00e1lida: escriba los 4 d\u00edgitos (0000-9999).")
                     continue
                 m = parse_money(montos_raw[i]) if i < len(montos_raw) else 0
                 if m > _vb_cliente:

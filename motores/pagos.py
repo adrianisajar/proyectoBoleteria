@@ -22,7 +22,7 @@ from motores.shared import (
     url_for,
     vendedores,
 )
-from motores.validacion import parse_boletas, sanitizar_texto
+from motores.validacion import boletas_incompletas, parse_boletas, sanitizar_texto
 
 
 def _actualizar_estado_boletas(filtro: dict, nuevo_vendedor_id: str, valor_boleta: int) -> None:
@@ -64,6 +64,9 @@ def _validar_form_vendedor(form_data: dict) -> tuple[str, list[int], list[str]]:
         boleta_ids, invalid, out_of_range = parse_boletas(form_data["boletas"])
         if invalid:
             errors.append("Hay entradas no num\u00e9ricas: " + ", ".join(invalid[:8]))
+        if boletas_incompletas(form_data["boletas"]):
+            incompletas = boletas_incompletas(form_data["boletas"])
+            errors.append("Hay boletas incompletas, escribe los 4 d\u00edgitos: " + ", ".join(incompletas[:8]))
         if out_of_range:
             errors.append("Hay boletas fuera del rango 0000-9999: " + ", ".join(out_of_range[:8]))
         if not boleta_ids:

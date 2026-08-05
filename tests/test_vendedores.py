@@ -67,6 +67,16 @@ def test_quitar_boletas(client):
     assert b1["estado"] == "disponible"
 
 
+def test_asignar_boletas_incompletas_rechazadas(client):
+    _guardar_vendedor(client)
+    resp = _asignar(client, "VENDEDOR_UNO", "0001, 42")
+    assert resp.status_code == 200
+    b1 = boletas.find_one({"_id": 1})
+    assert b1["vendedor_id"] == ""
+    v = vendedores.find_one({"_id": "VENDEDOR_UNO"})
+    assert v["boletas_asignadas"] == []
+
+
 def test_asignar_con_pagos_rechazado(client):
     boletas.update_one(
         {"_id": 5},

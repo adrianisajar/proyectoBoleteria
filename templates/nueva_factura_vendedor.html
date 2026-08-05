@@ -282,14 +282,14 @@
             };
             filas.forEach(function(f) {
                 const raw = f.querySelector(".boleta-input").value;
-                const parts = raw.split(/[\s,;]+/).filter(function(p) { return /^\d{1,4}$/.test(p.trim()); });
+                const parts = raw.split(/[\s,;]+/).filter(function(p) { return /^\d{4}$/.test(p.trim()); });
                 parts.forEach(function(p) { colectarDuplicados(parseInt(p)); });
             });
             const numerosDuplicados = Object.keys(conteoBoletas).filter(function(k) { return conteoBoletas[k] > 1; });
 
             for (const f of filas) {
                 const raw = f.querySelector(".boleta-input").value;
-                const parts = raw.split(/[\s,;]+/).filter(function(p) { return /^\d{1,4}$/.test(p.trim()); });
+                const parts = raw.split(/[\s,;]+/).filter(function(p) { return /^\d{4}$/.test(p.trim()); });
                 const warningsEl = f.querySelector(".boleta-warnings");
                 const infoEl = f.querySelector(".boleta-info");
                 warningsEl.innerHTML = "";
@@ -441,7 +441,7 @@
 
             filas.forEach(function(f) {
                 const raw = f.querySelector(".boleta-input").value;
-                const parts = raw.split(/[\s,;]+/).filter(function(p) { return /^\d{1,4}$/.test(p.trim()); });
+                const parts = raw.split(/[\s,;]+/).filter(function(p) { return /^\d{4}$/.test(p.trim()); });
                 if (!parts.length) return;
                 const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
                 const metodo = f.querySelector("select[name='metodo[]']").value;
@@ -772,7 +772,7 @@
             let totalTickets = 0;
             filas.forEach(function(f) {
                 const raw = f.querySelector(".boleta-input").value;
-                const parts = raw.split(/[\s,;]+/).filter(function(p) { return p.trim() !== "" && /^\d{1,4}$/.test(p.trim()); });
+                const parts = raw.split(/[\s,;]+/).filter(function(p) { return p.trim() !== "" && /^\d{4}$/.test(p.trim()); });
                 const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
                 totalTickets += parts.length;
                 parts.forEach(function(p) {

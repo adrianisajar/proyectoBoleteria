@@ -308,7 +308,7 @@
 
         const getUniqueNumbers = () => {
             const partes = boletas.value.trim().split(/[\s,;]+/).filter(Boolean);
-            return new Set(partes.filter((item) => /^\d+$/.test(item)).map((item) => Number(item)));
+            return new Set(partes.filter((item) => /^\d{4}$/.test(item)).map((item) => Number(item)));
         };
 
         const actualizarContador = () => {
@@ -534,8 +534,12 @@
                 if (getUniqueNumbers().size) errors.push("Seleccione una operaci\u00f3n primero.");
             } else if (necesitaBoletas(op)) {
                 const nums = [...getUniqueNumbers()];
+                const incompletas = boletas.value.trim().split(/[\s,;]+/).filter(function(p) { return /^\d+$/.test(p) && p.length < 4; });
+                if (incompletas.length) {
+                    errors.push("Boletas incompletas, escribe los 4 d\u00edgitos: " + incompletas.join(", "));
+                }
                 if (!nums.length) {
-                    errors.push("Ingrese al menos una boleta para esta operaci\u00f3n.");
+                    if (!incompletas.length) errors.push("Ingrese al menos una boleta para esta operaci\u00f3n.");
                 } else {
                     const invalidos = nums.filter(function(n) { return n < 0 || n > 9999; });
                     if (invalidos.length) {

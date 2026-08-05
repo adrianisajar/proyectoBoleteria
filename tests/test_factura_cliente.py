@@ -73,6 +73,13 @@ def test_factura_cliente_boleta_inexistente(client):
     assert facturas.count_documents({}) == 0
 
 
+def test_factura_cliente_boleta_incompleta_rechazada(client):
+    resp = _post_factura(client, ["0"], ["70000"])
+    assert resp.status_code == 200
+    assert facturas.count_documents({}) == 0
+    assert "4 d\u00edgitos" in resp.get_data(as_text=True)
+
+
 def test_factura_cliente_fecha_futura(client):
     resp = _post_factura(client, ["0010"], ["70000"], fecha="2099-01-01")
     assert resp.status_code == 200

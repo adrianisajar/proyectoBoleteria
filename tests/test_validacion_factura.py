@@ -70,6 +70,36 @@ def test_validar_factura_boleta_inexistente(client):
     assert any("#9999 no existe." in e for e in data["filas"][0]["boletas"])
 
 
+def test_validar_factura_boleta_incompleta_rechazada(client):
+    resp = _validar(
+        client,
+        {
+            "tipo": "cliente",
+            "nombre": "JUAN PEREZ",
+            "fecha": "2026-07-30",
+            "filas": [{"boletas": "0", "monto": "30000", "metodo": "efectivo"}],
+        },
+    )
+    data = resp.get_json()
+    assert data["can_submit"] is False
+    assert any("4 d\u00edgitos" in e for e in data["filas"][0]["boletas"])
+
+
+def test_validar_factura_vendedor_boleta_incompleta_rechazada(client):
+    resp = _validar(
+        client,
+        {
+            "tipo": "vendedor",
+            "vendedor_id": "LOCAL",
+            "fecha": "2026-07-30",
+            "filas": [{"boletas": "0010, 42", "monto": "30000", "metodo": "efectivo"}],
+        },
+    )
+    data = resp.get_json()
+    assert data["can_submit"] is False
+    assert any("4 d\u00edgitos" in e for r in data["filas"] for e in r["boletas"])
+
+
 def test_validar_factura_boleta_duplicada(client):
     resp = _validar(
         client,

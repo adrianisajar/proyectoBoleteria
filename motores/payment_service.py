@@ -15,7 +15,7 @@ from motores.constants import (
 )
 from motores.fechas import now_local
 from motores.ticket_service import estado_para_total, estado_pipeline_expr
-from motores.validacion import parse_boletas_detailed, parse_money
+from motores.validacion import boletas_incompletas, parse_boletas_detailed, parse_money
 
 
 def buscar_transferencia_duplicada(ref: str, banco: str = "", exclude_factura_id: int | None = None) -> dict | None:
@@ -79,6 +79,9 @@ def validar_form_abono(form: dict) -> tuple[dict, int, list[int], list[int], lis
     boleta_ids, invalid, out_of_range, duplicadas = parse_boletas_detailed(form_data["boletas"])
     if invalid:
         errors.append("Hay entradas no num\u00e9ricas: " + ", ".join(invalid[:8]))
+    incompletas = boletas_incompletas(form_data["boletas"])
+    if incompletas:
+        errors.append("Hay boletas incompletas, escribe los 4 d\u00edgitos: " + ", ".join(incompletas[:8]))
     if out_of_range:
         errors.append("Hay boletas fuera del rango 0000-9999: " + ", ".join(out_of_range[:8]))
     if not boleta_ids:

@@ -22,6 +22,17 @@ def sanitizar_texto(value: str | None, modo: str = "numbers", max_len: int | Non
     return (value or "").strip()
 
 
+def es_boleta_completa(token: str) -> bool:
+    """True if token is a complete boleta number (exactly 4 digits within 0000-9999)."""
+    return len(token) == 4 and token.isdigit() and BOLETA_MIN <= int(token) <= BOLETA_MAX
+
+
+def boletas_incompletas(raw_numbers: str) -> list[str]:
+    """Return digit tokens shorter than 4 chars (incomplete boleta numbers)."""
+    parts = [part for part in re.split(r"[\s,;]+", (raw_numbers or "").strip()) if part]
+    return [part for part in parts if part.isdigit() and len(part) < 4]
+
+
 def parse_int_filter(value: str, field_name: str, errors: list, min_value: int | None = None, max_value: int | None = None) -> int | None:
     """Parse an integer filter value, appending validation errors as needed."""
     if value == "":
