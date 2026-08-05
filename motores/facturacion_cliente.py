@@ -9,6 +9,7 @@ from motores.fechas import now_local
 from motores.shared import (
     boletas,
     build_abono_preview,
+    build_boletas_info_snapshot,
     build_factura_detalle,
     estado_pipeline_expr,
     facturas,
@@ -219,6 +220,7 @@ def register_routes(app: Flask) -> None:
                     [{"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}}],
                 )
 
+                factura["boletas_info"] = build_boletas_info_snapshot(boleta_ids, valor_boleta_local)
                 facturas.insert_one(factura)
 
                 flash(f"Factura de cliente generada con {len(boleta_ids)} boleta(s).", "success")

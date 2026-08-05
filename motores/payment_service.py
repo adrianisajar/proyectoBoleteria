@@ -3,7 +3,7 @@ from datetime import datetime
 from flask import current_app
 from pymongo.results import BulkWriteResult
 
-from database import boletas, configuracion, facturas
+from database import boletas, configuracion, facturas, vendedores
 from motores.auth import current_user
 from motores.cache import invalidate_dashboard_cache
 from motores.config_service import get_config, require_collections
@@ -12,6 +12,7 @@ from motores.constants import (
     METODO_TRANSFERENCIA,
     METODOS_PAGO,
     USUARIO_SISTEMA,
+    VENDEDOR_LOCAL,
 )
 from motores.fechas import now_local
 from motores.ticket_service import estado_para_total, estado_pipeline_expr
@@ -47,6 +48,31 @@ def build_factura_detalle(boleta_ids: list[int], factura_id: int) -> list[dict]:
                     entry["banco"] = pago["banco"]
                 detalle.append(entry)
     return detalle
+
+
+def build_boletas_info_snapshot(boleta_ids: list[int], valor_boleta: int) -> dict:
+    """Build static per-ticket receipt info for a cliente invoice (creation/backfill only).
+
+    Only certifies what the receipt needs: ticket value and vendor. Ticket state
+    (total, saldo, estado) belongs to the ticket, not to the receipt.
+    """
+    docs = list(boletas.find({"_id": {"$in": boleta_ids}}))
+    vendedores_vistos = {d.get("vendedor_id") for d in docs if d.get("vendedor_id") and d.get("vendedor_id") != VENDEDOR_LOCAL}
+    vid_cache: dict = {}
+    if vendedores_vistos:
+        for v in vendedores.find({"_id": {"$in": list(vendedores_vistos)}}, {"nombre": 1}):
+            vid_cache[v["_id"]] = v.get("nombre", v["_id"])
+
+    info = {}
+    for doc in docs:
+        bid = doc["_id"]
+        vendedor_id = doc.get("vendedor_id", VENDEDOR_LOCAL) or VENDEDOR_LOCAL
+        info[str(bid)] = {
+            "valor_boleta": valor_boleta,
+            "vendedor_id": vendedor_id,
+            "vendedor_nombre": vid_cache.get(vendedor_id, VENDEDOR_LOCAL),
+        }
+    return info
 
 
 def validar_form_abono(form: dict) -> tuple[dict, int, list[int], list[int], list[str]]:

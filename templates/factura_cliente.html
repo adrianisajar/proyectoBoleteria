@@ -152,9 +152,6 @@
         {% if p.get("referencia") %}<div class="recibo-mov-line"><span class="recibo-label">Referencia</span> {{ p.referencia }}</div>{% endif %}
       {% endif %}
       {% endfor %}
-      <div class="recibo-mov-line"><span class="recibo-label">Total abonado</span><span>${{ "{:,}".format(info.get("total_abonado", 0)) }}</span></div>
-      <div class="recibo-mov-line"><span class="recibo-label">Saldo pendiente</span><span>${{ "{:,}".format(info.get("saldo_pendiente", 0)) }}</span></div>
-      <div class="recibo-mov-line" style="font-size:0.7rem;"><span class="recibo-label">Estado</span><span>{{ info.get("estado", "disponible") | capitalize }}</span></div>
     </div>
 
   </div>
@@ -162,7 +159,7 @@
   {% endfor %}
 
   <div class="recibo-total">
-    <div class="recibo-mov-line"><span>Total pagado</span><span>${{ "{:,}".format(ns.total) }}</span></div>
+    <div class="recibo-mov-line"><span>Total</span><span>${{ "{:,}".format(ns.total) }}</span></div>
   </div>
 
   <div class="recibo-footer">

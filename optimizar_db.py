@@ -1,4 +1,6 @@
 from database import boletas, configuracion, facturas, rifas, vendedores
+from motores.config_service import get_config
+from motores.payment_service import build_boletas_info_snapshot
 
 # Required indexes per collection: list of (key_spec, name)
 # key_spec is a dict ({"campo": 1|-1}) or a plain string field name.
@@ -100,9 +102,29 @@ def verificar_indices(crear: bool = True) -> bool:
     return True
 
 
+def backfill_boletas_info() -> int:
+    """Add static boletas_info snapshots to legacy cliente invoices missing them."""
+    config = get_config()
+    valor_boleta = int(config.get("valor_boleta", 10000) or 10000)
+    count = 0
+    cursor = facturas.find({"tipo": "cliente", "boletas_info": {"$exists": False}})
+    for factura in cursor:
+        try:
+            snapshot = build_boletas_info_snapshot(factura.get("boletas", []), valor_boleta)
+            facturas.update_one({"_id": factura["_id"]}, {"$set": {"boletas_info": snapshot}})
+            count += 1
+            print(f"[+SNAPSHOT] factura {factura['_id']}: {len(snapshot)} boleta(s).")
+        except Exception as exc:
+            print(f"[ERROR] factura {factura['_id']}: {exc}")
+    return count
+
+
 if __name__ == "__main__":
     ok = verificar_indices()
     if ok:
         print("Optimización de índices completada correctamente.")
+        backfilled = backfill_boletas_info()
+        if backfilled:
+            print(f"Snapshots boletas_info generados para {backfilled} factura(s) de cliente.")
     else:
         raise SystemExit(1)

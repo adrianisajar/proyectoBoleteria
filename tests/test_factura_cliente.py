@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime
 
 from app import app as flask_app
 from database import boletas, configuracion, facturas
@@ -141,6 +142,81 @@ def test_ver_factura_cliente_renders(client):
     f = facturas.find_one({"tipo": "cliente"})
     resp = client.get(f"/facturas/{f['_id']}")
     assert resp.status_code == 200
+
+
+def test_factura_cliente_almacena_snapshot_boletas_info(client):
+    resp = _post_factura(client, ["0010"], ["30000"])
+    assert resp.status_code == 302
+    f = facturas.find_one({"tipo": "cliente"})
+    info = f["boletas_info"]["10"]
+    assert info["valor_boleta"] == 70000
+    assert info["vendedor_id"] == "LOCAL"
+    assert "total_abonado" not in info
+    assert "saldo_pendiente" not in info
+    assert "estado" not in info
+
+
+def test_ver_factura_cliente_estatica_pese_a_pagos_nuevos(client):
+    _post_factura(client, ["0010"], ["70000"])
+    f = facturas.find_one({"tipo": "cliente"})
+    fid = f["_id"]
+
+    boletas.update_one(
+        {"_id": 10},
+        {
+            "$set": {
+                "historial_pagos": [
+                    {"fecha": "2026-07-30", "valor": 70000, "metodo": "efectivo", "factura_id": fid},
+                    {"fecha": "2026-07-29", "valor": 70000, "metodo": "efectivo"},
+                ],
+                "total_abonado": 140000,
+                "estado": "pagada",
+            }
+        },
+    )
+
+    resp = client.get(f"/facturas/{fid}")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "70,000" in html
+    assert "140,000" not in html
+    stored = facturas.find_one({"_id": fid})
+    assert "total_abonado" not in stored["boletas_info"]["10"]
+    assert stored["valor_total"] == 70000
+
+
+def test_ver_factura_legacy_sin_snapshot_se_respalda(client):
+    boletas.update_one(
+        {"_id": 30},
+        {
+            "$set": {
+                "vendedor_id": "LOCAL",
+                "total_abonado": 70000,
+                "estado": "pagada",
+                "historial_pagos": [{"fecha": "2026-07-01", "valor": 70000, "metodo": "efectivo", "factura_id": 77}],
+            }
+        },
+    )
+    facturas.insert_one(
+        {
+            "_id": 77,
+            "tipo": "cliente",
+            "fecha": datetime(2026, 7, 1),
+            "boletas": [30],
+            "detalle": [{"boleta": 30, "fecha": "2026-07-01", "valor": 70000, "metodo": "efectivo"}],
+            "valor_total": 70000,
+            "cliente": {"nombre": "LEGACY", "telefono": "", "direccion": ""},
+            "vendedor_id": "LOCAL",
+            "vendedor_nombre": "LOCAL",
+        }
+    )
+
+    resp = client.get("/facturas/77")
+    assert resp.status_code == 200
+    f = facturas.find_one({"_id": 77})
+    assert f["boletas_info"]["30"]["valor_boleta"] == 70000
+    assert f["boletas_info"]["30"]["vendedor_id"] == "LOCAL"
+    assert "total_abonado" not in f["boletas_info"]["30"]
 
 
 def test_anular_factura_cliente(client):

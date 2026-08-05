@@ -5,13 +5,12 @@ from datetime import datetime
 
 from flask import Flask, Response, current_app
 
-from motores.constants import METODO_TRANSFERENCIA, USUARIO_SISTEMA, VENDEDOR_LOCAL
+from motores.constants import METODO_TRANSFERENCIA, USUARIO_SISTEMA
 from motores.fechas import now_local
 from motores.shared import (
     abort,
-    boletas,
+    build_boletas_info_snapshot,
     current_user,
-    estado_para_total,
     facturas,
     flash,
     get_config,
@@ -24,7 +23,6 @@ from motores.shared import (
     role_required,
     rollback_pagos_por_factura,
     url_for,
-    vendedores,
 )
 from motores.validacion_factura import validar_factura
 
@@ -92,44 +90,17 @@ def register_routes(app: Flask) -> None:
                 factura["fecha_display"] = fecha_f.strftime("%d/%m/%Y %I:%M %p")
 
         if factura.get("tipo") == "cliente":
-            boletas_ids = factura.get("boletas", [])
-            docs = list(boletas.find({"_id": {"$in": boletas_ids}}))
-            config = ctx["config"]
-            valor_boleta = int(config.get("valor_boleta", 10000))
-            boletas_info = {}
-            vendedores_vistos = {doc.get("vendedor_id") for doc in docs if doc.get("vendedor_id") and doc.get("vendedor_id") != VENDEDOR_LOCAL}
-            vid_cache = {}
-            if vendedores_vistos:
-                for v in vendedores.find({"_id": {"$in": list(vendedores_vistos)}}, {"nombre": 1}):
-                    vid_cache[v["_id"]] = v.get("nombre", v["_id"])
-            for doc in docs:
-                bid = doc["_id"]
-                historial_completo = doc.get("historial_pagos") or []
-                # Pagos hasta la fecha de la factura: filtramos por fecha del pago <= fecha de la factura
-                # Y adem�s por factura_id para resolver el orden dentro del mismo d�a
-                fecha_factura_str = factura["fecha"].strftime("%Y-%m-%d") if isinstance(factura["fecha"], datetime) else str(factura["fecha"])[:10]
-                historial_hasta_factura = [
-                    p
-                    for p in historial_completo
-                    if (p.get("factura_id") is None or p.get("factura_id", 0) <= factura_id) and str(p.get("fecha", ""))[:10] <= fecha_factura_str
-                ]
-                # Pagos de esta factura (para tabla "PAGOS DE ESTA FACTURA")
-                historial_esta_factura = [p for p in historial_hasta_factura if p.get("factura_id") == factura_id]
-                total_hasta_factura = sum(int(p.get("valor", 0) or 0) for p in historial_hasta_factura)
-                saldo_hasta_factura = max(valor_boleta - total_hasta_factura, 0)
-                estado_historico = estado_para_total(total_hasta_factura, valor_boleta, None, doc.get("vendedor_id"))
-
-                boletas_info[bid] = {
-                    "total_abonado": total_hasta_factura,
-                    "saldo_pendiente": saldo_hasta_factura,
-                    "estado": estado_historico,
-                    "valor_boleta": valor_boleta,
-                    "vendedor_id": doc.get("vendedor_id", "LOCAL"),
-                    "vendedor_nombre": vid_cache.get(doc.get("vendedor_id", "LOCAL"), "LOCAL"),
-                    "historial_pagos": historial_hasta_factura,
-                    "pagos_factura": historial_esta_factura,
-                }
-            ctx["boletas_info"] = boletas_info
+            boletas_info = factura.get("boletas_info")
+            if not boletas_info:
+                try:
+                    config_local = ctx["config"]
+                    valor_boleta = int(config_local.get("valor_boleta", 10000) or 10000)
+                    boletas_info = build_boletas_info_snapshot(factura.get("boletas", []), valor_boleta)
+                    with contextlib.suppress(Exception):
+                        facturas.update_one({"_id": factura_id}, {"$set": {"boletas_info": boletas_info}})
+                except Exception:
+                    boletas_info = {}
+            ctx["boletas_info"] = {int(k): v for k, v in boletas_info.items()}
 
         if factura.get("tipo") == "cliente":
             for d in factura.get("detalle") or []:

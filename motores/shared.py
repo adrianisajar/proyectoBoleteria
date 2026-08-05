@@ -38,6 +38,7 @@ from motores.config_service import get_config, require_collections
 from motores.payment_service import (
     buscar_transferencia_duplicada,
     build_factura_detalle,
+    build_boletas_info_snapshot,
     validar_form_abono,
     build_abono_preview,
     registrar_abono_lote,
