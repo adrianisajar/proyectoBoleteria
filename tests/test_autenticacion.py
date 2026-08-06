@@ -171,3 +171,31 @@ def test_factura_antigua_muestra_no_registrado(client):
     resp = client.get("/facturas/999")
     assert resp.status_code == 200
     assert "No registrado" in resp.get_data(as_text=True)
+
+
+def test_eliminar_usuario(client, client_anon):
+    caja = usuarios.find_one({"usuario": CAJA_USUARIO})
+    resp = client.post(f"/usuarios/{caja['_id']}/eliminar", data={"confirmacion": "ELIMINAR"})
+    assert resp.status_code == 302
+    assert usuarios.find_one({"usuario": CAJA_USUARIO}) is None
+
+
+def test_no_eliminar_propio_usuario(client):
+    admin = usuarios.find_one({"usuario": ADMIN_USUARIO})
+    resp = client.post(f"/usuarios/{admin['_id']}/eliminar", data={"confirmacion": "ELIMINAR"})
+    assert resp.status_code == 302
+    assert usuarios.find_one({"usuario": ADMIN_USUARIO}) is not None
+
+
+def test_eliminar_usuario_requiere_confirmacion(client):
+    caja = usuarios.find_one({"usuario": CAJA_USUARIO})
+    resp = client.post(f"/usuarios/{caja['_id']}/eliminar")
+    assert resp.status_code == 302
+    assert usuarios.find_one({"usuario": CAJA_USUARIO}) is not None
+
+
+def test_usuario_eliminado_no_inicia_sesion(client, client_anon):
+    caja = usuarios.find_one({"usuario": CAJA_USUARIO})
+    client.post(f"/usuarios/{caja['_id']}/eliminar", data={"confirmacion": "ELIMINAR"})
+    resp = login(client_anon, usuario=CAJA_USUARIO, password=CAJA_PASSWORD)
+    assert resp.status_code == 401

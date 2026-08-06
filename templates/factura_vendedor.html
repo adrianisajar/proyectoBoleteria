@@ -60,7 +60,7 @@
     font-size: 1.3rem !important;
     page-break-inside: avoid !important; break-inside: avoid !important;
   }
-  .firma-linea { margin-top: 1.5rem !important; }
+  .firma-linea { margin-top: 0.3rem !important; }
   .recibo-footer {
     margin-top: 0.4rem !important; padding-top: 0.4rem !important;
     font-size: 1.15rem !important;
@@ -100,7 +100,7 @@
 .comision { margin-top: 0.5rem; padding: 0.3rem; background: #f5f5f5; font-size: 0.7rem; }
 .obs { margin-top: 0.6rem; padding-top: 0.4rem; border-top: 1px dashed #999; font-size: 0.7rem; color: #555; }
   .firmas { margin-top: 1.8rem; display: flex; justify-content: center; text-align: center; font-size: 0.7rem; }
-.firma-linea { width: 8rem; border-top: 1px solid #000; padding-top: 0.25rem; margin-top: 2.5rem; }
+.firma-linea { width: 8rem; border-top: 1px solid #000; padding-top: 0.25rem; margin-top: 0.3rem; }
 .recibo-footer { text-align: center; margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px dashed #999; font-size: 0.7rem; color: #555; }
 </style>
 {% endblock %}
@@ -217,8 +217,8 @@
 
   <div class="firmas">
     <div>
+      <div style="margin-bottom: 0.3rem; font-size: 0.8rem;">{{ factura.get("usuario_nombre") or "No registrado" }}</div>
       <div class="firma-linea">Emitido por</div>
-      <div style="margin-top: 0.3rem; font-size: 0.8rem;">{{ factura.get("usuario_nombre") or "No registrado" }}</div>
     </div>
   </div>
 

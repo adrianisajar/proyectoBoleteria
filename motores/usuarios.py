@@ -103,11 +103,11 @@ def _get_usuario(usuario_id: str) -> dict:
     return doc
 
 
-def _try_view(action: Any) -> Response:
+def _try_view(action: Any, mensaje: str = "Cambios guardados correctamente.") -> Response:
     """Run an action and flash the result, then return to the config panel."""
     try:
         action()
-        flash("Cambios guardados correctamente.", "success")
+        flash(mensaje, "success")
     except Exception as exc:
         flash(str(exc), "danger")
     return redirect(url_for("configuracion_panel"))
@@ -215,6 +215,22 @@ def register_routes(app: Flask) -> None:
             usuarios.update_one({"_id": doc["_id"]}, {"$set": {"activo": activo}})
 
         return _try_view(action)
+
+    @app.route("/usuarios/<usuario_id>/eliminar", methods=["POST"])
+    @role_required(ROL_ADMIN)
+    def usuarios_eliminar(usuario_id: str) -> Response:
+        """Delete a user (admin only, never yourself)."""
+        if request.form.get("confirmacion", "") != "ELIMINAR":
+            flash("Escribe ELIMINAR para confirmar el borrado.", "danger")
+            return redirect(url_for("configuracion_panel"))
+
+        def action() -> None:
+            doc = _get_usuario(usuario_id)
+            if str(doc["_id"]) == current_user().get("usuario_id"):
+                raise ValueError("No puedes eliminar tu propio usuario.")
+            usuarios.delete_one({"_id": doc["_id"]})
+
+        return _try_view(action, mensaje="Usuario eliminado correctamente.")
 
     @app.route("/api/usuarios")
     @role_required(ROL_ADMIN)

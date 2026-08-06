@@ -219,7 +219,7 @@
 
 <div class="office-card bg-body p-3 p-md-4 mt-4">
     <h2 class="section-title mb-3"><i class="bi bi-people me-2"></i>Usuarios</h2>
-    <p class="text-secondary small mb-3">Crea y administra los usuarios del sistema. Los usuarios no se eliminan: se desactivan.</p>
+    <p class="text-secondary small mb-3">Crea, desactiva o elimina los usuarios del sistema. No puedes eliminar tu propio usuario.</p>
 
     <form method="post" action="{{ url_for('usuarios_crear') }}" class="row g-2 align-items-end mb-4" autocomplete="off">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -258,7 +258,7 @@
                     <th>Rol</th>
                     <th>Estado</th>
                     <th>&Uacute;ltimo acceso</th>
-                    <th style="width:290px">Editar</th>
+                    <th style="width:330px">Acciones</th>
                 </tr>
             </thead>
             <tbody>
@@ -297,6 +297,16 @@
                                 <input type="password" class="form-control form-control-sm" name="password" placeholder="Nueva contrase&ntilde;a" required style="max-width:150px" autocomplete="new-password">
                                 <button type="submit" class="btn btn-sm btn-outline-secondary" title="Cambiar contrase&ntilde;a"><i class="bi bi-key"></i></button>
                             </form>
+                            <button type="button"
+                                class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center"
+                                title="{{ 'No puedes eliminar tu propio usuario' if u.usuario == current_user.usuario else 'Eliminar usuario' }}"
+                                data-bs-toggle="modal" data-bs-target="#eliminarUsuarioModal"
+                                data-nombre="{{ u.nombre }}"
+                                data-usuario="{{ u.usuario }}"
+                                data-url="{{ url_for('usuarios_eliminar', usuario_id=u._id) }}"
+                                {% if u.usuario == current_user.usuario %}disabled{% endif %}>
+                                <i class="bi bi-trash"></i>
+                            </button>
                         </div>
                     </td>
                 </tr>
@@ -305,6 +315,32 @@
                 {% endfor %}
             </tbody>
         </table>
+    </div>
+</div>
+
+<div class="modal fade" id="eliminarUsuarioModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post" id="eliminarUsuarioForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Eliminar usuario</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">¿Seguro que deseas eliminar al usuario <strong id="eliminarUsuarioNombre"></strong> (<span id="eliminarUsuarioLogin"></span>)?</p>
+                    <p class="mb-3 small text-secondary">Esta acci&oacute;n no se puede deshacer.</p>
+                    <label for="eliminarUsuarioConfirmacion" class="form-label fw-semibold">Escribe <kbd>ELIMINAR</kbd> para confirmar</label>
+                    <input type="text" class="form-control" id="eliminarUsuarioConfirmacion" name="confirmacion" placeholder="ELIMINAR" required autocomplete="off">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-danger" id="eliminarUsuarioBtn" disabled>
+                        <i class="bi bi-trash me-1"></i>Eliminar
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -335,5 +371,29 @@ function agregarTier() {
     `;
     tbody.appendChild(tr);
 }
+
+(function () {
+    const modal = document.getElementById('eliminarUsuarioModal');
+    if (!modal) return;
+    const nombreEl = document.getElementById('eliminarUsuarioNombre');
+    const loginEl = document.getElementById('eliminarUsuarioLogin');
+    const form = document.getElementById('eliminarUsuarioForm');
+    const confirmInput = document.getElementById('eliminarUsuarioConfirmacion');
+    const confirmBtn = document.getElementById('eliminarUsuarioBtn');
+
+    modal.addEventListener('show.bs.modal', function (event) {
+        const btn = event.relatedTarget;
+        if (!btn) return;
+        nombreEl.textContent = btn.getAttribute('data-nombre');
+        loginEl.textContent = btn.getAttribute('data-usuario');
+        form.setAttribute('action', btn.getAttribute('data-url'));
+        confirmInput.value = '';
+        confirmBtn.disabled = true;
+    });
+
+    confirmInput.addEventListener('input', function () {
+        confirmBtn.disabled = confirmInput.value.trim() !== 'ELIMINAR';
+    });
+})();
 </script>
 {% endblock %}
