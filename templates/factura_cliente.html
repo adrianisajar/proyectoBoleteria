@@ -52,6 +52,7 @@
   div[style*="font-size:0.7rem"] { font-size: 1.05rem !important; }
   .recibo-firma { margin-top: 1.2rem !important; }
   .recibo-firma-linea { width: 10rem !important; font-size: 1.1rem !important; }
+  .recibo-firma-nombre { font-size: 1.1rem !important; }
 }
 .recibo {
   max-width: 340px; margin: 0 auto;
@@ -86,6 +87,7 @@
 .recibo-estado { font-size: 0.7rem; }
 .recibo-firma { margin-top: 1.6rem; display: flex; justify-content: center; }
 .recibo-firma-linea { width: 8rem; border-top: 1px solid #000; padding-top: 0.3rem; text-align: center; font-size: 0.7rem; font-weight: 600; }
+.recibo-firma-nombre { text-align: center; font-size: 0.78rem; font-weight: 700; margin-top: 0.35rem; }
 </style>
 {% endblock %}
 {% block content %}
@@ -168,6 +170,7 @@
 
   <div class="recibo-firma">
     <div><div class="recibo-firma-linea">EMITIDO POR</div></div>
+    <div class="recibo-firma-nombre">{{ factura.get("usuario_nombre") or "No registrado" }}</div>
   </div>
 
   <div class="recibo-footer">

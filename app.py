@@ -1,3 +1,4 @@
+import contextlib
 import os
 import sys
 
@@ -15,6 +16,8 @@ from motores.pagos import register_routes as register_pagos
 from motores.reportes import register_routes as register_reportes
 from motores.rifas import register_routes as register_rifas
 from motores.shared import register_before_request, register_context_processor, register_template_filters
+from motores.usuarios import ensure_initial_admin
+from motores.usuarios import register_routes as register_usuarios
 
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
     app = Flask(__name__, template_folder=os.path.join(sys._MEIPASS, "templates"), static_folder=os.path.join(sys._MEIPASS, "static"))
@@ -44,8 +47,12 @@ register_facturacion_cliente(app)
 register_facturacion_vendedor(app)
 register_reportes(app)
 register_compradores(app)
+register_usuarios(app)
 register_health(app)
 register_error_handlers(app)
+
+with contextlib.suppress(Exception):
+    ensure_initial_admin()
 
 if __name__ == "__main__":
     app.run(debug=os.getenv("FLASK_DEBUG", "0") == "1")

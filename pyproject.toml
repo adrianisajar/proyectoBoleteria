@@ -19,7 +19,8 @@ ignore = [
 "tests/*" = ["S101"]
 "motores/shared.py" = ["E402", "I001", "F401"]
 "run_server.py" = ["E402", "S104"]
-"tests/conftest.py" = ["E402"]
+"tests/conftest.py" = ["E402", "S105"]
+"tests/test_autenticacion.py" = ["S106"]
 "build_exe.py" = ["S603"]
 
 [tool.ruff.format]

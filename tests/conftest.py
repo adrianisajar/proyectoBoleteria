@@ -12,14 +12,16 @@ os.environ["MONGO_DB"] = TEST_DB_NAME
 os.environ.setdefault("MONGO_TIMEOUT_MS", "8000")
 
 import pytest
+from werkzeug.security import generate_password_hash
 
 import database
 from app import app as flask_app
-from database import boletas, configuracion, facturas, rifas, vendedores
+from database import boletas, configuracion, facturas, rifas, usuarios, vendedores
 from motores.cache import invalidate_config_cache, invalidate_dashboard_cache
+from motores.fechas import now_local
 from optimizar_db import REQUIRED_INDEXES
 
-if any(col is None for col in (boletas, vendedores, configuracion, facturas, rifas)):
+if any(col is None for col in (boletas, vendedores, configuracion, facturas, rifas, usuarios)):
     pytest.skip("MongoDB no disponible: se omiten los tests que requieren base de datos.", allow_module_level=True)
 
 COMISION_TIERS = [
@@ -31,6 +33,49 @@ COMISION_TIERS = [
 
 N_BOLETAS = 500
 _RETRIES = 3
+
+ADMIN_USUARIO = "admin"
+ADMIN_PASSWORD = "admin-test"
+CAJA_USUARIO = "caja"
+CAJA_PASSWORD = "caja-test"
+
+
+def _seed_usuarios():
+    usuarios.drop()
+    usuarios.create_index("usuario", unique=True)
+    usuarios.insert_many(
+        [
+            {
+                "nombre": "Admin Test",
+                "usuario": ADMIN_USUARIO,
+                "password_hash": generate_password_hash(ADMIN_PASSWORD),
+                "rol": "admin",
+                "activo": True,
+                "fecha_creacion": now_local(),
+                "ultimo_acceso": None,
+            },
+            {
+                "nombre": "Caja Test",
+                "usuario": CAJA_USUARIO,
+                "password_hash": generate_password_hash(CAJA_PASSWORD),
+                "rol": "cajero",
+                "activo": True,
+                "fecha_creacion": now_local(),
+                "ultimo_acceso": None,
+            },
+        ]
+    )
+
+
+def login(client, usuario=ADMIN_USUARIO, password=ADMIN_PASSWORD):
+    """Log into the app through the test client (works with or without CSRF)."""
+    client.get("/login")
+    data = {"usuario": usuario, "password": password}
+    with client.session_transaction() as sess:
+        token = sess.get("_csrf_token")
+    if token:
+        data["csrf_token"] = token
+    return client.post("/login", data=data)
 
 
 def _with_retry(fn):
@@ -72,6 +117,7 @@ def _seed_once():
     facturas.drop()
     rifas.drop()
     configuracion.drop()
+    _seed_usuarios()
 
     rifa_id = rifas.insert_one(
         {
@@ -124,6 +170,7 @@ def _reset():
         },
     )
     configuracion.update_one({"_id": "rifa"}, {"$set": {"factura_counter": 0}})
+    _seed_usuarios()
     invalidate_config_cache()
     invalidate_dashboard_cache()
 
@@ -147,5 +194,23 @@ def seeded_db():
 
 @pytest.fixture()
 def client():
+    flask_app.config.update(TESTING=True)
+    c = flask_app.test_client()
+    resp = login(c)
+    assert resp.status_code == 302, "Fallo el login del usuario admin de prueba"
+    return c
+
+
+@pytest.fixture()
+def client_caja():
+    flask_app.config.update(TESTING=True)
+    c = flask_app.test_client()
+    resp = login(c, usuario=CAJA_USUARIO, password=CAJA_PASSWORD)
+    assert resp.status_code == 302, "Fallo el login del usuario caja de prueba"
+    return c
+
+
+@pytest.fixture()
+def client_anon():
     flask_app.config.update(TESTING=True)
     return flask_app.test_client()

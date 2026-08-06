@@ -1,4 +1,5 @@
 import pytest
+from conftest import login
 
 from app import app as flask_app
 
@@ -8,6 +9,8 @@ def csrf_client():
     """Client with TESTING disabled so CSRF enforcement is active."""
     flask_app.config.update(TESTING=False)
     client = flask_app.test_client()
+    resp = login(client)
+    assert resp.status_code == 302
     yield client
     flask_app.config.update(TESTING=True)
 

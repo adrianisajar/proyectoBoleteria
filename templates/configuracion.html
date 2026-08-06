@@ -216,6 +216,97 @@
         </div>
     </div>
 </div>
+
+<div class="office-card bg-body p-3 p-md-4 mt-4">
+    <h2 class="section-title mb-3"><i class="bi bi-people me-2"></i>Usuarios</h2>
+    <p class="text-secondary small mb-3">Crea y administra los usuarios del sistema. Los usuarios no se eliminan: se desactivan.</p>
+
+    <form method="post" action="{{ url_for('usuarios_crear') }}" class="row g-2 align-items-end mb-4" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-md-3">
+            <label for="nuevo_nombre" class="form-label fw-semibold">Nombre completo</label>
+            <input type="text" class="form-control" id="nuevo_nombre" name="nombre" placeholder="Esteban Girón" required data-validation="name">
+        </div>
+        <div class="col-md-2">
+            <label for="nuevo_usuario" class="form-label fw-semibold">Usuario</label>
+            <input type="text" class="form-control" id="nuevo_usuario" name="usuario" placeholder="egiron" required>
+        </div>
+        <div class="col-md-2">
+            <label for="nuevo_rol" class="form-label fw-semibold">Rol</label>
+            <select class="form-select" id="nuevo_rol" name="rol">
+                <option value="cajero">Caja</option>
+                <option value="admin">Administrador</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label for="nuevo_password" class="form-label fw-semibold">Contrase&ntilde;a</label>
+            <input type="password" class="form-control" id="nuevo_password" name="password" placeholder="m&iacute;nimo 6 caracteres" required autocomplete="new-password">
+        </div>
+        <div class="col-md-2 d-grid">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-plus-lg me-1"></i>Crear usuario
+            </button>
+        </div>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table table-sm align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Usuario</th>
+                    <th>Nombre</th>
+                    <th>Rol</th>
+                    <th>Estado</th>
+                    <th>&Uacute;ltimo acceso</th>
+                    <th style="width:290px">Editar</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in usuarios %}
+                <tr>
+                    <td class="fw-semibold">{{ u.usuario }}</td>
+                    <td>{{ u.nombre }}</td>
+                    <td>
+                        <span class="badge text-bg-{{ 'primary' if u.rol == 'admin' else 'secondary' }}">
+                            {{ 'Administrador' if u.rol == 'admin' else 'Caja' }}
+                        </span>
+                    </td>
+                    <td>
+                        <form method="post" action="{{ url_for('usuarios_estado', usuario_id=u._id) }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="activo" value="{{ 0 if u.activo else 1 }}">
+                            <button type="submit" class="btn btn-sm {{ 'btn-success' if u.activo else 'btn-outline-secondary' }}">
+                                {{ 'Activo' if u.activo else 'Inactivo' }}
+                            </button>
+                        </form>
+                    </td>
+                    <td class="small text-secondary">{{ u.ultimo_acceso.strftime('%d/%m/%Y %H:%M') if u.ultimo_acceso else '&mdash;' }}</td>
+                    <td>
+                        <div class="d-flex flex-column gap-1">
+                            <form method="post" action="{{ url_for('usuarios_editar', usuario_id=u._id) }}" class="d-flex gap-1 align-items-center" autocomplete="off">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="text" class="form-control form-control-sm" name="nombre" value="{{ u.nombre }}" style="max-width:130px" required data-validation="name">
+                                <select class="form-select form-select-sm" name="rol" style="max-width:95px">
+                                    <option value="cajero" {% if u.rol == 'cajero' %}selected{% endif %}>Caja</option>
+                                    <option value="admin" {% if u.rol == 'admin' %}selected{% endif %}>Admin</option>
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-outline-primary" title="Guardar cambios"><i class="bi bi-check-lg"></i></button>
+                            </form>
+                            <form method="post" action="{{ url_for('usuarios_contrasena', usuario_id=u._id) }}" class="d-flex gap-1 align-items-center" autocomplete="off">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="password" class="form-control form-control-sm" name="password" placeholder="Nueva contrase&ntilde;a" required style="max-width:150px" autocomplete="new-password">
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Cambiar contrase&ntilde;a"><i class="bi bi-key"></i></button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-secondary">No hay usuarios registrados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

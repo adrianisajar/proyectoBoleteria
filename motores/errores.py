@@ -42,6 +42,15 @@ def register_error_handlers(app: Flask) -> None:
         mensaje = getattr(exc, "description", None) or "Solicitud inv\u00e1lida."
         return _render_error(400, "Solicitud inv\u00e1lida", str(mensaje))
 
+    @app.errorhandler(403)
+    def forbidden(exc: Any) -> tuple[str | Response, int]:
+        """Render the 403 error response (access denied by role)."""
+        return _render_error(
+            403,
+            "Acceso denegado",
+            "No tienes permisos para acceder a esta secci\u00f3n.",
+        )
+
     @app.errorhandler(404)
     def not_found(exc: Any) -> tuple[str | Response, int]:
         """Render the 404 error response."""

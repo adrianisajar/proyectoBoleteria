@@ -11,6 +11,7 @@ from motores.shared import (
     build_abono_preview,
     build_boletas_info_snapshot,
     build_factura_detalle,
+    current_user,
     estado_pipeline_expr,
     facturas,
     flash,
@@ -194,6 +195,7 @@ def register_routes(app: Flask) -> None:
                 detalle = build_factura_detalle(boleta_ids, factura_id)
                 valor_total = sum(d["valor"] for d in detalle)
 
+                user = current_user() or {}
                 factura = {
                     "_id": factura_id,
                     "tipo": "cliente",
@@ -204,6 +206,8 @@ def register_routes(app: Flask) -> None:
                     "cliente": {"nombre": nombre, "telefono": telefono, "direccion": direccion},
                     "vendedor_id": VENDEDOR_LOCAL,
                     "vendedor_nombre": VENDEDOR_LOCAL,
+                    "usuario_id": user.get("usuario_id"),
+                    "usuario_nombre": user.get("nombre") or user.get("username"),
                 }
 
                 cliente_data = {"nombre": nombre, "telefono": telefono, "direccion": direccion}

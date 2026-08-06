@@ -20,6 +20,7 @@ from motores.shared import (
     sync_ticket_statuses,
     url_for,
 )
+from motores.usuarios import list_usuarios
 from motores.validacion import parse_money, sanitizar_texto
 
 
@@ -114,7 +115,7 @@ def register_routes(app: Flask) -> None:
                     flash(f"Error al guardar comisiones: {exc}", "danger")
                 return redirect(url_for("configuracion_panel"))
 
-        return render_template("configuracion.html", config=config, rifa=rifa)
+        return render_template("configuracion.html", config=config, rifa=rifa, usuarios=list_usuarios())
 
     @app.route("/rifas/nueva", methods=["POST"])
     @role_required("admin")

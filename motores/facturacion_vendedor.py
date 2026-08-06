@@ -211,6 +211,7 @@ def register_routes(app: Flask) -> None:
                     v_telefono = v.get("telefono", "") if v else ""
 
                 # ── 1. Crear factura "pendiente" antes de tocar las boletas ──
+                user = current_user() or {}
                 facturas.insert_one(
                     {
                         "_id": factura_id,
@@ -223,6 +224,8 @@ def register_routes(app: Flask) -> None:
                         "vendedor_id": vendedor_id,
                         "vendedor_nombre": v_nombre,
                         "vendedor_telefono": v_telefono,
+                        "usuario_id": user.get("usuario_id"),
+                        "usuario_nombre": user.get("nombre") or user.get("username"),
                     }
                 )
 

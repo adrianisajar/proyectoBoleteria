@@ -180,6 +180,7 @@
         if (e.target.matches("input, textarea, select, [contenteditable]")) return;
         if (e.key === "?" || (e.key === "h" && !e.ctrlKey && !e.metaKey)) {
             e.preventDefault();
+            var isAdmin = window.CURRENT_USER_ROL === "admin";
             var help = document.getElementById("shortcutsHelp");
             if (help) {
                 help.style.display = help.style.display === "none" ? "block" : "none";
@@ -187,17 +188,18 @@
                 var d = document.createElement("div");
                 d.id = "shortcutsHelp";
                 d.style.cssText = "position:fixed;bottom:20px;right:20px;z-index:9999;background:var(--bs-body-bg);border:1px solid var(--bs-border-color);color:var(--bs-body-color);border-radius:8px;padding:16px;box-shadow:0 4px 12px rgba(0,0,0,.35);max-width:320px;font-size:13px;";
-                d.innerHTML = "<div class='fw-bold mb-2' style='font-size:14px;'>Atajos de teclado</div>" +
+                var html = "<div class='fw-bold mb-2' style='font-size:14px;'>Atajos de teclado</div>" +
                     "<div class='d-flex justify-content-between mb-1'><kbd>g</kbd> <kbd>c</kbd> <span>Consultas</span></div>" +
-                    "<div class='d-flex justify-content-between mb-1'><kbd>g</kbd> <kbd>v</kbd> <span>Vendedores</span></div>" +
+                    (isAdmin ? "<div class='d-flex justify-content-between mb-1'><kbd>g</kbd> <kbd>v</kbd> <span>Vendedores</span></div>" : "") +
                     "<div class='d-flex justify-content-between mb-1'><kbd>g</kbd> <kbd>f</kbd> <span>Facturas</span></div>" +
                     "<div class='d-flex justify-content-between mb-1'><kbd>g</kbd> <kbd>d</kbd> <span>Dashboard</span></div>" +
                     "<div class='d-flex justify-content-between mb-1'><kbd>g</kbd> <kbd>n</kbd> <span>Factura cliente</span></div>" +
                     "<div class='d-flex justify-content-between mb-1'><kbd>g</kbd> <kbd>m</kbd> <span>Factura vendedor</span></div>" +
-                    "<div class='d-flex justify-content-between mb-1'><kbd>g</kbd> <kbd>x</kbd> <span>Configuraci\u00f3n</span></div>" +
+                    (isAdmin ? "<div class='d-flex justify-content-between mb-1'><kbd>g</kbd> <kbd>x</kbd> <span>Configuraci\u00f3n</span></div>" : "") +
                     "<div class='d-flex justify-content-between mb-1'><kbd>/</kbd> <span>Buscar boleta</span></div>" +
                     "<div class='d-flex justify-content-between mb-1'><kbd>?</kbd> <span>Ayuda</span></div>" +
                     "<button class='btn btn-sm btn-outline-secondary mt-2' onclick='this.parentElement.style.display=\"none\"'>Cerrar</button>";
+                d.innerHTML = html;
                 document.body.appendChild(d);
             }
         }
@@ -218,7 +220,9 @@
         if (_g.pressed && e.key) {
             _g.pressed = false;
             if (_g.timer) clearTimeout(_g.timer);
-            var map = {c:"consultas", v:"vendedores_panel", f:"facturas_list", d:"dashboard", n:"nueva_factura_cliente", m:"nueva_factura_vendedor", x:"configuracion"};
+            var isAdmin = window.CURRENT_USER_ROL === "admin";
+            var map = {c:"consultas", f:"facturas_list", d:"dashboard", n:"nueva_factura_cliente", m:"nueva_factura_vendedor"};
+            if (isAdmin) { map.v = "vendedores_panel"; map.x = "configuracion"; }
             var ep = map[e.key];
             if (ep) { e.preventDefault(); window.location.href = "/" + (ep === "dashboard" ? "" : ep.replace(/_/g, "/")); }
         }

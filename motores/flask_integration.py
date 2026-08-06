@@ -1,10 +1,11 @@
+import time
 from typing import Any
 
-from flask import Flask, g
+from flask import Flask, g, jsonify, redirect, request, session, url_for
 
 from motores.auth import current_user, has_role
 from motores.config_service import get_config
-from motores.constants import VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
+from motores.constants import SESSION_IDLE_TIMEOUT_SECONDS, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
 from motores.dashboard_service import get_alertas
 
 
@@ -31,13 +32,27 @@ def register_template_filters(app: Flask) -> None:
 
 
 def register_before_request(app: Flask) -> None:
-    """Register the before_request hook that loads config and current user."""
+    """Register the before_request hook that loads config, user and enforces idle timeout."""
 
     @app.before_request
-    def load_user_context() -> None:
-        """Populate g.config and g.current_user on every request."""
+    def load_user_context() -> Any:
+        """Populate g.config and g.current_user, and close idle sessions."""
         g.config = get_config()
         g.current_user = current_user()
+
+        if not g.current_user:
+            return None
+
+        now = time.time()
+        last = session.get("_ultima_actividad")
+        if last is not None and (now - last) > SESSION_IDLE_TIMEOUT_SECONDS:
+            session.clear()
+            path = (request.path or "").lower()
+            if path.startswith("/api/"):
+                return jsonify({"ok": False, "error": "Sesi\u00f3n cerrada por inactividad."}), 401
+            return redirect(url_for("login"))
+        session["_ultima_actividad"] = now
+        return None
 
 
 def register_context_processor(app: Flask) -> None:

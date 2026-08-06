@@ -55,7 +55,7 @@ from flask import (
     request,
     url_for,
 )
-from database import boletas, configuracion, facturas, rifas, vendedores
+from database import boletas, configuracion, facturas, rifas, vendedores, usuarios
 from motores.constants import (
     BOLETA_MIN,
     BOLETA_MAX,

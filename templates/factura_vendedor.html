@@ -216,7 +216,10 @@
   </div>
 
   <div class="firmas">
-    <div><div class="firma-linea">Emitido por</div></div>
+    <div>
+      <div class="firma-linea">Emitido por</div>
+      <div style="margin-top: 0.3rem; font-size: 0.8rem;">{{ factura.get("usuario_nombre") or "No registrado" }}</div>
+    </div>
   </div>
 
   <div class="recibo-footer">

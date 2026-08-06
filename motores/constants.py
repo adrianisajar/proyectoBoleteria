@@ -17,6 +17,12 @@ REFERENCIA_N_A = "N/A"
 
 # ── User ──
 USUARIO_SISTEMA = "sistema"
+ROL_ADMIN = "admin"
+ROL_CAJA = "cajero"
+ROLES = {ROL_ADMIN, ROL_CAJA}
+SESSION_IDLE_TIMEOUT_SECONDS = int(os.getenv("SESSION_IDLE_TIMEOUT_SECONDS", "1800"))
+ADMIN_INICIAL_USUARIO = os.getenv("ADMIN_INICIAL_USUARIO", "admin")
+ADMIN_INICIAL_PASSWORD = os.getenv("ADMIN_INICIAL_PASSWORD", "admin")
 
 # ── Ticket states ──
 ESTADO_DISPONIBLE = "disponible"

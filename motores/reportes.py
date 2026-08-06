@@ -26,6 +26,7 @@ from motores.shared import (
     rifas,
     role_required,
     url_for,
+    usuarios,
     vendedores,
 )
 
@@ -150,6 +151,7 @@ def register_routes(app: Flask) -> None:
             ("facturas", facturas),
             ("rifas", rifas),
             ("configuracion", configuracion),
+            ("usuarios", usuarios),
         ]
         if request.method == "POST":
             accion = request.form.get("accion", "")

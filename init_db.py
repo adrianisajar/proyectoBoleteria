@@ -1,6 +1,6 @@
 import os
 
-from database import boletas, configuracion, facturas, rifas, vendedores
+from database import boletas, configuracion, facturas, rifas, usuarios, vendedores
 from motores.constants import COMISION_DEFAULT_TIERS, DEFAULT_RIFA
 from motores.fechas import now_local
 
@@ -22,6 +22,7 @@ def crear_indices():
     facturas.create_index([("fecha", -1)])
     facturas.create_index("tipo")
     rifas.create_index("estado")
+    usuarios.create_index("usuario", unique=True)
 
 
 def crear_rifa():
