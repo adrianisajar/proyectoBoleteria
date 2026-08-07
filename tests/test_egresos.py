@@ -190,6 +190,14 @@ def test_egreso_form_renders(client):
     assert "Agregar fila" not in html
 
 
+def test_egreso_form_incluye_boleta_hidden(client):
+    """Regression: each dynamic row must submit boleta[] (else rows arrive empty)."""
+    resp = client.get("/facturas/egreso/nueva")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'name="boleta[]"' in html
+
+
 def test_ver_factura_egreso_renders(client):
     _post_egreso(client, boletas_=("0001",), valores=("10000",))
     f = facturas.find_one({"tipo": "egreso"})

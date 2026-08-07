@@ -77,6 +77,20 @@
     </div>
     {% endif %}
     <div class="col-6 col-md-4">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-danger);">
+            <div class="metric-label mb-2">Egresos</div>
+            <div class="metric-value">{{ stats.total_egresos|cop }}</div>
+            <div class="metric-subtext">Comisiones y salidas</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-teal);">
+            <div class="metric-label mb-2">Recaudo neto</div>
+            <div class="metric-value">{{ stats.recaudo_neto|cop }}</div>
+            <div class="metric-subtext">Recaudo total menos egresos</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-info);">
             <div class="metric-label mb-2">Vendidas</div>
             <div class="metric-value ticket-number">{{ stats.vendidas or 0 }}</div>

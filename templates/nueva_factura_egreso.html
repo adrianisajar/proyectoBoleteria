@@ -225,6 +225,7 @@
         };
 
         const setFilaDisabled = (tr, disabled) => {
+            tr.querySelector(".boleta-id").disabled = disabled;
             tr.querySelector(".valor-egreso").disabled = disabled;
             tr.querySelector("select[name='metodo[]']").disabled = disabled;
             tr.querySelector("input[name='referencia[]']").disabled = disabled;
@@ -239,7 +240,10 @@
             tr.dataset.previo = b.tiene_egresos_previos ? "1" : "0";
             tr.innerHTML = `
                 <td><input type="checkbox" class="form-check-input m-0 sel-boleta"></td>
-                <td class="fw-bold">${("0000" + b.numero).slice(-4)}</td>
+                <td class="fw-bold">
+                    ${("0000" + b.numero).slice(-4)}
+                    <input type="hidden" name="boleta[]" value="${("0000" + b.numero).slice(-4)}" class="boleta-id">
+                </td>
                 <td class="text-end">${money.format(b.total_ingresado)}</td>
                 <td class="text-end">
                     ${money.format(b.total_egresado)}
