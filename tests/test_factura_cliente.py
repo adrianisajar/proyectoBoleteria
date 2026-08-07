@@ -128,7 +128,7 @@ def test_factura_cliente_referencia_duplicada_en_db(client):
             "$set": {
                 "estado": "abonando",
                 "total_abonado": 30000,
-                "historial_pagos": [{"fecha": "2026-07-01", "valor": 30000, "metodo": "transferencia", "referencia": "REF-DUP", "banco": "DAVIVIENDA"}],
+                "historial_movimientos": [{"fecha": "2026-07-01", "valor": 30000, "metodo": "transferencia", "referencia": "REF-DUP", "banco": "DAVIVIENDA"}],
             }
         },
     )
@@ -165,7 +165,7 @@ def test_ver_factura_cliente_estatica_pese_a_pagos_nuevos(client):
         {"_id": 10},
         {
             "$set": {
-                "historial_pagos": [
+                "historial_movimientos": [
                     {"fecha": "2026-07-30", "valor": 70000, "metodo": "efectivo", "factura_id": fid},
                     {"fecha": "2026-07-29", "valor": 70000, "metodo": "efectivo"},
                 ],
@@ -193,7 +193,7 @@ def test_ver_factura_legacy_sin_snapshot_se_respalda(client):
                 "vendedor_id": "LOCAL",
                 "total_abonado": 70000,
                 "estado": "pagada",
-                "historial_pagos": [{"fecha": "2026-07-01", "valor": 70000, "metodo": "efectivo", "factura_id": 77}],
+                "historial_movimientos": [{"fecha": "2026-07-01", "valor": 70000, "metodo": "efectivo", "factura_id": 77}],
             }
         },
     )

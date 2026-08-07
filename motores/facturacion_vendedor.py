@@ -6,7 +6,16 @@ from flask import Flask, Response
 from pymongo import UpdateOne
 from pymongo.errors import BulkWriteError
 
-from motores.constants import COMISION_DEFAULT_TIERS, METODO_EFECTIVO, METODO_TRANSFERENCIA, USUARIO_SISTEMA, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
+from motores.constants import (
+    COMISION_DEFAULT_TIERS,
+    METODO_EFECTIVO,
+    METODO_TRANSFERENCIA,
+    MOV_PAGO,
+    MOVIMIENTOS_FIELD,
+    USUARIO_SISTEMA,
+    VENDEDOR_LOCAL,
+    VENDEDOR_LOCAL_LABEL,
+)
 from motores.facturacion_common import deduplicar_filas_boleta, validar_filas_transferencia, verificar_boletas_existen
 from motores.fechas import now_local
 from motores.shared import (
@@ -246,6 +255,7 @@ def register_routes(app: Flask) -> None:
                 usuario = (current_user() or {}).get("username", USUARIO_SISTEMA)
                 for r in rows:
                     pago = {
+                        "tipo": MOV_PAGO,
                         "fecha": fecha,
                         "valor": r["monto"],
                         "metodo": r["metodo"],
@@ -264,9 +274,9 @@ def register_routes(app: Flask) -> None:
                             [
                                 {
                                     "$set": {
-                                        "historial_pagos": {
+                                        MOVIMIENTOS_FIELD: {
                                             "$concatArrays": [
-                                                {"$ifNull": ["$historial_pagos", []]},
+                                                {"$ifNull": ["$" + MOVIMIENTOS_FIELD, []]},
                                                 {"$literal": [pago]},
                                             ]
                                         },

@@ -7,7 +7,7 @@ from flask import Flask, Response, flash, redirect, render_template, request, se
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import usuarios
-from motores.auth import current_user, role_required
+from motores.auth import current_user, home_endpoint, role_required
 from motores.config_service import require_collections
 from motores.constants import (
     ADMIN_INICIAL_PASSWORD,
@@ -121,7 +121,7 @@ def register_routes(app: Flask) -> None:
         """Authentication page (also lazily creates the initial admin)."""
         ensure_initial_admin()
         if current_user():
-            return redirect(url_for("dashboard"))
+            return redirect(url_for(home_endpoint()))
         if request.method == "POST":
             usuario = sanitizar_texto(request.form.get("usuario", ""), "titulo").lower()
             password = request.form.get("password", "")
@@ -137,9 +137,9 @@ def register_routes(app: Flask) -> None:
             if usuarios is not None:
                 with contextlib.suppress(Exception):
                     usuarios.update_one({"_id": user["_id"]}, {"$set": {"ultimo_acceso": now_local()}})
-            next_url = request.args.get("next") or url_for("dashboard")
+            next_url = request.args.get("next") or url_for(home_endpoint())
             if not next_url.startswith("/") or next_url.startswith("//"):
-                next_url = url_for("dashboard")
+                next_url = url_for(home_endpoint())
             return redirect(next_url)
         return render_template("login.html")
 

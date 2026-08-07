@@ -64,7 +64,7 @@ def test_consultas_filtro_fecha_eq(client):
                 "vendedor_id": "",
                 "estado": "disponible",
                 "total_abonado": 0,
-                "historial_pagos": [],
+                "historial_movimientos": [],
             }
         },
     )

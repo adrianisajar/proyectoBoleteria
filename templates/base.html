@@ -161,22 +161,26 @@
     {% if current_user %}
     <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom sticky-top">
         <div class="container">
-            <a class="navbar-brand" href="{{ url_for('dashboard') }}">{{ app_config.nombre_rifa or "Sistema de Facturación" }}</a>
+            <a class="navbar-brand" href="{{ url_for('dashboard' if can('admin') else 'consultas') }}">{{ app_config.nombre_rifa or "Sistema de Facturación" }}</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Abrir navegación">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="mainNav">
                 <div class="navbar-nav me-auto">
+                    {% if can('admin') %}
                     <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">Dashboard</a>
+                    {% endif %}
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['facturas_list', 'facturas_cliente', 'facturas_vendedor', 'ver_factura', 'nueva_factura_cliente', 'nueva_factura_vendedor'] %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Facturas</a>
+                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['facturas_list', 'facturas_cliente', 'facturas_vendedor', 'ver_factura', 'nueva_factura_cliente', 'nueva_factura_vendedor', 'egresos_list', 'nueva_factura_egreso'] %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Facturas</a>
                         <ul class="dropdown-menu dropdown-menu-end">
                             <li><a class="dropdown-item {% if request.endpoint == 'facturas_list' %}active{% endif %}" href="{{ url_for('facturas_list') }}"><i class="bi bi-list-ul me-2"></i>Todas</a></li>
                             <li><a class="dropdown-item {% if request.endpoint == 'facturas_cliente' %}active{% endif %}" href="{{ url_for('facturas_cliente') }}"><i class="bi bi-person me-2"></i>Historial cliente</a></li>
                             <li><a class="dropdown-item {% if request.endpoint == 'facturas_vendedor' %}active{% endif %}" href="{{ url_for('facturas_vendedor') }}"><i class="bi bi-person-badge me-2"></i>Historial vendedor</a></li>
+                            <li><a class="dropdown-item {% if request.endpoint == 'egresos_list' %}active{% endif %}" href="{{ url_for('egresos_list') }}"><i class="bi bi-box-arrow-down me-2"></i>Egresos</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item {% if request.endpoint == 'nueva_factura_cliente' %}active{% endif %}" href="{{ url_for('nueva_factura_cliente') }}"><i class="bi bi-plus-circle me-2"></i>Factura de cliente</a></li>
                             <li><a class="dropdown-item {% if request.endpoint == 'nueva_factura_vendedor' %}active{% endif %}" href="{{ url_for('nueva_factura_vendedor') }}"><i class="bi bi-plus-circle me-2"></i>Factura de vendedor</a></li>
+                            <li><a class="dropdown-item {% if request.endpoint == 'nueva_factura_egreso' %}active{% endif %}" href="{{ url_for('nueva_factura_egreso') }}"><i class="bi bi-plus-circle me-2"></i>Factura de egreso</a></li>
                         </ul>
                     </li>
 
@@ -185,6 +189,15 @@
                     <a class="nav-link {% if request.endpoint == 'vendedores_panel' %}active{% endif %}" href="{{ url_for('vendedores_panel') }}">Vendedores</a>
                     {% endif %}
                     <a class="nav-link {% if request.endpoint == 'compradores_rapido' %}active{% endif %}" href="{{ url_for('compradores_rapido') }}">Compradores</a>
+                    {% if can('admin', 'cajero') %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {% if request.endpoint in ['traslados_list', 'nuevo_traslado', 'ver_traslado'] %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Operaciones</a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item {% if request.endpoint == 'traslados_list' %}active{% endif %}" href="{{ url_for('traslados_list') }}"><i class="bi bi-arrow-left-right me-2"></i>Traslados de saldo</a></li>
+                            <li><a class="dropdown-item {% if request.endpoint == 'nuevo_traslado' %}active{% endif %}" href="{{ url_for('nuevo_traslado') }}"><i class="bi bi-plus-circle me-2"></i>Nuevo traslado</a></li>
+                        </ul>
+                    </li>
+                    {% endif %}
                     {% if can('admin') %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {% if request.endpoint in ['configuracion_panel', 'backup'] %}active{% endif %}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Config</a>

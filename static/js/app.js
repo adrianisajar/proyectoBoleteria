@@ -221,8 +221,8 @@
             _g.pressed = false;
             if (_g.timer) clearTimeout(_g.timer);
             var isAdmin = window.CURRENT_USER_ROL === "admin";
-            var map = {c:"consultas", f:"facturas_list", d:"dashboard", n:"nueva_factura_cliente", m:"nueva_factura_vendedor"};
-            if (isAdmin) { map.v = "vendedores_panel"; map.x = "configuracion"; }
+            var map = {c:"consultas", f:"facturas_list", n:"nueva_factura_cliente", m:"nueva_factura_vendedor"};
+            if (isAdmin) { map.d = "dashboard"; map.v = "vendedores_panel"; map.x = "configuracion"; }
             var ep = map[e.key];
             if (ep) { e.preventDefault(); window.location.href = "/" + (ep === "dashboard" ? "" : ep.replace(/_/g, "/")); }
         }

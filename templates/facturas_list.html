@@ -46,10 +46,13 @@
             <tr>
                 <td class="fw-bold">{{ "%05d" % f._id }}</td>
                 <td>{{ f.fecha.strftime("%d/%m/%Y %H:%M") }}</td>
-                <td><span class="badge text-bg-{{ 'primary' if f.tipo == 'cliente' else 'success' }}">{{ f.tipo }}</span></td>
+                <td><span class="badge text-bg-{{ 'primary' if f.tipo == 'cliente' else 'success' if f.tipo == 'vendedor' else 'danger' }}">{{ f.tipo }}</span></td>
                 <td>
                     {% if f.tipo == "cliente" %}
                         {{ f.cliente.nombre }} {{ f.cliente.apellido }}
+                    {% elif f.tipo == "egreso" %}
+                        {{ f.vendedor_nombre or f.vendedor_id }}
+                        {% if f.egreso_tipo %}<span class="badge text-bg-danger-subtle text-danger ms-1">{{ f.egreso_tipo }}</span>{% endif %}
                     {% else %}
                         {{ f.vendedor_nombre or f.vendedor_id }}
                     {% endif %}

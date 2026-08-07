@@ -5,7 +5,17 @@ import re
 
 from flask import Flask, Response
 
-from motores.constants import BOLETA_MAX, BOLETA_MIN, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
+from motores.constants import (
+    BOLETA_MAX,
+    BOLETA_MIN,
+    MOV_EGRESO,
+    MOV_PAGO,
+    MOV_TRASLADO_ENTRADA,
+    MOV_TRASLADO_SALIDA,
+    MOVIMIENTOS_FIELD,
+    VENDEDOR_LOCAL,
+    VENDEDOR_LOCAL_LABEL,
+)
 from motores.errores import safe_error_message
 from motores.shared import (
     boletas,
@@ -19,6 +29,7 @@ from motores.shared import (
     get_vendedor_options,
     invalidate_dashboard_cache,
     jsonify,
+    movimiento_neto_expr,
     redirect,
     render_template,
     request,
@@ -29,6 +40,20 @@ from motores.shared import (
 )
 
 SORT_WHITELIST = {"_id", "vendedor_id", "estado", "total_abonado", "cliente.nombre"}
+
+
+def _mov_tipo(mov: dict) -> str:
+    """Normalize a movement entry tipo (legacy entries default to 'pago')."""
+    return mov.get("tipo") or MOV_PAGO
+
+
+def _normalizar_movimientos(doc: dict | None) -> dict:
+    """Split the unified ledger into (pagos, egresos, traslados) lists for display."""
+    movimientos = doc.get(MOVIMIENTOS_FIELD) or []
+    pagos = [m for m in movimientos if _mov_tipo(m) == MOV_PAGO]
+    egresos = [m for m in movimientos if _mov_tipo(m) == MOV_EGRESO]
+    traslados_mov = [m for m in movimientos if _mov_tipo(m) in (MOV_TRASLADO_ENTRADA, MOV_TRASLADO_SALIDA)]
+    return {"pagos": pagos, "egresos": egresos, "traslados": traslados_mov}
 
 
 def register_routes(app: Flask) -> None:
@@ -72,7 +97,7 @@ def register_routes(app: Flask) -> None:
                     "cliente": 1,
                     "estado": 1,
                     "total_abonado": 1,
-                    "historial_pagos": 1,
+                    MOVIMIENTOS_FIELD: 1,
                     "fecha_adquisicion": 1,
                 }
 
@@ -84,6 +109,8 @@ def register_routes(app: Flask) -> None:
                     if boleta_detalle and boleta_detalle.get("vendedor_id"):
                         v = vendedores.find_one({"_id": boleta_detalle["vendedor_id"]}, {"nombre": 1})
                         boleta_detalle["vendedor_nombre"] = v["nombre"] if v else None
+                    if boleta_detalle:
+                        boleta_detalle["movimientos"] = _normalizar_movimientos(boleta_detalle)
             except Exception as exc:
                 flash(f"No se pudo ejecutar la consulta: {exc}", "danger")
 
@@ -175,15 +202,15 @@ def register_routes(app: Flask) -> None:
             return redirect(url_for("consultas"))
         try:
             require_collections()
-            projection = {"_id": 1, "vendedor_id": 1, "cliente": 1, "estado": 1, "total_abonado": 1, "historial_pagos": 1}
+            projection = {"_id": 1, "vendedor_id": 1, "cliente": 1, "estado": 1, "total_abonado": 1, MOVIMIENTOS_FIELD: 1}
             docs = list(boletas.find(query, projection).sort("_id", 1))
 
             output = io.StringIO()
             writer = csv.writer(output, delimiter=";")
             writer.writerow(["Boleta", "Vendedor", "Estado", "Cliente", "Telefono", "Abonado", "UltimoPago"])
             for doc in docs:
-                ultimo = doc.get("historial_pagos") or []
-                ultimo_pago = ultimo[-1].get("fecha", "") if ultimo else ""
+                pagos = [m for m in (doc.get(MOVIMIENTOS_FIELD) or []) if _mov_tipo(m) == MOV_PAGO]
+                ultimo_pago = pagos[-1].get("fecha", "") if pagos else ""
                 writer.writerow(
                     [
                         f"{doc['_id']:04d}",
@@ -272,17 +299,26 @@ def register_routes(app: Flask) -> None:
 
         try:
             require_collections()
-            doc = boletas.find_one({"_id": boleta_id}, {"historial_pagos": 1})
+            doc = boletas.find_one({"_id": boleta_id}, {MOVIMIENTOS_FIELD: 1})
             if not doc:
                 flash(f"No existe la boleta #{boleta_id:04d}.", "warning")
                 return redirect(url_for("consultas"))
 
-            pagos = doc.get("historial_pagos") or []
+            movimientos = doc.get(MOVIMIENTOS_FIELD) or []
+            pagos = [m for m in movimientos if _mov_tipo(m) == MOV_PAGO]
             if idx < 0 or idx >= len(pagos):
                 flash("\u00cdndice de pago inv\u00e1lido.", "danger")
                 return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
 
             pago = pagos[idx]
+            actual_idx = -1
+            seen = -1
+            for i, m in enumerate(movimientos):
+                if _mov_tipo(m) == MOV_PAGO:
+                    seen += 1
+                    if seen == idx:
+                        actual_idx = i
+                        break
             factura_id = pago.get("factura_id")
             valor = int(pago.get("valor", 0) or 0)
 
@@ -294,25 +330,15 @@ def register_routes(app: Flask) -> None:
                 [
                     {
                         "$set": {
-                            "historial_pagos": {
+                            MOVIMIENTOS_FIELD: {
                                 "$concatArrays": [
-                                    {"$slice": ["$historial_pagos", idx]},
-                                    {"$slice": ["$historial_pagos", {"$add": [idx, 1]}, {"$size": "$historial_pagos"}]},
+                                    {"$slice": ["$" + MOVIMIENTOS_FIELD, actual_idx]},
+                                    {"$slice": ["$" + MOVIMIENTOS_FIELD, {"$add": [actual_idx, 1]}, {"$size": "$" + MOVIMIENTOS_FIELD}]},
                                 ]
                             }
                         }
                     },
-                    {
-                        "$set": {
-                            "total_abonado": {
-                                "$reduce": {
-                                    "input": {"$ifNull": ["$historial_pagos", []]},
-                                    "initialValue": 0,
-                                    "in": {"$add": ["$$value", "$$this.valor"]},
-                                }
-                            }
-                        }
-                    },
+                    {"$set": {"total_abonado": movimiento_neto_expr()}},
                     {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
                 ],
             )
@@ -359,17 +385,7 @@ def register_routes(app: Flask) -> None:
             result = boletas.update_one(
                 {"_id": boleta_id},
                 [
-                    {
-                        "$set": {
-                            "total_abonado": {
-                                "$reduce": {
-                                    "input": {"$ifNull": ["$historial_pagos", []]},
-                                    "initialValue": 0,
-                                    "in": {"$add": ["$$value", "$$this.valor"]},
-                                }
-                            }
-                        }
-                    },
+                    {"$set": {"total_abonado": movimiento_neto_expr()}},
                     {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
                 ],
             )
@@ -456,7 +472,7 @@ def register_routes(app: Flask) -> None:
             require_collections()
             doc = boletas.find_one(
                 {"_id": boleta_id},
-                {"_id": 1, "vendedor_id": 1, "cliente": 1, "estado": 1, "total_abonado": 1, "historial_pagos": 1, "fecha_adquisicion": 1},
+                {"_id": 1, "vendedor_id": 1, "cliente": 1, "estado": 1, "total_abonado": 1, MOVIMIENTOS_FIELD: 1, "fecha_adquisicion": 1},
             )
         except Exception as exc:
             return jsonify({"ok": False, "error": safe_error_message(exc)}), 500

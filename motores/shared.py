@@ -5,7 +5,7 @@ _APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _APP_ROOT not in sys.path:
     sys.path.insert(0, _APP_ROOT)
 
-from motores.auth import role_required, current_user
+from motores.auth import role_required, current_user, has_role, home_endpoint
 from motores.vendor_service import (  # re-export
     normalize_vendedor_id,
     calc_comision_por_boleta,
@@ -33,7 +33,7 @@ from motores.cache import (
     invalidate_dashboard_cache,
     invalidate_config_cache,
 )
-from motores.ticket_service import estado_para_total, sync_ticket_statuses, estado_pipeline_expr
+from motores.ticket_service import estado_para_total, sync_ticket_statuses, estado_pipeline_expr, movimiento_neto_expr
 from motores.config_service import get_config, require_collections
 from motores.payment_service import (
     buscar_transferencia_duplicada,
@@ -55,7 +55,7 @@ from flask import (
     request,
     url_for,
 )
-from database import boletas, configuracion, facturas, rifas, vendedores, usuarios
+from database import boletas, configuracion, facturas, rifas, traslados, vendedores, usuarios
 from motores.constants import (
     BOLETA_MIN,
     BOLETA_MAX,

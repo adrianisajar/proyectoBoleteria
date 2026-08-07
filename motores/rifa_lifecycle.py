@@ -1,4 +1,4 @@
-from database import boletas, configuracion, facturas, rifas, vendedores
+from database import boletas, configuracion, facturas, rifas, traslados, vendedores
 from motores.cache import invalidate_config_cache, invalidate_dashboard_cache
 from motores.config_service import require_collections
 from motores.constants import BOLETA_MAX, BOLETA_MIN, COMISION_DEFAULT_TIERS, CONFIG_ID
@@ -12,15 +12,19 @@ def crear_indices_boletas() -> None:
     boletas.create_index([("vendedor_id", 1), ("estado", 1)])
     boletas.create_index([("estado", 1), ("_id", 1)])
     boletas.create_index([("total_abonado", 1), ("_id", 1)])
-    boletas.create_index([("historial_pagos.fecha", 1)])
+    boletas.create_index([("historial_movimientos.fecha", 1)])
     boletas.create_index("cliente.telefono")
     boletas.create_index("cliente.nombre")
-    boletas.create_index("historial_pagos.metodo")
-    boletas.create_index("historial_pagos.referencia")
+    boletas.create_index("historial_movimientos.metodo")
+    boletas.create_index("historial_movimientos.referencia")
+    boletas.create_index("historial_movimientos.tipo")
     vendedores.create_index("telefono")
     facturas.create_index([("fecha", -1)])
     facturas.create_index("tipo")
     rifas.create_index("estado")
+    traslados.create_index([("fecha", -1)])
+    traslados.create_index("boleta_origen")
+    traslados.create_index("boleta_destino")
 
 
 def crear_nueva_rifa(
@@ -38,7 +42,8 @@ def crear_nueva_rifa(
         asignaciones = list(vendedores.find({}, {"boletas_asignadas": 1}))
 
     facturas.delete_many({})
-    configuracion.update_one({"_id": CONFIG_ID}, {"$set": {"factura_counter": 0}})
+    traslados.delete_many({})
+    configuracion.update_one({"_id": CONFIG_ID}, {"$set": {"factura_counter": 0, "traslado_counter": 0}})
 
     boletas.delete_many({})
     rifas.delete_many({})

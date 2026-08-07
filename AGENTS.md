@@ -38,6 +38,10 @@ motores/
   rifa_lifecycle.py   76 — crear_nueva_rifa, crear_indices_boletas
   consulta_service.py 165 — build_consulta_context, build_page_url
   facturacion_common.py 55 — shared validation helpers (transfer, dedup, existence)
+  egresos.py            — egreso invoice routes (comprobante interno, admin + caja)
+  egreso_service.py     — egreso ledger ops (registrar/rollback) on historial_movimientos
+  traslado_service.py   — traslado de saldo ops (movimientos entrada/salida + comprobante)
+  traslados.py          — traslado routes (cambio de número, admin + caja)
   health.py           14 — /health endpoint (colecciones, factura_counter, índices requeridos)
   errores.py            — custom 404/500 handlers: HTML pages + JSON for /api/* (error.html)
   boletas.py           — ticket routes (consultas, cliente/BD redirects)
@@ -72,7 +76,7 @@ tests/                pytest suite (conftest seeds/resets test DB per test)
 - `conftest.py` sets `MONGO_DB` to esa DB única **before** importing `app` (env var wins over `load_dotenv`), seeds 500 tickets + config + active rifa once per session, and resets collections before each test.
 - `_warm_up()` (con retry ×3) ejecuta un count/find sobre cada colección tras la siembra para mitigar la primera petición fría contra Atlas.
 - Never point tests at the production DB; the suite drops/resets everything in `MONGO_DB`.
-- Coverage: validation parsers, ticket state machine, commission tiers, vendor CRUD + assign/remove/delete rules, customer invoices (full/partial/multiple/rejected cases), vendor invoices (incl. rollback on overpayment), invoice annulment, payment dedup, health/API endpoints, HTML/JSON 404 errors.
+- Coverage: validation parsers, ticket state machine, commission tiers, vendor CRUD + assign/remove/delete rules, customer invoices (full/partial/multiple/rejected cases), vendor invoices (incl. rollback on overpayment), invoice annulment, payment dedup, egreso invoices, traslados de saldo, health/API endpoints, HTML/JSON 404 errors.
 
 ## .env (required)
 ```
@@ -83,6 +87,8 @@ Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `SERVER_SELECTION_TIMEOUT_MS` (alias),
 `MAX_POOL_SIZE` (default 100), `MONGO_TLS_INSECURE` (default `false`; ponla en `true` solo si tu cluster Atlas requiere TLS sin verificación de CA), 
 `NOMBRE_RIFA`, `VALOR_BOLETA`, `COMISION_POR_BOLETA` (default 10000), `FLASK_HOST`, `FLASK_DEBUG`,
 `SESSION_COOKIE_SECURE` (default `0`; ponla en `1` si sirves por HTTPS), `SESSION_COOKIE_SAMESITE` (default `Lax`),
+`SESSION_COOKIE_DAYS` (default `7`; días que dura la cookie de sesión, se refresca con cada petición autenticada),
+`SESSION_IDLE_TIMEOUT_SECONDS` (default `1800`; inactividad máxima antes de cerrar sesión),
 `MAX_CONTENT_LENGTH_MB` (default 16).
 
 **`.gitignore` includes `.env`** — secrets are not tracked.
@@ -90,11 +96,12 @@ Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `SERVER_SELECTION_TIMEOUT_MS` (alias),
 **`app.py` fails to start with a clear error if `SECRET_KEY` is missing** — no hardcoded fallback.
 
 ## Architecture notes
-- **No auth system** — all routes accessible without login. `current_user()` always returns admin.
+- **Auth system**: session login with two roles (`admin`, `cajero`). `role_required(...)` guards every route (403 for HTML, JSON error for `/api/*`); menu visibility follows the same rules via `can(...)`. Dashboard, Configuración, Gestión de usuarios, Vendedores y respaldos son exclusivos del admin. Caja opera: consultas, compradores, facturas cliente/vendedor, egresos y traslados.
 - **Primary feature**: generate printable invoices (facturas) from ticket sales and seller payments.
-- **Invoice types**: `cliente` (customer data: name, address, phone) and `vendedor` (seller payment summary).
-- **Factura ID**: auto-incrementing integer from `configuracion.factura_counter` (displayed zero-padded 5 digits).
-- **Invoice detail**: built from `historial_pagos` of the selected tickets.
+- **Invoice types**: `cliente` (customer data: name, address, phone), `vendedor` (seller payment summary) and `egreso` (internal outflow comprobante, e.g. vendor commission).
+- **Factura ID**: auto-incrementing integer from `configuracion.factura_counter` (displayed zero-padded 5 digits). Egresos share the same counter; traslados use their own `traslado_counter`.
+- **Unified ledger**: each ticket stores `historial_movimientos` with typed entries (`pago`, `egreso`, `traslado_entrada`, `traslado_salida`). Legacy entries without `tipo` count as `pago`.
+- **Invoice detail**: built from `historial_movimientos` of the selected tickets (pago movements only).
 - **Ticket numbers** are `int` in range 0000–9999 used as `_id` in MongoDB. Displayed zero-padded.
 - **Five ticket states**: `disponible`, `asignada` (vendor assigned), `separada` (client info saved), `abonando` (partial payment), `pagada`.
 - **Default vendedor**: `"LOCAL"` when no seller is assigned.
@@ -111,7 +118,7 @@ Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `SERVER_SELECTION_TIMEOUT_MS` (alias),
 ## Routes overview
 | Route | Module | Purpose |
 |---|---|---|
-| `/dashboard` | reportes | Dashboard with invoice + ticket stats |
+| `/dashboard` | reportes | Dashboard with invoice + ticket stats (admin only) |
 | `/consultas` | boletas | Ticket search with filters + pagination |
 
 | `/vendedores` | pagos | CRUD + assign/remove ticket blocks + invoice |
@@ -119,6 +126,11 @@ Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `SERVER_SELECTION_TIMEOUT_MS` (alias),
 | `/facturas/vendedor` | facturacion | Vendor invoices list |
 | `/facturas/cliente` | facturacion | Customer invoices list |
 | `/facturas/<id>` | facturacion | Printable invoice view |
+| `/facturas/egreso` | egresos | List of egreso comprobantes (admin + caja) |
+| `/facturas/egreso/nueva` | egresos | Create egreso invoice (admin + caja) |
+| `/traslados` | traslados | List of traslados de saldo (admin + caja) |
+| `/traslados/nuevo` | traslados | Create traslado (admin + caja) |
+| `/traslados/<id>` | traslados | Traslado comprobante (admin + caja) |
 | `/facturas/nueva/cliente` | facturacion_cliente | Create customer invoice |
 | `/facturas/nueva/vendedor` | facturacion_vendedor | Create seller invoice — dynamic table: enter tickets + amounts (different per ticket), registers payments + generates invoice |
 | `/api/generar-factura` | facturacion | Create invoice (cliente or vendedor) via API |
@@ -130,9 +142,9 @@ Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `SERVER_SELECTION_TIMEOUT_MS` (alias),
 ## Invoices (facturas)
 - Collection: `facturas` in MongoDB
 - Auto-increment ID via `configuracion.factura_counter`
-- Two types: `cliente` (customer purchase) and `vendedor` (seller payment summary)
+- Three types: `cliente` (customer purchase), `vendedor` (seller payment summary) and `egreso` (internal outflow comprobante, e.g. vendor commission)
 - Template `factura.html`: print-friendly with `window.print()` support
 - Accessible via `/facturas/<id>` and listed at `/facturas`
-- **Vendor invoice creation** (`/facturas/nueva/vendedor`): dynamic form where user adds rows with ticket number(s) comma-separated + payment amount (different per ticket) + method + reference (hidden unless "transferencia"); shows a **preview modal** (grouped by amount) before confirming; each payment registered to the ticket with `factura_id` in `historial_pagos`
+- **Vendor invoice creation** (`/facturas/nueva/vendedor`): dynamic form where user adds rows with ticket number(s) comma-separated + payment amount (different per ticket) + method + reference (hidden unless "transferencia"); shows a **preview modal** (grouped by amount) before confirming; each payment registered to the ticket with `factura_id` in `historial_movimientos`
 - **Vendor invoice template** (`factura_vendedor.html`): "COMPROBANTE DE RECAUDO" layout; detalle **grouped by amount** (Jinja2 `groupby` filter); boleta numbers displayed in CSS grid per group; observations, signature lines; commissions summary; `page-break-inside: avoid` per group for clean printing
 - **Customer invoice template** (`factura_cliente.html`): "RECIBO DE PAGO / ABONO" layout; shows boleta info (price, state), movement type (ABONO/PAGO TOTAL/SEPARACIÓN), participation status per adicional, payment history table; supports multiple boletas per invoice; `boletas_info` passed from `ver_factura` route with `calcular_premios_adicionales`

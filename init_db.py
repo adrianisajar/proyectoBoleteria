@@ -1,6 +1,6 @@
 import os
 
-from database import boletas, configuracion, facturas, rifas, usuarios, vendedores
+from database import boletas, configuracion, facturas, rifas, traslados, usuarios, vendedores
 from motores.constants import COMISION_DEFAULT_TIERS, DEFAULT_RIFA
 from motores.fechas import now_local
 
@@ -13,16 +13,20 @@ def crear_indices():
     boletas.create_index([("estado", 1), ("_id", 1)])
     boletas.create_index([("total_abonado", 1), ("_id", 1)])
     boletas.create_index([("vendedor_id", 1), ("estado", 1)])
-    boletas.create_index([("historial_pagos.fecha", 1)])
+    boletas.create_index([("historial_movimientos.fecha", 1)])
     boletas.create_index("cliente.telefono")
     boletas.create_index("cliente.nombre")
-    boletas.create_index("historial_pagos.metodo")
-    boletas.create_index("historial_pagos.referencia")
+    boletas.create_index("historial_movimientos.metodo")
+    boletas.create_index("historial_movimientos.referencia")
+    boletas.create_index("historial_movimientos.tipo")
     vendedores.create_index("telefono")
     facturas.create_index([("fecha", -1)])
     facturas.create_index("tipo")
     rifas.create_index("estado")
     usuarios.create_index("usuario", unique=True)
+    traslados.create_index([("fecha", -1)])
+    traslados.create_index("boleta_origen")
+    traslados.create_index("boleta_destino")
 
 
 def crear_rifa():
@@ -60,7 +64,7 @@ def crear_boleta(numero, rifa_id):
         "cliente": {"nombre": "", "telefono": "", "direccion": ""},
         "estado": "disponible",
         "total_abonado": 0,
-        "historial_pagos": [],
+        "historial_movimientos": [],
         "fecha_adquisicion": None,
     }
 
@@ -75,6 +79,7 @@ def inicializar_rifa():
     facturas.delete_many({})
     rifas.delete_many({})
     configuracion.delete_many({})
+    traslados.delete_many({})
 
     rifa = crear_rifa()
     rifa_id = rifa["_id"]

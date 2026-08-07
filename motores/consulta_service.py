@@ -10,6 +10,9 @@ from motores.constants import (
     CONSULTA_LIMIT_MAX,
     ESTADOS_BOLETA,
     METODOS_PAGO,
+    MOV_EGRESO,
+    MOV_PAGO,
+    MOVIMIENTOS_FIELD,
     VENDEDOR_LOCAL,
 )
 from motores.validacion import parse_int_filter, parse_money, ticket_number_query
@@ -37,6 +40,7 @@ def build_consulta_context(args: dict) -> dict:
         "fecha_adquisicion_op": args.get("fecha_adquisicion_op", "").strip(),
         "fecha_adquisicion": args.get("fecha_adquisicion", "").strip(),
         "saldo_estado": args.get("saldo_estado", "").strip(),
+        "egreso_estado": args.get("egreso_estado", "").strip(),
         "limite": args.get("limite", str(CONSULTA_LIMIT_DEFAULT)).strip(),
     }
 
@@ -80,12 +84,21 @@ def build_consulta_context(args: dict) -> dict:
 
     if filters["pago_metodo"]:
         if filters["pago_metodo"] in METODOS_PAGO:
-            query["historial_pagos.metodo"] = filters["pago_metodo"]
+            query.setdefault("$and", []).append({MOVIMIENTOS_FIELD: {"$elemMatch": {"tipo": {"$in": [None, MOV_PAGO]}, "metodo": filters["pago_metodo"]}}})
         else:
             errors.append("Método de pago inválido.")
 
     if filters["referencia"]:
-        query["historial_pagos.referencia"] = {"$regex": re.escape(filters["referencia"]), "$options": "i"}
+        query.setdefault("$and", []).append(
+            {
+                MOVIMIENTOS_FIELD: {
+                    "$elemMatch": {
+                        "tipo": {"$in": [None, MOV_PAGO]},
+                        "referencia": {"$regex": re.escape(filters["referencia"]), "$options": "i"},
+                    }
+                }
+            }
+        )
 
     if filters["cliente"] and filters["cliente_estado"] == "sin_cliente":
         errors.append("Nombre de cliente y filtro 'Sin cliente' son incompatibles.")
@@ -115,6 +128,13 @@ def build_consulta_context(args: dict) -> dict:
         query.setdefault("$and", []).append({"estado": "pagada"})
     elif filters["saldo_estado"]:
         errors.append("Filtro de saldo inválido.")
+
+    if filters["egreso_estado"] == "con_egreso":
+        query[MOVIMIENTOS_FIELD + ".tipo"] = MOV_EGRESO
+    elif filters["egreso_estado"] == "sin_egreso":
+        query[MOVIMIENTOS_FIELD + ".tipo"] = {"$ne": MOV_EGRESO}
+    elif filters["egreso_estado"]:
+        errors.append("Filtro de egresos inválido.")
 
     abonado_op = filters["abonado_op"] or "eq"
     abonado_valor_raw = filters["abonado_valor"]

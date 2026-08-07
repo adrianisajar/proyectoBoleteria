@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Traslados — {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Cambio de número</p>
+        <h1 class="h3 mb-0">Traslados de saldo</h1>
+    </div>
+    <a href="{{ url_for('nuevo_traslado') }}" class="btn btn-primary d-inline-flex align-items-center gap-2">
+        <i class="bi bi-plus-circle"></i> Nuevo traslado
+    </a>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-bordered table-hover table-sm align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>N°</th>
+                <th>Fecha</th>
+                <th>Origen</th>
+                <th>Destino</th>
+                <th>Vendedor</th>
+                <th class="text-end">Valor</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in traslados %}
+            <tr>
+                <td class="fw-bold">{{ "%05d" % t._id }}</td>
+                <td>{{ t.fecha }}</td>
+                <td class="ticket-number">#{{ "%04d" % t.boleta_origen }}</td>
+                <td class="ticket-number">#{{ "%04d" % t.boleta_destino }}</td>
+                <td>{{ t.vendedor_nombre or t.vendedor_id }}</td>
+                <td class="text-end">{{ "{:,}".format(t.valor) }}</td>
+                <td><a href="{{ url_for('ver_traslado', traslado_id=t._id) }}" class="btn btn-sm btn-outline-primary">Ver</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-secondary py-4">No hay traslados registrados</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

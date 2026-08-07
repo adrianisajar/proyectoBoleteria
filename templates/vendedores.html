@@ -15,28 +15,34 @@
 </div>
 
 <div class="row g-3 mb-4">
-    <div class="col-md-3">
+    <div class="col">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-primary);">
             <div class="metric-label mb-2">Vendedores registrados</div>
             <div class="metric-value ticket-number">{{ resumen.total_vendedores }}</div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-info);">
             <div class="metric-label mb-2">Boletas asignadas</div>
             <div class="metric-value ticket-number">{{ resumen.total_asignadas }}</div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-success);">
             <div class="metric-label mb-2">Recaudado</div>
             <div class="metric-value">{{ resumen.total_recaudado|cop }}</div>
         </div>
     </div>
-    <div class="col-md-3">
+    <div class="col">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-warning);">
             <div class="metric-label mb-2">Comisiones</div>
             <div class="metric-value">{{ resumen.total_comision|cop }}</div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-danger);">
+            <div class="metric-label mb-2">Egresos</div>
+            <div class="metric-value">{{ resumen.total_egresos|cop }}</div>
         </div>
     </div>
 </div>
@@ -146,6 +152,7 @@
                         <th class="text-end">Vendidas</th>
                         <th class="text-end">Pendientes</th>
                         <th class="text-end">Recaudado</th>
+                        <th class="text-end">Egresos</th>
                         <th class="text-end"></th>
                     </tr>
                 </thead>
@@ -169,6 +176,9 @@
                                 {% endif %}
                             </td>
                             <td class="text-end fw-bold text-success">{{ vendedor.recaudado|cop }}</td>
+                            <td class="text-end fw-bold text-danger">
+                                {% if vendedor.total_egresos > 0 %}{{ vendedor.total_egresos|cop }}{% else %}—{% endif %}
+                            </td>
                             <td class="text-end">
                                 <div class="d-flex gap-1 justify-content-end">
                                     <button type="button" class="btn btn-sm btn-outline-info ver-boletas" data-vendedor="{{ vendedor._id }}" data-nombre="{{ vendedor.nombre|e }}" title="Ver boletas">

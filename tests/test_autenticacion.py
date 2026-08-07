@@ -1,10 +1,19 @@
+import re
 import time
+from datetime import UTC, datetime
 
 from conftest import ADMIN_USUARIO, CAJA_PASSWORD, CAJA_USUARIO, login
 
 from database import facturas, usuarios
 from motores.constants import SESSION_IDLE_TIMEOUT_SECONDS
 from motores.fechas import now_local
+
+
+def _cookie_expires(set_cookie: str):
+    m = re.search(r"Expires=([^;]+)", set_cookie)
+    if not m:
+        return None
+    return datetime.strptime(m.group(1).strip(), "%a, %d %b %Y %H:%M:%S GMT").replace(tzinfo=UTC)
 
 
 def test_ruta_protegida_redirige_a_login(client_anon):
@@ -49,10 +58,45 @@ def test_logout_destruye_sesion(client):
     assert resp.status_code == 302
 
 
+def test_sesion_persistente_7_dias(client):
+    resp = client.get("/dashboard")
+    set_cookie = resp.headers.get("Set-Cookie", "")
+    assert "session=" in set_cookie
+    expires = _cookie_expires(set_cookie)
+    assert expires is not None
+    assert expires > datetime.now(UTC), set_cookie
+
+
+def test_logout_borra_cookie_persistente(client):
+    resp = client.post("/logout")
+    set_cookie = resp.headers.get("Set-Cookie", "")
+    expires = _cookie_expires(set_cookie)
+    assert expires is not None
+    assert expires < datetime.now(UTC), set_cookie
+
+
 def test_caja_no_accede_admin(client_caja):
     for ruta in ("/configuracion", "/vendedores", "/backup"):
         resp = client_caja.get(ruta)
         assert resp.status_code == 403, ruta
+
+
+def test_caja_no_accede_dashboard(client_caja):
+    for ruta in ("/dashboard", "/reportes/modelo-rifa.xlsx"):
+        resp = client_caja.get(ruta)
+        assert resp.status_code == 403, ruta
+
+
+def test_caja_accede_operacion_diaria(client_caja):
+    for ruta in (
+        "/facturas/egreso",
+        "/facturas/egreso/nueva",
+        "/traslados",
+        "/traslados/nuevo",
+        "/facturas/nueva/vendedor",
+    ):
+        resp = client_caja.get(ruta)
+        assert resp.status_code == 200, ruta
 
 
 def test_caja_accede_consultas(client_caja):

@@ -21,7 +21,7 @@ def test_build_factura_detalle(client):
         {"_id": 5},
         {
             "$set": {
-                "historial_pagos": [
+                "historial_movimientos": [
                     {"fecha": "2026-07-01", "valor": 40000, "metodo": "efectivo", "factura_id": 9},
                     {"fecha": "2026-07-02", "valor": 30000, "metodo": "transferencia", "referencia": "R1", "banco": "B", "factura_id": 10},
                     {"fecha": "2026-07-03", "valor": 10000, "metodo": "efectivo", "factura_id": 99},
@@ -41,7 +41,7 @@ def test_buscar_transferencia_duplicada(client):
         {"_id": 5},
         {
             "$set": {
-                "historial_pagos": [
+                "historial_movimientos": [
                     {"fecha": "2026-07-01", "valor": 40000, "metodo": "transferencia", "referencia": "REF-X", "banco": "BBVA"},
                 ]
             }
@@ -66,7 +66,7 @@ def test_registrar_abono_lote_transferencia_duplicada(client):
         {"_id": 5},
         {
             "$set": {
-                "historial_pagos": [
+                "historial_movimientos": [
                     {"fecha": "2026-07-01", "valor": 40000, "metodo": "transferencia", "referencia": "REF-DUP", "banco": "B"},
                 ]
             }

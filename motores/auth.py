@@ -2,7 +2,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-from flask import abort, flash, jsonify, redirect, request, session, url_for
+from flask import abort, current_app, flash, jsonify, redirect, request, session, url_for
 
 from motores.constants import ROL_ADMIN, ROL_CAJA
 
@@ -43,12 +43,23 @@ def has_role(*roles: str) -> bool:
     return (not roles) or user.get("rol") in roles
 
 
+def home_endpoint() -> str:
+    """Return the landing endpoint for the current role (admin → dashboard, caja → consultas)."""
+    return "dashboard" if has_role(ROL_ADMIN) else "consultas"
+
+
 def login_required(view_func: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator: require an active session, otherwise redirect to login."""
 
     @wraps(view_func)
     def wrapped(*args: Any, **kwargs: Any) -> Any:
         if current_user() is None:
+            current_app.logger.warning(
+                "Redirigiendo a login (login_required): ruta=%s cookie=%s session_keys=%s",
+                request.path,
+                bool(request.cookies.get(current_app.config.get("SESSION_COOKIE_NAME", "session"))),
+                sorted(session.keys()),
+            )
             if _es_solicitud_api():
                 return jsonify({"ok": False, "error": "Sesi\u00f3n no activa."}), 401
             flash("Debes iniciar sesi\u00f3n para acceder.", "warning")
@@ -66,6 +77,12 @@ def role_required(*roles: str) -> Callable[[Callable[..., Any]], Callable[..., A
         def wrapped(*args: Any, **kwargs: Any) -> Any:
             user = current_user()
             if user is None:
+                current_app.logger.warning(
+                    "Redirigiendo a login (role_required): ruta=%s cookie=%s session_keys=%s",
+                    request.path,
+                    bool(request.cookies.get(current_app.config.get("SESSION_COOKIE_NAME", "session"))),
+                    sorted(session.keys()),
+                )
                 if _es_solicitud_api():
                     return jsonify({"ok": False, "error": "Sesi\u00f3n no activa."}), 401
                 flash("Debes iniciar sesi\u00f3n para acceder.", "warning")

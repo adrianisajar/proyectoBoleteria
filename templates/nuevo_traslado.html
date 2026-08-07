@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Nuevo traslado — {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Cambio de número</p>
+        <h1 class="h3 mb-0">Nuevo traslado de saldo</h1>
+    </div>
+    <a href="{{ url_for('traslados_list') }}" class="btn btn-outline-secondary d-inline-flex align-items-center gap-2">
+        <i class="bi bi-list-ul"></i> Ver traslados
+    </a>
+</div>
+
+<form method="post" class="office-card bg-body p-3 p-md-4" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <label for="vendedorSearch" class="form-label fw-semibold">Vendedor</label>
+            <div class="position-relative">
+                <input type="text" class="form-control" id="vendedorSearch"
+                       placeholder="Buscar vendedor..." autocomplete="off" required
+                       value="{{ form.vendedor_nombre or '' }}">
+                <select class="d-none" id="vendedor_id" name="vendedor_id" required>
+                    <option value="">&mdash; Seleccione &mdash;</option>
+                    {% for v in vendedores %}
+                    <option value="{{ v._id }}" data-nombre="{{ v.nombre or v._id }}" {% if form.vendedor_id == v._id %}selected{% endif %}>{{ v.nombre or v._id }}</option>
+                    {% endfor %}
+                </select>
+                <div class="list-group position-absolute w-100 shadow-sm rounded-2"
+                     id="vendedorSugerencias" style="display:none; z-index:1050; max-height:200px; overflow-y:auto;"></div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <label for="origen" class="form-label fw-semibold">Boleta de origen</label>
+            <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="origen" name="origen" value="{{ form.origen }}" placeholder="0001" data-validation="numbers" required>
+            <div class="ticket-helper text-secondary small mt-1">Boleta que entrega el saldo</div>
+        </div>
+        <div class="col-md-3">
+            <label for="destino" class="form-label fw-semibold">Boleta de destino</label>
+            <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="destino" name="destino" value="{{ form.destino }}" placeholder="0002" data-validation="numbers" required>
+            <div class="ticket-helper text-secondary small mt-1">Boleta que recibe el saldo</div>
+        </div>
+        <div class="col-md-2">
+            <label for="valor" class="form-label fw-semibold">Valor a trasladar</label>
+            <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="text" inputmode="numeric" class="form-control" id="valor" name="valor" value="{{ form.valor }}" placeholder="0" data-money-input required>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <label for="fecha" class="form-label fw-semibold">Fecha</label>
+            <input type="date" class="form-control" id="fecha" name="fecha" value="{{ form.fecha or today }}" max="{{ today }}" required>
+        </div>
+    </div>
+
+    <div class="alert alert-secondary">
+        <i class="bi bi-info-circle me-1"></i>
+        El valor trasladado se descuenta del saldo de la boleta de origen y se suma al de la boleta de destino.
+        No afecta los pagos ya registrados ni las facturas emitidas.
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 justify-content-end">
+        <a href="{{ url_for('traslados_list') }}" class="btn btn-outline-secondary">Cancelar</a>
+        <button type="submit" class="btn btn-primary d-inline-flex align-items-center gap-2">
+            <i class="bi bi-check-lg"></i> Registrar traslado
+        </button>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const vendedorSearch = document.getElementById("vendedorSearch");
+        const vendedorSelect = document.getElementById("vendedor_id");
+        const sugerencias = document.getElementById("vendedorSugerencias");
+
+        const vendedores = [
+            {% for v in vendedores %}
+            { id: {{ v._id | tojson }}, nombre: {{ (v.nombre or v._id) | tojson }} },
+            {% endfor %}
+        ];
+        let selectedVendedor = null;
+        {% if form.vendedor_id %}
+        selectedVendedor = { id: {{ form.vendedor_id | tojson }}, nombre: {{ form.vendedor_nombre | tojson }} };
+        vendedorSelect.value = {{ form.vendedor_id | tojson }};
+        vendedorSearch.value = {{ form.vendedor_nombre | tojson }};
+        {% endif %}
+
+        const mostrarSugerencias = (filtro) => {
+            const q = filtro.toLowerCase();
+            const opts = vendedores.filter(function(v) {
+                return v.id.toLowerCase().includes(q) || v.nombre.toLowerCase().includes(q);
+            });
+            if (!q || !opts.length) { sugerencias.style.display = "none"; return; }
+            sugerencias.innerHTML = opts.map(function(v) {
+                var active = selectedVendedor && selectedVendedor.id === v.id ? " active" : "";
+                return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + v.id + '" data-nombre="' + v.nombre + '">' + v.nombre + ' <small class="text-secondary">(' + v.id + ')</small></button>';
+            }).join("");
+            sugerencias.style.display = "";
+        };
+
+        const seleccionarVendedor = (id, nombre) => {
+            selectedVendedor = { id: id, nombre: nombre };
+            vendedorSearch.value = nombre;
+            vendedorSelect.value = id;
+            sugerencias.style.display = "none";
+        };
+
+        vendedorSearch.addEventListener("input", function() {
+            if (selectedVendedor && selectedVendedor.nombre !== this.value) {
+                selectedVendedor = null;
+                vendedorSelect.value = "";
+            }
+            mostrarSugerencias(this.value);
+        });
+
+        sugerencias.addEventListener("click", function(e) {
+            var btn = e.target.closest("button");
+            if (btn) seleccionarVendedor(btn.dataset.id, btn.dataset.nombre);
+        });
+
+        vendedorSearch.addEventListener("blur", function() {
+            setTimeout(function() { sugerencias.style.display = "none"; }, 200);
+        });
+
+        vendedorSearch.addEventListener("focus", function() {
+            if (this.value) mostrarSugerencias(this.value);
+        });
+    })();
+</script>
+{% endblock %}

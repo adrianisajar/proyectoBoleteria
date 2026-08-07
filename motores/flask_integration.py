@@ -1,7 +1,7 @@
 import time
 from typing import Any
 
-from flask import Flask, g, jsonify, redirect, request, session, url_for
+from flask import Flask, current_app, g, jsonify, redirect, request, session, url_for
 
 from motores.auth import current_user, has_role
 from motores.config_service import get_config
@@ -43,9 +43,17 @@ def register_before_request(app: Flask) -> None:
         if not g.current_user:
             return None
 
+        session.permanent = True
+
         now = time.time()
         last = session.get("_ultima_actividad")
         if last is not None and (now - last) > SESSION_IDLE_TIMEOUT_SECONDS:
+            current_app.logger.warning(
+                "Sesión cerrada por inactividad: usuario=%s ruta=%s inactivo=%.0fs",
+                session.get("usuario"),
+                request.path,
+                now - last,
+            )
             session.clear()
             path = (request.path or "").lower()
             if path.startswith("/api/"):

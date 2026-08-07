@@ -16,6 +16,7 @@ from motores.shared import (
     facturas,
     flash,
     get_dashboard_stats,
+    home_endpoint,
     invalidate_config_cache,
     invalidate_dashboard_cache,
     invalidate_rifa_cache,
@@ -25,6 +26,7 @@ from motores.shared import (
     request,
     rifas,
     role_required,
+    traslados,
     url_for,
     usuarios,
     vendedores,
@@ -51,11 +53,11 @@ def register_routes(app: Flask) -> None:
 
     @app.route("/")
     def home() -> Response:
-        """Redirect root to the dashboard."""
-        return redirect(url_for("dashboard"))
+        """Redirect root to the role-appropriate landing page."""
+        return redirect(url_for(home_endpoint()))
 
     @app.route("/dashboard")
-    @role_required("admin", "cajero", "consulta")
+    @role_required("admin")
     def dashboard() -> str:
         """Render the dashboard with stats and active rifa info."""
         try:
@@ -92,7 +94,7 @@ def register_routes(app: Flask) -> None:
         q = request.args.get("q", "").strip()
         if not q or len(q) < 1:
             flash("Ingrese al menos 1 caracter para buscar.", "warning")
-            return redirect(url_for("dashboard"))
+            return redirect(url_for(home_endpoint()))
 
         results = {"facturas": [], "vendedores": []}
 
@@ -128,14 +130,14 @@ def register_routes(app: Flask) -> None:
         return render_template("buscar.html", q=q, results=results)
 
     @app.route("/reportes/modelo-rifa.xlsx")
-    @role_required("admin", "cajero", "consulta")
+    @role_required("admin")
     def exportar_modelo_rifa() -> Response:
-        """Download the modelo-rifa Excel report."""
+        """Download the modelo-rifa Excel report (global rifa data, admin only)."""
         try:
             headers, rows = modelo_rifa_report_rows()
         except Exception as exc:
             flash(f"No se pudo generar el modelo de rifa: {exc}", "danger")
-            return redirect(url_for("dashboard"))
+            return redirect(url_for(home_endpoint()))
 
         filename = f"modelo_rifa_{date.today().isoformat()}"
         return make_xlsx_response(filename, headers, rows)
@@ -152,6 +154,7 @@ def register_routes(app: Flask) -> None:
             ("rifas", rifas),
             ("configuracion", configuracion),
             ("usuarios", usuarios),
+            ("traslados", traslados),
         ]
         if request.method == "POST":
             accion = request.form.get("accion", "")

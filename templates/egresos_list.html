@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Egresos — {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Comprobantes internos</p>
+        <h1 class="h3 mb-0">Facturas de egreso</h1>
+    </div>
+    <a href="{{ url_for('nueva_factura_egreso') }}" class="btn btn-danger d-inline-flex align-items-center gap-2">
+        <i class="bi bi-plus-circle"></i> Nueva factura de egreso
+    </a>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-bordered table-hover table-sm align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>N°</th>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Vendedor</th>
+                <th>Boletas</th>
+                <th class="text-end">Total</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in facturas %}
+            <tr>
+                <td class="fw-bold">{{ "%05d" % f._id }}</td>
+                <td>{{ f.fecha.strftime("%d/%m/%Y %H:%M") }}</td>
+                <td><span class="badge text-bg-danger">{{ tipos_egreso.get(f.egreso_tipo, f.egreso_tipo or "egreso") }}</span></td>
+                <td>{{ f.vendedor_nombre or f.vendedor_id }}</td>
+                <td class="ticket-number">{{ f.boletas|length }}</td>
+                <td class="text-end">{{ "{:,}".format(f.valor_total) }}</td>
+                <td><a href="{{ url_for('ver_factura', factura_id=f._id) }}" class="btn btn-sm btn-outline-primary">Ver</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-secondary py-4">No hay facturas de egreso registradas</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

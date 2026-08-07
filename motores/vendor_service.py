@@ -2,7 +2,7 @@ import re
 
 from flask import flash
 
-from database import boletas, vendedores
+from database import boletas, facturas, vendedores
 from motores.config_service import get_config, require_collections
 from motores.constants import COMISION_DEFAULT_TIERS, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
 
@@ -45,12 +45,15 @@ def existing_boleta_ids(boleta_ids: list[int]) -> list[int]:
 
 
 def get_vendedores_snapshot(config: dict | None = None) -> tuple[list, dict]:
-    """Build the vendor panel list with stats (asignadas, vendidas, recaudado, comisión)."""
+    """Build the vendor panel list with stats (asignadas, vendidas, recaudado, comisión, egresos)."""
     require_collections()
     config = config or get_config()
     valor_boleta = int(config["valor_boleta"])
     rifa_id = config.get("rifa_id")
     match = [{"$match": {"rifa_id": rifa_id}}] if rifa_id else []
+
+    egresos_por_vendedor = _egresos_por_vendedor()
+    total_egresos = sum(egresos_por_vendedor.values())
 
     stats_docs = list(
         boletas.aggregate(
@@ -115,6 +118,7 @@ def get_vendedores_snapshot(config: dict | None = None) -> tuple[list, dict]:
             "saldo_pendiente": int(local_stats.get("saldo_pendiente", 0) or 0),
             "comision_por_boleta": 0,
             "comision": 0,
+            "total_egresos": int(egresos_por_vendedor.get(VENDEDOR_LOCAL, 0) or 0),
             "es_local": True,
         }
     )
@@ -149,6 +153,7 @@ def get_vendedores_snapshot(config: dict | None = None) -> tuple[list, dict]:
                 "saldo_pendiente": int(stats.get("saldo_pendiente", 0) or 0),
                 "comision_por_boleta": comision_por_boleta,
                 "comision": comision,
+                "total_egresos": int(egresos_por_vendedor.get(vendedor["_id"], 0) or 0),
             }
         )
 
@@ -156,8 +161,21 @@ def get_vendedores_snapshot(config: dict | None = None) -> tuple[list, dict]:
         "total_asignadas": total_asignadas,
         "total_recaudado": total_recaudado,
         "total_comision": total_comision,
+        "total_egresos": total_egresos,
         "total_vendedores": sum(1 for v in lista if v["_id"] != VENDEDOR_LOCAL),
     }
+
+
+def _egresos_por_vendedor() -> dict:
+    """Return {vendedor_id: sum_of_egreso_invoices} from egreso facturas."""
+    pipeline = [
+        {"$match": {"tipo": "egreso"}},
+        {"$group": {"_id": "$vendedor_id", "total": {"$sum": {"$ifNull": ["$valor_total", 0]}}}},
+    ]
+    try:
+        return {doc["_id"]: int(doc.get("total") or 0) for doc in facturas.aggregate(pipeline)}
+    except Exception:
+        return {}
 
 
 def safe_vendedores_snapshot() -> tuple[list, dict]:
@@ -166,7 +184,7 @@ def safe_vendedores_snapshot() -> tuple[list, dict]:
         return get_vendedores_snapshot()
     except Exception as exc:
         flash(f"No se pudo cargar el listado de vendedores: {exc}", "danger")
-        return [], {"total_asignadas": 0, "total_recaudado": 0, "total_comision": 0, "total_vendedores": 0}
+        return [], {"total_asignadas": 0, "total_recaudado": 0, "total_comision": 0, "total_egresos": 0, "total_vendedores": 0}
 
 
 def vendedor_label(vendedor_id: str, nombres_vendedores: dict) -> str:

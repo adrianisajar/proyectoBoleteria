@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Traslado T-{{ "%05d" % traslado._id }} — {{ super() }}{% endblock %}
+{% block head %}
+<style>
+@media print {
+  @page { margin: 2mm; }
+  html, body { min-height: auto !important; height: auto !important; }
+  nav, .navbar, .navbar *, .no-print, .modal, .modal-backdrop, .flash-stack,
+  .btn, button:not(.no-print), a:not(.no-print),
+  [class*="modal"], [id*="modal"] {
+    display: none !important;
+  }
+  body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  .app-main, .container { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+  .recibo {
+    max-width: none !important; width: 100% !important; margin: 0 !important; padding: 0 !important;
+    font-size: 1.3rem !important; line-height: 1.8 !important;
+  }
+  .recibo-empresa { font-size: 1.75rem !important; font-weight: 800 !important; }
+  .recibo-titulo { font-size: 1.55rem !important; font-weight: 700 !important; }
+  .recibo-label { font-size: 1.4rem !important; }
+  .firmas { font-size: 1.3rem !important; }
+}
+.recibo {
+  max-width: 340px; margin: 0 auto;
+  padding: 1rem 1rem;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  background: #fff;
+  color: #111;
+}
+.recibo-header { text-align: center; margin-bottom: 0.8rem; }
+.recibo-empresa { font-size: 1.1rem; font-weight: 800; letter-spacing: 0.05em; }
+.recibo-titulo { font-size: 0.9rem; font-weight: 700; margin-top: 0.25rem; }
+.recibo-dir { font-size: 0.7rem; color: #555; }
+.recibo-linea { border: 0; border-top: 1px dashed #999; margin: 0.6rem 0; }
+.recibo-linea-doble { border: 0; border-top: 3px double #000; margin: 0.6rem 0; }
+.recibo-campo { display: flex; justify-content: space-between; }
+.recibo-label { color: #555; font-weight: 600; }
+.movimiento { margin: 0.6rem 0; padding: 0.4rem; border: 1px dashed #999; }
+.mov-valor { font-weight: 800; font-size: 0.9rem; }
+.firmas { margin-top: 1.8rem; display: flex; justify-content: center; text-align: center; font-size: 0.7rem; }
+.firma-linea { width: 8rem; border-top: 1px solid #000; padding-top: 0.25rem; margin-top: 0.3rem; }
+.recibo-footer { text-align: center; margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px dashed #999; font-size: 0.7rem; color: #555; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="recibo">
+  <div class="text-end mb-1 no-print">
+    <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir</button>
+    <a href="{{ url_for('traslados_list') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
+  </div>
+
+  <div class="recibo-header">
+    <div class="recibo-empresa">{{ app_config.get("nombre_empresa") or app_config.nombre_rifa or "BOLETERÍA" }}</div>
+    <div class="recibo-titulo">COMPROBANTE DE TRASLADO DE SALDO</div>
+    <div class="recibo-dir">
+      {{ app_config.get("direccion") }}{% if app_config.get("direccion") and app_config.get("ciudad") %}, {% endif %}{{ app_config.get("ciudad") }}
+      {% if app_config.get("telefono") %}{{ " - " + app_config.get("telefono") }}{% endif %}
+    </div>
+  </div>
+
+  <hr class="recibo-linea">
+
+  <div class="recibo-campo"><span class="recibo-label">DOCUMENTO</span><span>T-{{ "%05d" % traslado._id }}</span></div>
+  <div class="recibo-campo"><span class="recibo-label">FECHA</span><span>{{ traslado.fecha }}</span></div>
+  <div><span class="recibo-label">RIFA</span></div>
+  <div style="font-weight:600">{{ app_config.nombre_rifa or "Rifa" }}</div>
+
+  <hr class="recibo-linea">
+
+  <div class="recibo-label">VENDEDOR</div>
+  <div style="font-size:0.8rem">{{ traslado.vendedor_nombre or traslado.vendedor_id }}</div>
+
+  <hr class="recibo-linea">
+
+  <div class="recibo-label">MOVIMIENTO</div>
+  <div class="movimiento">
+    <div class="recibo-campo"><span class="recibo-label">DE (origen)</span><span class="ticket-number">#{{ "%04d" % traslado.boleta_origen }}</span></div>
+    <div class="recibo-campo"><span class="recibo-label">A (destino)</span><span class="ticket-number">#{{ "%04d" % traslado.boleta_destino }}</span></div>
+    <hr class="recibo-linea">
+    <div class="recibo-campo mov-valor"><span>VALOR TRASLADADO</span><span>${{ "{:,}".format(traslado.valor) }}</span></div>
+  </div>
+
+  <div class="recibo-campo"><span class="recibo-label">Saldo origen tras operación</span><span class="ticket-number">${{ "{:,}".format(origen.get("total_abonado", 0) or 0) }}</span></div>
+  <div class="recibo-campo"><span class="recibo-label">Saldo destino tras operación</span><span class="ticket-number">${{ "{:,}".format(destino.get("total_abonado", 0) or 0) }}</span></div>
+
+  <div class="firmas">
+    <div>
+      <div style="margin-bottom: 0.3rem; font-size: 0.8rem;">{{ traslado.get("usuario_nombre") or "No registrado" }}</div>
+      <div class="firma-linea">Emitido por</div>
+    </div>
+  </div>
+
+  <div class="recibo-footer">
+    <div style="font-size:0.75rem">T-{{ "%05d" % traslado._id }}</div>
+    <div>{{ app_config.get("footer_texto") or "Documento interno, no tiene validez fiscal." }}</div>
+  </div>
+</div>
+{% endblock %}

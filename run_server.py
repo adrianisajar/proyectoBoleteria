@@ -28,6 +28,10 @@ def _fail(msg: str):
     print(f"  [FAIL] {msg}")
 
 
+# ── ASCII-only output (safe on cp1252 consoles) ──
+ARROW = "->"
+
+
 # ─────────────────────────────────────────────────────────────────────
 
 from app import app
@@ -57,7 +61,7 @@ if __name__ == "__main__":
 
     browser_host = "127.0.0.1" if host == "0.0.0.0" else host
     abrir_navegador(browser_host, port)
-    _ok(f"Servidor iniciado → http://{browser_host}:{port}")
+    _ok(f"Servidor iniciado {ARROW} http://{browser_host}:{port}")
     print()
 
     if debug:

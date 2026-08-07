@@ -16,7 +16,7 @@ from werkzeug.security import generate_password_hash
 
 import database
 from app import app as flask_app
-from database import boletas, configuracion, facturas, rifas, usuarios, vendedores
+from database import boletas, configuracion, facturas, rifas, traslados, usuarios, vendedores
 from motores.cache import invalidate_config_cache, invalidate_dashboard_cache
 from motores.fechas import now_local
 from optimizar_db import REQUIRED_INDEXES
@@ -102,6 +102,7 @@ def _crear_indices():
         "facturas": facturas,
         "rifas": rifas,
         "configuracion": configuracion,
+        "traslados": traslados,
     }
     for nombre_col, collection in collections.items():
         if collection is None:
@@ -117,6 +118,7 @@ def _seed_once():
     facturas.drop()
     rifas.drop()
     configuracion.drop()
+    traslados.drop()
     _seed_usuarios()
 
     rifa_id = rifas.insert_one(
@@ -140,13 +142,13 @@ def _seed_once():
             "cliente": {"nombre": "", "telefono": "", "direccion": ""},
             "estado": "disponible",
             "total_abonado": 0,
-            "historial_pagos": [],
+            "historial_movimientos": [],
             "fecha_adquisicion": None,
         }
         for n in range(N_BOLETAS)
     ]
     boletas.insert_many(docs)
-    configuracion.insert_one({"_id": "rifa", "factura_counter": 0})
+    configuracion.insert_one({"_id": "rifa", "factura_counter": 0, "traslado_counter": 0})
     _crear_indices()
     _warm_up()
     invalidate_config_cache()
@@ -156,6 +158,7 @@ def _seed_once():
 def _reset():
     facturas.delete_many({})
     vendedores.delete_many({})
+    traslados.delete_many({})
     boletas.update_many(
         {},
         {
@@ -164,12 +167,12 @@ def _reset():
                 "cliente": {"nombre": "", "telefono": "", "direccion": ""},
                 "estado": "disponible",
                 "total_abonado": 0,
-                "historial_pagos": [],
+                "historial_movimientos": [],
                 "fecha_adquisicion": None,
             }
         },
     )
-    configuracion.update_one({"_id": "rifa"}, {"$set": {"factura_counter": 0}})
+    configuracion.update_one({"_id": "rifa"}, {"$set": {"factura_counter": 0, "traslado_counter": 0}})
     _seed_usuarios()
     invalidate_config_cache()
     invalidate_dashboard_cache()

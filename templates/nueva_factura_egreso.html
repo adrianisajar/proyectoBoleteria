@@ -1,0 +1,435 @@
+{% extends "base.html" %}
+{% block title %}Nueva factura de egreso — {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+    <div>
+        <p class="text-uppercase text-secondary fw-bold mb-1 small">Comprobante interno</p>
+        <h1 class="h3 mb-0">Factura de egreso</h1>
+    </div>
+    <a href="{{ url_for('egresos_list') }}" class="btn btn-outline-secondary d-inline-flex align-items-center gap-2">
+        <i class="bi bi-list-ul"></i> Ver egresos
+    </a>
+</div>
+
+<form method="post" class="office-card bg-body p-3 p-md-4" id="egresoForm" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-3 mb-4">
+        <div class="col-md-6 col-lg-4">
+            <label for="vendedorSearch" class="form-label fw-semibold">Vendedor</label>
+            <div class="position-relative">
+                <input type="text" class="form-control" id="vendedorSearch"
+                       placeholder="Buscar vendedor..." autocomplete="off" required
+                       value="{{ form.vendedor_nombre or '' }}">
+                <select class="d-none" id="vendedor_id" name="vendedor_id" required>
+                    <option value="">&mdash; Seleccione &mdash;</option>
+                    {% for v in vendedores %}
+                    <option value="{{ v._id }}" data-nombre="{{ v.nombre or v._id }}" {% if form.vendedor_id == v._id %}selected{% endif %}>{{ v.nombre or v._id }}</option>
+                    {% endfor %}
+                </select>
+                <div class="list-group position-absolute w-100 shadow-sm rounded-2"
+                     id="vendedorSugerencias" style="display:none; z-index:1050; max-height:200px; overflow-y:auto;"></div>
+            </div>
+        </div>
+        <div class="col-md-3 col-lg-3">
+            <label for="fecha" class="form-label fw-semibold">Fecha</label>
+            <input type="date" class="form-control" id="fecha" name="fecha" value="{{ form.fecha or today }}" max="{{ today }}" required>
+        </div>
+        <div class="col-md-3 col-lg-3">
+            <label for="egreso_tipo" class="form-label fw-semibold">Tipo de egreso</label>
+            <select class="form-select" id="egreso_tipo" name="egreso_tipo" required>
+                <option value="">Seleccione…</option>
+                {% for key, label in tipos_egreso.items() %}
+                <option value="{{ key }}" {% if form.egreso_tipo == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h2 class="h6 fw-bold mb-0">Boletas del vendedor</h2>
+        <span class="text-secondary small" id="boletasCargadas">Seleccione un vendedor para cargar sus boletas.</span>
+    </div>
+
+    <div id="cargandoBoletas" class="text-secondary small py-2" style="display:none;">
+        <span class="spinner-border spinner-border-sm me-2" role="status"></span>Cargando boletas...
+    </div>
+
+    <div class="table-responsive" id="tablaBoletasWrap" style="display:none;">
+        <table class="table table-sm table-hover align-middle mb-0" id="boletasTable">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:1px;"><input type="checkbox" class="form-check-input m-0" id="seleccionarTodo" title="Seleccionar todas"></th>
+                    <th style="width:9%;">Boleta</th>
+                    <th class="text-end" style="width:13%;">Ingresado</th>
+                    <th class="text-end" style="width:13%;">Egresado</th>
+                    <th style="width:14%;">Estado</th>
+                    <th style="width:16%;">Valor egreso</th>
+                    <th style="width:13%;">Método</th>
+                    <th style="width:14%;">Referencia</th>
+                    <th style="width:14%;">Banco</th>
+                </tr>
+            </thead>
+            <tbody id="boletasBody"></tbody>
+        </table>
+    </div>
+
+    <div id="sinBoletas" class="alert alert-info py-2 small d-none">
+        <i class="bi bi-info-circle me-2"></i>El vendedor no tiene boletas asignadas.
+    </div>
+
+    <div class="alert alert-warning py-2 small d-none" id="avisoPrevios">
+        <i class="bi bi-exclamation-triangle me-2"></i><span id="avisoPreviosTexto"></span>
+    </div>
+
+    <div class="row g-3 mt-2 mb-4">
+        <div class="col-md-6">
+            <label for="observaciones" class="form-label fw-semibold">Observaciones</label>
+            <input type="text" class="form-control" id="observaciones" name="observaciones" value="{{ form.observaciones }}" placeholder="Opcional">
+        </div>
+        <div class="col-md-6">
+            <div class="panel-muted rounded p-3">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-secondary small">Boletas seleccionadas</span>
+                    <span class="fw-bold" id="resCantidad">0</span>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span class="text-secondary small">Total egreso</span>
+                    <span class="fw-bold text-danger" id="resTotal">$0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 justify-content-end">
+        <a href="{{ url_for('egresos_list') }}" class="btn btn-outline-secondary">Cancelar</a>
+        <button type="submit" class="btn btn-danger d-inline-flex align-items-center gap-2">
+            <i class="bi bi-check-lg"></i> Generar factura de egreso
+        </button>
+    </div>
+</form>
+
+<datalist id="listaBancos">
+    <option value="Bancolombia">
+    <option value="Davivienda">
+    <option value="Banco de Bogotá">
+    <option value="Banco Popular">
+    <option value="BBVA Colombia">
+    <option value="ScotiaColpatria">
+    <option value="Itaú Colombia">
+    <option value="Banco Agrario">
+    <option value="Banco AV Villas">
+    <option value="Banco Caja Social">
+    <option value="Banco Falabella">
+    <option value="Banco de Occidente">
+    <option value="Nequi">
+    <option value="DaviPlata">
+    <option value="Movii">
+</datalist>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (() => {
+        const money = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
+        const tbody = document.getElementById("boletasBody");
+        const wrap = document.getElementById("tablaBoletasWrap");
+        const cargando = document.getElementById("cargandoBoletas");
+        const sinBoletas = document.getElementById("sinBoletas");
+        const avisoPrevios = document.getElementById("avisoPrevios");
+        const avisoPreviosTexto = document.getElementById("avisoPreviosTexto");
+        const resCantidad = document.getElementById("resCantidad");
+        const resTotal = document.getElementById("resTotal");
+        const seleccionarTodo = document.getElementById("seleccionarTodo");
+        const estadoLabel = document.getElementById("boletasCargadas");
+
+        const vendedorSearch = document.getElementById("vendedorSearch");
+        const vendedorSelect = document.getElementById("vendedor_id");
+        const sugerencias = document.getElementById("vendedorSugerencias");
+
+        const vendedores = [
+            {% for v in vendedores %}
+            { id: {{ v._id | tojson }}, nombre: {{ (v.nombre or v._id) | tojson }} },
+            {% endfor %}
+        ];
+        let selectedVendedor = null;
+        {% if form.vendedor_id %}
+        selectedVendedor = { id: {{ form.vendedor_id | tojson }}, nombre: {{ form.vendedor_nombre | tojson }} };
+        vendedorSelect.value = {{ form.vendedor_id | tojson }};
+        vendedorSearch.value = {{ form.vendedor_nombre | tojson }};
+        {% endif %}
+
+        const mostrarSugerencias = (filtro) => {
+            const q = filtro.toLowerCase();
+            const opts = vendedores.filter(function(v) {
+                return v.id.toLowerCase().includes(q) || v.nombre.toLowerCase().includes(q);
+            });
+            if (!q || !opts.length) { sugerencias.style.display = "none"; return; }
+            sugerencias.innerHTML = opts.map(function(v) {
+                var active = selectedVendedor && selectedVendedor.id === v.id ? " active" : "";
+                return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + v.id + '" data-nombre="' + v.nombre + '">' + v.nombre + ' <small class="text-secondary">(' + v.id + ')</small></button>';
+            }).join("");
+            sugerencias.style.display = "";
+        };
+
+        const seleccionarVendedor = (id, nombre) => {
+            selectedVendedor = { id: id, nombre: nombre };
+            vendedorSearch.value = nombre;
+            vendedorSelect.value = id;
+            sugerencias.style.display = "none";
+            vendedorSearch.dispatchEvent(new Event("change"));
+        };
+
+        vendedorSearch.addEventListener("input", function() {
+            if (selectedVendedor && selectedVendedor.nombre !== this.value) {
+                selectedVendedor = null;
+                vendedorSelect.value = "";
+            }
+            mostrarSugerencias(this.value);
+        });
+
+        sugerencias.addEventListener("click", function(e) {
+            var btn = e.target.closest("button");
+            if (btn) seleccionarVendedor(btn.dataset.id, btn.dataset.nombre);
+        });
+
+        vendedorSearch.addEventListener("blur", function() {
+            setTimeout(function() { sugerencias.style.display = "none"; }, 200);
+        });
+
+        vendedorSearch.addEventListener("focus", function() {
+            if (this.value) mostrarSugerencias(this.value);
+        });
+
+        const badgeClass = (estado) => {
+            if (estado === "pagada") return "text-bg-success";
+            if (estado === "abonando") return "text-bg-warning";
+            if (estado === "asignada") return "text-bg-primary";
+            if (estado === "separada") return "text-bg-info";
+            return "text-bg-secondary";
+        };
+
+        const esTransferencia = (tr) => tr.querySelector("select[name='metodo[]']").value === "transferencia";
+
+        const alternarReferencia = (tr) => {
+            const cb = tr.querySelector(".sel-boleta");
+            const show = cb.checked && esTransferencia(tr);
+            const refCell = tr.querySelector(".ref-cell");
+            const bancoCell = tr.querySelector(".banco-cell");
+            refCell.style.display = show ? "" : "none";
+            bancoCell.style.display = show ? "" : "none";
+            const ref = tr.querySelector("input[name='referencia[]']");
+            const banco = tr.querySelector("input[name='banco[]']");
+            ref.required = show;
+            banco.required = show;
+            if (!show) { ref.value = ""; banco.value = ""; }
+        };
+
+        const setFilaDisabled = (tr, disabled) => {
+            tr.querySelector(".valor-egreso").disabled = disabled;
+            tr.querySelector("select[name='metodo[]']").disabled = disabled;
+            tr.querySelector("input[name='referencia[]']").disabled = disabled;
+            tr.querySelector("input[name='banco[]']").disabled = disabled;
+            alternarReferencia(tr);
+        };
+
+        const renderFila = (b) => {
+            const tr = document.createElement("tr");
+            const restante = b.total_ingresado - b.total_egresado;
+            tr.dataset.numero = b.numero;
+            tr.dataset.previo = b.tiene_egresos_previos ? "1" : "0";
+            tr.innerHTML = `
+                <td><input type="checkbox" class="form-check-input m-0 sel-boleta"></td>
+                <td class="fw-bold">${("0000" + b.numero).slice(-4)}</td>
+                <td class="text-end">${money.format(b.total_ingresado)}</td>
+                <td class="text-end">
+                    ${money.format(b.total_egresado)}
+                    ${b.tiene_egresos_previos ? '<div class="text-danger small fw-normal">Ya registra egresos</div>' : ""}
+                </td>
+                <td><span class="badge rounded-pill ${badgeClass(b.estado)} text-uppercase">${b.estado}</span></td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text">$</span>
+                        <input type="text" class="form-control valor-egreso" name="valor[]" inputmode="numeric"
+                               value="${restante > 0 ? restante.toLocaleString("es-CO") : ""}" placeholder="0"
+                               data-money-input autocomplete="off">
+                    </div>
+                </td>
+                <td>
+                    <select class="form-select form-select-sm" name="metodo[]">
+                        <option value="efectivo">Efectivo</option>
+                        <option value="transferencia">Transferencia</option>
+                    </select>
+                </td>
+                <td class="ref-cell" style="display:none;">
+                    <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="TX-000"
+                           data-validation="referencia" autocomplete="off">
+                </td>
+                <td class="banco-cell" style="display:none;">
+                    <input type="text" class="form-control form-control-sm" name="banco[]" placeholder="Banco"
+                           list="listaBancos" data-validation="name" autocomplete="off">
+                </td>`;
+            return tr;
+        };
+
+        const actualizarSeleccionarTodo = () => {
+            const cbs = Array.from(tbody.querySelectorAll(".sel-boleta"));
+            if (!cbs.length) { seleccionarTodo.checked = false; seleccionarTodo.indeterminate = false; return; }
+            const n = cbs.filter(function(c) { return c.checked; }).length;
+            seleccionarTodo.checked = n === cbs.length;
+            seleccionarTodo.indeterminate = n > 0 && n < cbs.length;
+        };
+
+        const actualizarResumen = () => {
+            let total = 0, count = 0;
+            const previos = [];
+            tbody.querySelectorAll("tr").forEach(function(tr) {
+                const cb = tr.querySelector(".sel-boleta");
+                if (!cb || !cb.checked) return;
+                count++;
+                const val = parseInt((tr.querySelector(".valor-egreso").value || "").replace(/[^0-9]/g, "")) || 0;
+                total += val;
+                if (tr.dataset.previo === "1") previos.push(parseInt(tr.dataset.numero));
+            });
+            resCantidad.textContent = count;
+            resTotal.textContent = money.format(total);
+            if (previos.length) {
+                avisoPrevios.classList.remove("d-none");
+                avisoPreviosTexto.textContent = "Atención: la(s) boleta(s) " +
+                    previos.map(function(p) { return ("0000" + p).slice(-4); }).join(", ") +
+                    " ya registran egresos anteriores.";
+            } else {
+                avisoPrevios.classList.add("d-none");
+            }
+            actualizarSeleccionarTodo();
+        };
+
+        {% if form.rows %}
+        const PRESEL = {{ form.rows | tojson }};
+        const preseleccionar = () => {
+            PRESEL.forEach(function(r) {
+                const num = parseInt(r.boleta);
+                if (isNaN(num)) return;
+                const tr = tbody.querySelector('tr[data-numero="' + num + '"]');
+                if (!tr) return;
+                const cb = tr.querySelector(".sel-boleta");
+                cb.checked = true;
+                setFilaDisabled(tr, false);
+                const val = tr.querySelector(".valor-egreso");
+                const valNum = parseInt(String(r.valor || "").replace(/[^0-9]/g, "")) || 0;
+                val.value = valNum > 0 ? valNum.toLocaleString("es-CO") : "";
+                const metodo = tr.querySelector("select[name='metodo[]']");
+                if (r.metodo) metodo.value = r.metodo;
+                const ref = tr.querySelector("input[name='referencia[]']");
+                if (r.referencia) ref.value = r.referencia;
+                const banco = tr.querySelector("input[name='banco[]']");
+                if (r.banco) banco.value = r.banco;
+                alternarReferencia(tr);
+            });
+            actualizarResumen();
+        };
+        {% else %}
+        const preseleccionar = () => {};
+        {% endif %}
+
+        const cargarBoletas = async () => {
+            const id = vendedorSelect.value;
+            tbody.innerHTML = "";
+            wrap.style.display = "none";
+            sinBoletas.classList.add("d-none");
+            avisoPrevios.classList.add("d-none");
+            seleccionarTodo.checked = false;
+            if (!id) {
+                estadoLabel.textContent = "Seleccione un vendedor para cargar sus boletas.";
+                actualizarResumen();
+                return;
+            }
+            cargando.style.display = "";
+            estadoLabel.textContent = "";
+            try {
+                const res = await fetch("/api/egresos/boletas/" + encodeURIComponent(id));
+                const data = await res.json();
+                if (!data.ok) {
+                    estadoLabel.textContent = "No fue posible cargar las boletas.";
+                } else if (!data.boletas || !data.boletas.length) {
+                    sinBoletas.classList.remove("d-none");
+                    estadoLabel.textContent = "0 boletas.";
+                } else {
+                    data.boletas.forEach(function(b) {
+                        const tr = renderFila(b);
+                        tbody.appendChild(tr);
+                        setFilaDisabled(tr, true);
+                    });
+                    wrap.style.display = "";
+                    estadoLabel.textContent = data.boletas.length + " boleta(s) cargada(s).";
+                    preseleccionar();
+                }
+            } catch (_e) {
+                estadoLabel.textContent = "Error cargando las boletas.";
+            } finally {
+                cargando.style.display = "none";
+            }
+        };
+
+        tbody.addEventListener("change", function(e) {
+            if (e.target.classList.contains("sel-boleta")) {
+                const tr = e.target.closest("tr");
+                setFilaDisabled(tr, !e.target.checked);
+                actualizarResumen();
+            } else if (e.target.matches("select[name='metodo[]']")) {
+                alternarReferencia(e.target.closest("tr"));
+                actualizarResumen();
+            }
+        });
+
+        tbody.addEventListener("input", function(e) {
+            if (e.target.classList.contains("valor-egreso")) {
+                actualizarResumen();
+            }
+        });
+
+        seleccionarTodo.addEventListener("change", function() {
+            tbody.querySelectorAll(".sel-boleta").forEach(function(cb) {
+                cb.checked = seleccionarTodo.checked;
+                setFilaDisabled(cb.closest("tr"), !cb.checked);
+            });
+            actualizarResumen();
+        });
+
+        vendedorSearch.addEventListener("change", cargarBoletas);
+
+        document.getElementById("egresoForm").addEventListener("submit", function(e) {
+            const checked = tbody.querySelectorAll(".sel-boleta:checked");
+            if (!vendedorSelect.value) {
+                e.preventDefault();
+                alert("Seleccione un vendedor.");
+                return;
+            }
+            if (!checked.length) {
+                e.preventDefault();
+                alert("Seleccione al menos una boleta.");
+                return;
+            }
+            for (const cb of checked) {
+                const tr = cb.closest("tr");
+                const val = parseInt((tr.querySelector(".valor-egreso").value || "").replace(/[^0-9]/g, "")) || 0;
+                if (val <= 0) {
+                    e.preventDefault();
+                    alert("El valor del egreso debe ser mayor que cero en la boleta " + tr.dataset.numero + ".");
+                    return;
+                }
+                if (esTransferencia(tr)) {
+                    const ref = tr.querySelector("input[name='referencia[]']").value.trim();
+                    const banco = tr.querySelector("input[name='banco[]']").value.trim();
+                    if (!ref || !banco) {
+                        e.preventDefault();
+                        alert("Complete referencia y banco para la transferencia de la boleta " + tr.dataset.numero + ".");
+                        return;
+                    }
+                }
+            }
+        });
+
+        if (selectedVendedor) cargarBoletas();
+    })();
+</script>
+{% endblock %}

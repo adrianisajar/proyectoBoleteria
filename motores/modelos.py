@@ -6,7 +6,7 @@ def crear_boleta_base(numero: int, rifa_id: object | None = None) -> dict:
         "cliente": {"nombre": "", "telefono": "", "direccion": ""},
         "estado": "disponible",
         "total_abonado": 0,
-        "historial_pagos": [],
+        "historial_movimientos": [],
         "fecha_adquisicion": None,
     }
     if rifa_id is not None:

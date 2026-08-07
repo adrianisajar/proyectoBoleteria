@@ -6,6 +6,7 @@ from datetime import datetime
 from flask import Flask, Response, current_app
 
 from motores.constants import METODO_TRANSFERENCIA, USUARIO_SISTEMA
+from motores.egreso_service import rollback_egresos_por_factura
 from motores.fechas import now_local
 from motores.shared import (
     abort,
@@ -123,7 +124,11 @@ def register_routes(app: Flask) -> None:
             ctx["total_transferencia"] = total_transferencia
 
         ctx["anulacion_hash"] = _anulacion_hash(factura_id, bool(factura.get("anulada")), current_app.secret_key)
-        template_map = {"cliente": "factura_cliente.html", "vendedor": "factura_vendedor.html"}
+        template_map = {
+            "cliente": "factura_cliente.html",
+            "vendedor": "factura_vendedor.html",
+            "egreso": "factura_egreso.html",
+        }
         template = template_map.get(factura.get("tipo", ""), "factura_cliente.html")
         return render_template(template, **ctx)
 
@@ -167,7 +172,10 @@ def register_routes(app: Flask) -> None:
         valor_boleta_local = int(config_local["valor_boleta"])
 
         try:
-            rollback_pagos_por_factura(factura_id, valor_boleta_local)
+            if factura.get("tipo") == "egreso":
+                rollback_egresos_por_factura(factura_id)
+            else:
+                rollback_pagos_por_factura(factura_id, valor_boleta_local)
 
             facturas.update_one(
                 {"_id": factura_id},

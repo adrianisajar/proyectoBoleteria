@@ -9,7 +9,15 @@ from motores.cache import (
     GLOBAL_COUNTS_CACHE,
 )
 from motores.config_service import get_config, migrar_boletas_existentes, require_collections
-from motores.constants import METODO_EFECTIVO, METODO_TRANSFERENCIA, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
+from motores.constants import (
+    METODO_EFECTIVO,
+    METODO_TRANSFERENCIA,
+    MOV_EGRESO,
+    MOV_PAGO,
+    MOVIMIENTOS_FIELD,
+    VENDEDOR_LOCAL,
+    VENDEDOR_LOCAL_LABEL,
+)
 from motores.fechas import now_local
 
 
@@ -153,10 +161,10 @@ def get_dashboard_stats(force: bool = False) -> dict:
         boletas,
         [
             *match_rifa,
-            {"$match": {"historial_pagos.fecha": today}},
-            {"$unwind": {"path": "$historial_pagos", "preserveNullAndEmptyArrays": False}},
-            {"$match": {"historial_pagos.fecha": today}},
-            {"$group": {"_id": None, "recaudo_hoy": {"$sum": "$historial_pagos.valor"}, "pagos_hoy": {"$sum": 1}}},
+            {"$match": {MOVIMIENTOS_FIELD + ".tipo": {"$in": [None, MOV_PAGO]}}},
+            {"$unwind": {"path": "$" + MOVIMIENTOS_FIELD, "preserveNullAndEmptyArrays": False}},
+            {"$match": {MOVIMIENTOS_FIELD + ".tipo": {"$in": [None, MOV_PAGO]}, MOVIMIENTOS_FIELD + ".fecha": today}},
+            {"$group": {"_id": None, "recaudo_hoy": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}, "pagos_hoy": {"$sum": 1}}},
         ],
         {"recaudo_hoy": 0, "pagos_hoy": 0},
     )
@@ -165,8 +173,9 @@ def get_dashboard_stats(force: bool = False) -> dict:
         boletas.aggregate(
             [
                 *match_rifa,
-                {"$unwind": {"path": "$historial_pagos", "preserveNullAndEmptyArrays": False}},
-                {"$group": {"_id": "$historial_pagos.metodo", "total": {"$sum": "$historial_pagos.valor"}}},
+                {"$unwind": {"path": "$" + MOVIMIENTOS_FIELD, "preserveNullAndEmptyArrays": False}},
+                {"$match": {MOVIMIENTOS_FIELD + ".tipo": {"$in": [None, MOV_PAGO]}}},
+                {"$group": {"_id": "$" + MOVIMIENTOS_FIELD + ".metodo", "total": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}}},
             ],
         )
     )
@@ -214,6 +223,18 @@ def get_dashboard_stats(force: bool = False) -> dict:
 
     recaudo_potencial = total_boletas * valor_boleta
 
+    egresos_totales = first_aggregate(
+        boletas,
+        [
+            *match_rifa,
+            {"$unwind": {"path": "$" + MOVIMIENTOS_FIELD, "preserveNullAndEmptyArrays": False}},
+            {"$match": {MOVIMIENTOS_FIELD + ".tipo": MOV_EGRESO}},
+            {"$group": {"_id": None, "total": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}, "n": {"$sum": 1}}},
+        ],
+        {"total": 0, "n": 0},
+    )
+    total_egresos = int(egresos_totales.get("total", 0) or 0)
+
     result = {
         **counts,
         "recaudo_hoy": today_totals.get("recaudo_hoy", 0),
@@ -226,6 +247,8 @@ def get_dashboard_stats(force: bool = False) -> dict:
         "pagos_efectivo": pagos_efectivo,
         "pagos_transferencia": pagos_transferencia,
         "pagos_otros": pagos_otros,
+        "total_egresos": total_egresos,
+        "recaudo_neto": max(counts["recaudo_total"] - total_egresos, 0),
     }
     DASHBOARD_CACHE["data"] = result
     DASHBOARD_CACHE["loaded_at"] = time.monotonic()

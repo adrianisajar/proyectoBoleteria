@@ -359,10 +359,10 @@
 
         <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
             <h3 class="h6 fw-bold mb-0">Historial de pagos</h3>
-            <span class="badge text-bg-light border">{{ boleta.historial_pagos|length }} registro(s)</span>
+            <span class="badge text-bg-light border">{{ boleta.movimientos.pagos|length }} registro(s)</span>
         </div>
 
-        {% if boleta.historial_pagos %}
+        {% if boleta.movimientos.pagos %}
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
@@ -377,7 +377,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for pago in boleta.historial_pagos %}
+                        {% for pago in boleta.movimientos.pagos %}
                         <tr>
                             <td class="small text-secondary">{{ loop.index }}</td>
                             <td>{{ pago.fecha }}</td>
@@ -413,6 +413,86 @@
             </div>
         {% else %}
             <div class="alert alert-secondary mb-0">Esta boleta no registra abonos.</div>
+        {% endif %}
+
+        {% if boleta.movimientos.egresos %}
+        <div class="mt-4">
+            <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
+                <h3 class="h6 fw-bold mb-0">Egresos (comisiones)</h3>
+                <span class="badge text-bg-light border">{{ boleta.movimientos.egresos|length }} registro(s)</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Concepto</th>
+                            <th class="text-end">Valor</th>
+                            <th>Factura</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for egreso in boleta.movimientos.egresos %}
+                        <tr>
+                            <td>{{ egreso.fecha }}</td>
+                            <td class="text-uppercase"><small>{{ egreso.egreso_tipo or "egreso" }}</small></td>
+                            <td class="text-end fw-bold text-danger">{{ egreso.valor|cop }}</td>
+                            <td>
+                                {% if egreso.factura_id %}
+                                <a href="{{ url_for('ver_factura', factura_id=egreso.factura_id) }}" class="small">#{{ '%05d'|format(egreso.factura_id) }}</a>
+                                {% else %}
+                                <span class="text-secondary small">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if boleta.movimientos.traslados %}
+        <div class="mt-4">
+            <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
+                <h3 class="h6 fw-bold mb-0">Traslados de saldo</h3>
+                <span class="badge text-bg-light border">{{ boleta.movimientos.traslados|length }} registro(s)</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Movimiento</th>
+                            <th>Contraparte</th>
+                            <th class="text-end">Valor</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for mov in boleta.movimientos.traslados %}
+                        <tr>
+                            <td>{{ mov.fecha }}</td>
+                            <td>
+                                {% if mov.tipo == 'traslado_entrada' %}
+                                <span class="badge text-bg-success">Entrada</span>
+                                {% else %}
+                                <span class="badge text-bg-secondary">Salida</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if mov.traslado_id %}
+                                <a href="{{ url_for('ver_traslado', traslado_id=mov.traslado_id) }}" class="small">#{{ '%05d'|format(mov.traslado_id) }} (boleta {{ '%04d'|format(mov.contraparte) }})</a>
+                                {% else %}
+                                <span class="text-secondary small">Boleta {{ '%04d'|format(mov.contraparte) }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end fw-bold {% if mov.tipo == 'traslado_entrada' %}text-success{% else %}text-danger{% endif %}">{{ mov.valor|cop }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
         {% endif %}
 
 

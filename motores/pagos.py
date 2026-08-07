@@ -4,7 +4,16 @@ from datetime import datetime
 
 from flask import Flask, Response
 
-from motores.constants import BOLETA_MAX, BOLETA_MIN, METODO_TRANSFERENCIA, OPERACIONES_VENDEDOR, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL, VENDEDOR_SIN_ASIGNAR
+from motores.constants import (
+    BOLETA_MAX,
+    BOLETA_MIN,
+    METODO_TRANSFERENCIA,
+    MOV_PAGO,
+    OPERACIONES_VENDEDOR,
+    VENDEDOR_LOCAL,
+    VENDEDOR_LOCAL_LABEL,
+    VENDEDOR_SIN_ASIGNAR,
+)
 from motores.errores import safe_error_message
 from motores.fechas import now_local
 from motores.shared import (
@@ -437,7 +446,7 @@ def register_routes(app: Flask) -> None:
         return jsonify({"ok": True, "resultados": resultados})
 
     @app.route("/api/validar-referencias-vendedor", methods=["POST"])
-    @role_required("admin")
+    @role_required("admin", "cajero")
     def api_validar_referencias_vendedor() -> Response | tuple[Response, int]:
         """Detect transfer references already used in other payments."""
         try:
@@ -460,8 +469,8 @@ def register_routes(app: Flask) -> None:
                 ref = (row.get("referencia") or "").strip()
                 if not ref:
                     continue
-                elem_match = {"metodo": METODO_TRANSFERENCIA, "referencia": ref}
-                dup = boletas.find_one({"historial_pagos": {"$elemMatch": elem_match}}, {"_id": 1})
+                elem_match = {"tipo": {"$in": [None, MOV_PAGO]}, "metodo": METODO_TRANSFERENCIA, "referencia": ref}
+                dup = boletas.find_one({"historial_movimientos": {"$elemMatch": elem_match}}, {"_id": 1})
                 if dup:
                     results.append({"index": i, "referencia": ref, "error": f"La referencia '{ref}' ya existe en otro pago (boleta #{dup['_id']:04d})."})
             return jsonify({"ok": True, "resultados": results})

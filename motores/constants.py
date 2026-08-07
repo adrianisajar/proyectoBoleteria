@@ -32,6 +32,24 @@ ESTADO_ABONANDO = "abonando"
 ESTADO_PAGADA = "pagada"
 ESTADOS_BOLETA = {ESTADO_DISPONIBLE, ESTADO_ASIGNADA, ESTADO_SEPARADA, ESTADO_ABONANDO, ESTADO_PAGADA}
 
+# ── Unified ticket ledger (historial_movimientos) ──
+# Every balance-affecting event on a ticket is a typed entry in this single array.
+# `total_abonado` = sum(pago + traslado_entrada) - sum(traslado_salida); egresos
+# are independent movements that NEVER change `total_abonado` nor `estado`.
+MOVIMIENTOS_FIELD = "historial_movimientos"
+MOV_PAGO = "pago"
+MOV_EGRESO = "egreso"
+MOV_TRASLADO_ENTRADA = "traslado_entrada"
+MOV_TRASLADO_SALIDA = "traslado_salida"
+MOVIMIENTOS_INGRESO = {MOV_PAGO, MOV_TRASLADO_ENTRADA}
+MOVIMIENTOS_SALIDA = {MOV_TRASLADO_SALIDA}
+
+# ── Egreso types (comprobante interno, no fiscal) ──
+TIPOS_EGRESO = {
+    "comision_vendedor": "Comisi\u00f3n de vendedor",
+}
+TIPO_EGRESO_COMISION = "comision_vendedor"
+
 # ── Ticket numbers ──
 BOLETA_MIN = 0
 BOLETA_MAX = 9999

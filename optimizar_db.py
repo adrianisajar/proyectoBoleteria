@@ -1,5 +1,6 @@
-from database import boletas, configuracion, facturas, rifas, vendedores
+from database import boletas, configuracion, facturas, rifas, traslados, vendedores
 from motores.config_service import get_config
+from motores.constants import MOV_PAGO, MOVIMIENTOS_FIELD
 from motores.payment_service import build_boletas_info_snapshot
 
 # Required indexes per collection: list of (key_spec, name)
@@ -11,11 +12,12 @@ REQUIRED_INDEXES = {
         ({"estado": 1, "_id": 1}, "estado_1__id_1"),
         ({"total_abonado": 1, "_id": 1}, "total_abonado_1__id_1"),
         ({"vendedor_id": 1, "estado": 1}, "vendedor_id_1_estado_1"),
-        ({"historial_pagos.fecha": 1}, "historial_pagos.fecha_1"),
+        ({"historial_movimientos.fecha": 1}, "historial_movimientos.fecha_1"),
         ({"cliente.telefono": 1}, "cliente.telefono_1"),
         ({"cliente.nombre": 1}, "cliente.nombre_1"),
-        ({"historial_pagos.metodo": 1}, "historial_pagos.metodo_1"),
-        ({"historial_pagos.referencia": 1}, "historial_pagos.referencia_1"),
+        ({"historial_movimientos.metodo": 1}, "historial_movimientos.metodo_1"),
+        ({"historial_movimientos.referencia": 1}, "historial_movimientos.referencia_1"),
+        ({"historial_movimientos.tipo": 1}, "historial_movimientos.tipo_1"),
     ],
     "vendedores": [
         ({"telefono": 1}, "telefono_1"),
@@ -27,6 +29,11 @@ REQUIRED_INDEXES = {
     "rifas": [
         ({"estado": 1}, "estado_1"),
     ],
+    "traslados": [
+        ({"fecha": -1}, "fecha_-1"),
+        ({"boleta_origen": 1}, "boleta_origen_1"),
+        ({"boleta_destino": 1}, "boleta_destino_1"),
+    ],
 }
 
 COLLECTIONS = {
@@ -35,6 +42,7 @@ COLLECTIONS = {
     "facturas": facturas,
     "rifas": rifas,
     "configuracion": configuracion,
+    "traslados": traslados,
 }
 
 
@@ -119,7 +127,41 @@ def backfill_boletas_info() -> int:
     return count
 
 
+def migrar_historial_movimientos() -> int:
+    """Migrate legacy `historial_pagos` into the unified `historial_movimientos` ledger.
+
+    Existing payment entries are copied with `tipo: "pago"` (the net balance and
+    `total_abonado` are unchanged because egresos/traslados did not exist yet).
+    """
+    if boletas is None:
+        return 0
+    pendientes = boletas.count_documents({MOVIMIENTOS_FIELD: {"$exists": False}, "historial_pagos": {"$exists": True}})
+    if not pendientes:
+        return 0
+    boletas.update_many(
+        {MOVIMIENTOS_FIELD: {"$exists": False}, "historial_pagos": {"$exists": True}},
+        [
+            {
+                "$set": {
+                    MOVIMIENTOS_FIELD: {
+                        "$map": {
+                            "input": {"$ifNull": ["$historial_pagos", []]},
+                            "as": "p",
+                            "in": {"$mergeObjects": ["$$p", {"tipo": {"$ifNull": ["$$p.tipo", MOV_PAGO]}}]},
+                        }
+                    }
+                }
+            },
+            {"$unset": "historial_pagos"},
+        ],
+    )
+    return pendientes
+
+
 if __name__ == "__main__":
+    migrados = migrar_historial_movimientos()
+    if migrados:
+        print(f"Historial migrado: {migrados} boleta(s) pasaron a {MOVIMIENTOS_FIELD}.")
     ok = verificar_indices()
     if ok:
         print("Optimización de índices completada correctamente.")

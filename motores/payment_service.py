@@ -11,12 +11,22 @@ from motores.constants import (
     METODO_EFECTIVO,
     METODO_TRANSFERENCIA,
     METODOS_PAGO,
+    MOV_PAGO,
+    MOVIMIENTOS_FIELD,
     USUARIO_SISTEMA,
     VENDEDOR_LOCAL,
 )
 from motores.fechas import now_local
-from motores.ticket_service import estado_para_total, estado_pipeline_expr
+from motores.ticket_service import estado_para_total, estado_pipeline_expr, movimiento_neto_expr
 from motores.validacion import boletas_incompletas, parse_boletas_detailed, parse_money
+
+
+def _pago_match(extra: dict | None = None) -> dict:
+    """Build an $elemMatch filter that only matches real payments (tipo pago)."""
+    match: dict = {"tipo": {"$in": [None, MOV_PAGO]}}
+    if extra:
+        match.update(extra)
+    return {"historial_movimientos": {"$elemMatch": match}}
 
 
 def buscar_transferencia_duplicada(ref: str, banco: str = "", exclude_factura_id: int | None = None) -> dict | None:
@@ -26,15 +36,17 @@ def buscar_transferencia_duplicada(ref: str, banco: str = "", exclude_factura_id
         elem_match["banco"] = banco
     if exclude_factura_id is not None:
         elem_match["factura_id"] = {"$ne": exclude_factura_id}
-    return boletas.find_one({"historial_pagos": {"$elemMatch": elem_match}}, {"_id": 1})
+    return boletas.find_one(_pago_match(elem_match), {"_id": 1})
 
 
 def build_factura_detalle(boleta_ids: list[int], factura_id: int) -> list[dict]:
-    """Build invoice detail lines from historial_pagos of given tickets."""
+    """Build invoice detail lines from historial_movimientos of given tickets."""
     docs = list(boletas.find({"_id": {"$in": boleta_ids}}, sort=[("_id", 1)]))
     detalle = []
     for doc in docs:
-        for pago in doc.get("historial_pagos") or []:
+        for pago in doc.get(MOVIMIENTOS_FIELD) or []:
+            if pago.get("tipo") not in (None, MOV_PAGO):
+                continue
             if pago.get("factura_id") == factura_id:
                 entry = {
                     "boleta": doc["_id"],
@@ -154,12 +166,7 @@ def build_abono_preview(form: dict, factura_id: int | None = None) -> dict:
             elem_match["banco"] = banco
         if factura_id is not None:
             elem_match["factura_id"] = {"$ne": factura_id}
-        used_refs = list(
-            boletas.find(
-                {"historial_pagos": {"$elemMatch": elem_match}},
-                {"_id": 1},
-            ).limit(10)
-        )
+        used_refs = list(boletas.find(_pago_match(elem_match), {"_id": 1}).limit(10))
         preview["referencias_usadas"] = [doc["_id"] for doc in used_refs]
         if used_refs:
             preview["errors"].append("La referencia bancaria ya existe en otro pago.")
@@ -214,6 +221,7 @@ def registrar_abono_lote(boleta_ids: list[int], form_data: dict, valor_abono: in
             msg += f" (boleta #{duplicado['_id']:04d})."
             raise ValueError(msg)
         pago = {
+            "tipo": MOV_PAGO,
             "fecha": form_data["fecha"],
             "valor": valor_abono,
             "metodo": METODO_TRANSFERENCIA,
@@ -225,6 +233,7 @@ def registrar_abono_lote(boleta_ids: list[int], form_data: dict, valor_abono: in
             pago["banco"] = banco
     else:
         pago = {
+            "tipo": MOV_PAGO,
             "fecha": form_data["fecha"],
             "valor": valor_abono,
             "metodo": METODO_EFECTIVO,
@@ -247,7 +256,7 @@ def registrar_abono_lote(boleta_ids: list[int], form_data: dict, valor_abono: in
         [
             {
                 "$set": {
-                    "historial_pagos": {"$concatArrays": [{"$ifNull": ["$historial_pagos", []]}, {"$literal": [pago]}]},
+                    MOVIMIENTOS_FIELD: {"$concatArrays": [{"$ifNull": ["$" + MOVIMIENTOS_FIELD, []]}, {"$literal": [pago]}]},
                     "total_abonado": {"$add": [{"$ifNull": ["$total_abonado", 0]}, valor_abono]},
                 }
             },
@@ -263,33 +272,33 @@ def registrar_abono_lote(boleta_ids: list[int], form_data: dict, valor_abono: in
 
 def rollback_pagos_por_factura(factura_id: int, valor_boleta: int) -> None:
     """Remove payments tied to a factura from tickets and recompute totals/estado."""
+    movimientos = {"$ifNull": ["$" + MOVIMIENTOS_FIELD, []]}
     pipeline = [
         {
             "$set": {
-                "historial_pagos": {
+                MOVIMIENTOS_FIELD: {
                     "$filter": {
-                        "input": {"$ifNull": ["$historial_pagos", []]},
-                        "cond": {"$ne": ["$$this.factura_id", factura_id]},
+                        "input": movimientos,
+                        "cond": {
+                            "$not": [
+                                {
+                                    "$and": [
+                                        {"$eq": [{"$ifNull": ["$$this.factura_id", None]}, factura_id]},
+                                        {"$eq": [{"$ifNull": ["$$this.tipo", MOV_PAGO]}, MOV_PAGO]},
+                                    ]
+                                }
+                            ]
+                        },
                     }
                 }
             }
         },
-        {
-            "$set": {
-                "total_abonado": {
-                    "$reduce": {
-                        "input": {"$ifNull": ["$historial_pagos", []]},
-                        "initialValue": 0,
-                        "in": {"$add": ["$$value", "$$this.valor"]},
-                    }
-                }
-            }
-        },
+        {"$set": {"total_abonado": movimiento_neto_expr()}},
     ]
     if valor_boleta is not None:
         pipeline.append({"$set": {"estado": estado_pipeline_expr(valor_boleta)}})
     boletas.update_many(
-        {"historial_pagos.factura_id": factura_id},
+        {MOVIMIENTOS_FIELD + ".factura_id": factura_id},
         pipeline,
     )
     invalidate_dashboard_cache()

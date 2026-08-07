@@ -102,7 +102,7 @@ def test_factura_vendedor_sobrepasa_rollback(client):
                 "vendedor_id": "VEND01",
                 "estado": "abonando",
                 "total_abonado": 60000,
-                "historial_pagos": [{"fecha": "2026-07-01", "valor": 60000, "metodo": "efectivo"}],
+                "historial_movimientos": [{"fecha": "2026-07-01", "valor": 60000, "metodo": "efectivo"}],
             }
         },
     )
@@ -113,7 +113,7 @@ def test_factura_vendedor_sobrepasa_rollback(client):
     assert f["estado"] == "error"
     b = boletas.find_one({"_id": 3})
     assert b["total_abonado"] == 60000
-    assert b["historial_pagos"][0]["valor"] == 60000
+    assert b["historial_movimientos"][0]["valor"] == 60000
 
 
 def test_factura_vendedor_transferencia_ok(client):

@@ -84,7 +84,7 @@ def test_asignar_con_pagos_rechazado(client):
             "$set": {
                 "total_abonado": 70000,
                 "estado": "pagada",
-                "historial_pagos": [{"valor": 70000, "fecha": "2026-07-01"}],
+                "historial_movimientos": [{"valor": 70000, "fecha": "2026-07-01"}],
             }
         },
     )
@@ -142,7 +142,7 @@ def test_eliminar_vendedor_con_pagos_bloqueado(client):
                 "vendedor_id": "VEND01",
                 "estado": "pagada",
                 "total_abonado": 70000,
-                "historial_pagos": [{"valor": 70000, "fecha": "2026-07-01"}],
+                "historial_movimientos": [{"valor": 70000, "fecha": "2026-07-01"}],
             }
         },
     )

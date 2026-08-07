@@ -14,6 +14,8 @@ from motores.config_service import get_config, require_collections
 from motores.constants import (
     METODO_TRANSFERENCIA,
     MODELO_RIFA_HEADERS,
+    MOV_PAGO,
+    MOVIMIENTOS_FIELD,
     VENDEDOR_LOCAL,
     XLSX_NS,
     XLSX_REL_NS,
@@ -60,7 +62,7 @@ def modelo_rifa_report_rows() -> tuple[list, list]:
     rows = []
     for doc in boletas.find({}).sort("_id", 1):
         cliente = doc.get("cliente") or {}
-        historial = doc.get("historial_pagos") or []
+        historial = [mov for mov in (doc.get(MOVIMIENTOS_FIELD) or []) if (mov.get("tipo") or MOV_PAGO) == MOV_PAGO]
         efectivo = [payment for payment in historial if payment.get("metodo") != METODO_TRANSFERENCIA]
         transferencias = [payment for payment in historial if payment.get("metodo") == METODO_TRANSFERENCIA]
         total_efectivo = sum(int(payment.get("valor", 0) or 0) for payment in efectivo)
