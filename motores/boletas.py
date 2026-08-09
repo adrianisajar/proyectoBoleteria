@@ -3,7 +3,8 @@ import csv
 import io
 import re
 
-from flask import Flask, Response
+from flask import Flask, Response, current_app
+from werkzeug.exceptions import BadRequest
 
 from motores.constants import (
     BOLETA_MAX,
@@ -75,7 +76,7 @@ def register_routes(app: Flask) -> None:
                 valor_boleta = int(config["valor_boleta"])
                 counts = get_dashboard_counts(valor_boleta=valor_boleta)
             except Exception as exc:
-                flash(f"No se pudieron cargar las m├®tricas: {exc}", "danger")
+                flash(f"No se pudieron cargar las métricas: {exc}", "danger")
         sort_by = request.args.get("sort_by", "_id").strip()
         sort_dir = request.args.get("sort_dir", "asc").strip()
         if sort_by not in SORT_WHITELIST:
@@ -139,8 +140,8 @@ def register_routes(app: Flask) -> None:
                     "abonando": fc.get("abonando", {}).get("count", 0),
                     "pagadas": fc.get("pagada", {}).get("count", 0),
                 }
-            except Exception:
-                pass
+            except Exception as exc:
+                current_app.logger.warning("No se pudieron calcular métricas filtradas de consultas: %s", exc)
 
         prev_url = build_page_url("consultas", filters, page - 1) if page > 1 else None
         next_url = build_page_url("consultas", filters, page + 1) if page < total_pages else None
@@ -514,7 +515,7 @@ def register_routes(app: Flask) -> None:
             data = request.get_json(force=True) or {}
             boletas_list = data.get("boletas", [])
             vendedor_id = data.get("vendedor_id", "").strip()
-        except Exception:
+        except BadRequest:
             return jsonify({"ok": False, "error": "JSON inv\u00e1lido."}), 400
         if not boletas_list or not isinstance(boletas_list, list):
             return jsonify({"ok": False, "error": "Se requiere una lista de boletas."}), 400
@@ -548,7 +549,7 @@ def register_routes(app: Flask) -> None:
         try:
             data = request.get_json(force=True) or {}
             boletas_list = data.get("boletas", [])
-        except Exception:
+        except BadRequest:
             return jsonify({"ok": False, "error": "JSON inv\u00e1lido."}), 400
         if not boletas_list or not isinstance(boletas_list, list):
             return jsonify({"ok": False, "error": "Se requiere una lista de boletas."}), 400

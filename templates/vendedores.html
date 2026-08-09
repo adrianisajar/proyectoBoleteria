@@ -58,8 +58,8 @@
                      id="vendedorSugerencias" style="display:none; z-index:1050; max-height:200px; overflow-y:auto;"></div>
             </div>
             <div class="d-flex align-items-center gap-2 mt-1">
-                <span class="text-secondary small">ID:</span>
-                <span class="badge text-bg-light border fw-normal font-monospace" id="vendedorIdPreview">—</span>
+                <i class="bi bi-shield-lock text-secondary"></i>
+                <span class="text-secondary small">El ID se asigna automáticamente y es interno.</span>
                 <input type="hidden" id="vendedor_id" name="vendedor_id" value="{{ form.vendedor_id }}">
             </div>
         </div>
@@ -259,7 +259,6 @@
     (() => {
         const nombre = document.getElementById("nombre");
         const vendedorIdInput = document.getElementById("vendedor_id");
-        const vendedorIdPreview = document.getElementById("vendedorIdPreview");
         const telefono = document.getElementById("telefono");
         const operacion = document.getElementById("operacion");
         const boletas = document.getElementById("boletas");
@@ -271,25 +270,6 @@
         const contadorBoletasFecha = document.getElementById("contadorBoletasFecha");
         const fechaSelTodas = document.getElementById("fechaSelTodas");
         const fechaDeseleccionar = document.getElementById("fechaDeseleccionar");
-
-        const generarId = (name) => {
-            return name.trim().replace(/\s+/g, "_").toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
-        };
-        const actualizarId = () => {
-            const raw = nombre.value;
-            const id = generarId(raw);
-            if (id && id.length >= 2) {
-                vendedorIdInput.value = id;
-                vendedorIdPreview.textContent = id;
-                vendedorIdPreview.className = "badge text-bg-primary fw-normal font-monospace";
-            } else {
-                vendedorIdInput.value = "";
-                vendedorIdPreview.textContent = "—";
-                vendedorIdPreview.className = "badge text-bg-light border fw-normal font-monospace";
-            }
-        };
-        nombre.addEventListener("input", actualizarId);
-        actualizarId();
 
         /* ── Autocomplete vendedor ── */
         const vendedorSug = document.getElementById("vendedorSugerencias");
@@ -319,8 +299,6 @@
         const seleccionarVendedor = (id, nombre) => {
             selectedVendedor = { id: id, nombre: nombre };
             vendedorIdInput.value = id;
-            vendedorIdPreview.textContent = id;
-            vendedorIdPreview.className = "badge text-bg-primary fw-normal font-monospace";
             vendedorSug.style.display = "none";
             if (isFechaOp(operacion.value)) refreshFechaBoletas();
         };
@@ -329,8 +307,6 @@
             if (selectedVendedor && selectedVendedor.nombre !== this.value) {
                 selectedVendedor = null;
                 vendedorIdInput.value = "";
-                vendedorIdPreview.textContent = "—";
-                vendedorIdPreview.className = "badge text-bg-light border fw-normal font-monospace";
             }
             mostrarSugerencias(this.value);
         });
@@ -342,7 +318,6 @@
                 var nom = btn.dataset.nombre;
                 nombre.value = nom;
                 seleccionarVendedor(id, nom);
-                actualizarId();
             }
         });
 
@@ -377,11 +352,9 @@
                 if (origId) {
                     selectedVendedor = { id: origId, nombre: origNombre };
                     vendedorIdInput.value = origId;
-                    vendedorIdPreview.textContent = origId;
-                    vendedorIdPreview.className = "badge text-bg-primary fw-normal font-monospace";
                 } else {
                     selectedVendedor = null;
-                    actualizarId();
+                    vendedorIdInput.value = "";
                 }
                 toggleFechaUi();
                 nombre.focus();
@@ -639,20 +612,11 @@
                 const vName = nombre.value.trim();
                 if (!vName) {
                     errors.push("El nombre del vendedor es obligatorio.");
-                } else if (!vendedorIdInput.value.trim()) {
-                    errors.push("No se pudo generar un ID v\u00e1lido desde el nombre.");
+                } else if (op !== "guardar" && !vendedorIdInput.value.trim()) {
+                    errors.push("Seleccione un vendedor existente de la lista de sugerencias.");
                 }
                 if (op === "eliminar" && !vendedorIdInput.value.trim() && !errors.length) {
                     errors.push("Seleccione un vendedor existente para eliminar.");
-                }
-                if (op === "guardar" && !selectedVendedor) {
-                    const generatedId = vendedorIdInput.value.trim();
-                    if (generatedId) {
-                        const dupe = vendedores.find(function(v) { return v.id === generatedId; });
-                        if (dupe) {
-                            errors.push("El vendedor \u201c" + dupe.nombre + "\u201d (" + dupe.id + ") ya existe. C\u00e1rgalo con Editar para modificarlo.");
-                        }
-                    }
                 }
             }
             const vIdActual = vendedorIdInput.value.trim().toUpperCase();

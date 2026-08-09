@@ -1,0 +1,13 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+.env
+respaldos
+tests
+.pytest_cache
+.ruff_cache
+.agents
+deploy/certs
+*.zip

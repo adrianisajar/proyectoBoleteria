@@ -60,7 +60,8 @@ if __name__ == "__main__":
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
 
     browser_host = "127.0.0.1" if host == "0.0.0.0" else host
-    abrir_navegador(browser_host, port)
+    if os.getenv("OPEN_BROWSER", "1") == "1":
+        abrir_navegador(browser_host, port)
     _ok(f"Servidor iniciado {ARROW} http://{browser_host}:{port}")
     print()
 

@@ -1,10 +1,20 @@
+import logging
 import re
 
 from flask import flash
 
-from database import boletas, facturas, vendedores
+from database import boletas, configuracion, facturas, vendedores
 from motores.config_service import get_config, require_collections
-from motores.constants import COMISION_DEFAULT_TIERS, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
+from motores.constants import (
+    COMISION_DEFAULT_TIERS,
+    CONFIG_ID,
+    VENDEDOR_LOCAL,
+    VENDEDOR_LOCAL_LABEL,
+)
+
+logger = logging.getLogger(__name__)
+
+VENDEDOR_ID_PREFIX = "VEND_"
 
 
 def normalize_vendedor_id(value: str) -> str:
@@ -13,6 +23,26 @@ def normalize_vendedor_id(value: str) -> str:
     if not re.fullmatch(r"[A-Z0-9_-]{2,32}", vendedor_id):
         raise ValueError("El ID del vendedor debe tener 2 a 32 caracteres: letras, números, guion o guion bajo.")
     return vendedor_id
+
+
+def next_vendedor_id() -> str:
+    """Return the next sequential vendor id (VEND_0001, VEND_0002, ...).
+
+    The counter lives in ``configuracion.vendedor_counter`` and is persistent
+    across rifas. If a candidate already exists (e.g. taken manually before this
+    scheme was in place) it is skipped and the counter keeps advancing.
+    """
+    while True:
+        result = configuracion.find_one_and_update(
+            {"_id": CONFIG_ID},
+            {"$inc": {"vendedor_counter": 1}},
+            upsert=True,
+            return_document=True,
+        )
+        counter = int(result["vendedor_counter"] if result else 1)
+        candidate = f"{VENDEDOR_ID_PREFIX}{counter:04d}"
+        if vendedores.count_documents({"_id": candidate}) == 0:
+            return candidate
 
 
 def calc_comision_por_boleta(vendidas: int, tiers: list[dict] | None = None) -> int:
@@ -34,14 +64,10 @@ def get_vendedor_options() -> list[dict]:
     return [{"_id": doc["_id"], "nombre": doc.get("nombre", "")} for doc in cursor]
 
 
-def existing_boleta_ids(boleta_ids: list[int]) -> list[int]:
-    """Filter the given ticket ids to those that actually exist in the collection."""
-    if not boleta_ids:
-        return []
-
-    cursor = boletas.find({"_id": {"$in": boleta_ids}}, {"_id": 1})
-    existing = {doc["_id"] for doc in cursor}
-    return [boleta_id for boleta_id in boleta_ids if boleta_id in existing]
+def vendedores_con_local() -> list[dict]:
+    """Return all vendors plus the LOCAL system vendor (for selects/autocomplete)."""
+    lista = list(vendedores.find().sort("_id", 1))
+    return [*[{"_id": VENDEDOR_LOCAL, "nombre": VENDEDOR_LOCAL_LABEL}], *lista]
 
 
 def get_vendedores_snapshot(config: dict | None = None) -> tuple[list, dict]:
@@ -174,7 +200,8 @@ def _egresos_por_vendedor() -> dict:
     ]
     try:
         return {doc["_id"]: int(doc.get("total") or 0) for doc in facturas.aggregate(pipeline)}
-    except Exception:
+    except Exception as exc:
+        logger.warning("No se pudieron calcular egresos por vendedor: %s", exc)
         return {}
 
 

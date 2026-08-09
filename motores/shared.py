@@ -8,9 +8,10 @@ if _APP_ROOT not in sys.path:
 from motores.auth import role_required, current_user, has_role, home_endpoint
 from motores.vendor_service import (  # re-export
     normalize_vendedor_id,
+    next_vendedor_id,
     calc_comision_por_boleta,
     get_vendedor_options,
-    existing_boleta_ids,
+    vendedores_con_local,
     get_vendedores_snapshot,
     safe_vendedores_snapshot,
     vendedor_label,

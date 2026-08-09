@@ -1,4 +1,3 @@
-import contextlib
 import hashlib
 import re
 from datetime import datetime
@@ -97,9 +96,12 @@ def register_routes(app: Flask) -> None:
                     config_local = ctx["config"]
                     valor_boleta = int(config_local.get("valor_boleta", 10000) or 10000)
                     boletas_info = build_boletas_info_snapshot(factura.get("boletas", []), valor_boleta)
-                    with contextlib.suppress(Exception):
+                    try:
                         facturas.update_one({"_id": factura_id}, {"$set": {"boletas_info": boletas_info}})
+                    except Exception as exc:
+                        current_app.logger.warning("No se pudo guardar boletas_info de la factura %s: %s", factura_id, exc)
                 except Exception:
+                    current_app.logger.warning("No se pudo construir boletas_info para la factura %s", factura_id)
                     boletas_info = {}
             ctx["boletas_info"] = {int(k): v for k, v in boletas_info.items()}
 
@@ -189,11 +191,13 @@ def register_routes(app: Flask) -> None:
                 },
             )
         except Exception as exc:
-            with contextlib.suppress(Exception):
+            try:
                 facturas.update_one(
                     {"_id": factura_id},
                     {"$set": {"anulada": False}},
                 )
+            except Exception as exc2:
+                current_app.logger.warning("No se pudo revertir el flag anulada de la factura %s: %s", factura_id, exc2)
             flash(f"Error al anular la factura N\u00b0 {factura_id:05d}: {exc}", "danger")
             return redirect(url_for("ver_factura", factura_id=factura_id))
 

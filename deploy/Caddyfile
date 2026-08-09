@@ -1,0 +1,14 @@
+# Caddyfile — alternativa a nginx (más simple, HTTPS automático con Let's Encrypt).
+#
+# Windows / Linux: reemplaza `tu-dominio.com` por tu dominio real y ejecuta:
+#   caddy run --config Caddyfile
+# Caddy obtiene y renueva el certificado automáticamente y reenvía a la app
+# (waitress en 127.0.0.1:5000). Pon TRUST_PROXY_HEADERS=1 y SESSION_COOKIE_SECURE=1.
+#
+# Para uso solo en LAN con un certificado propio, usa la sintaxis de `tls internal`:
+#   caddy reverse-proxy --from :443 --to 127.0.0.1:5000 --tls internal
+
+tu-dominio.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:5000
+}

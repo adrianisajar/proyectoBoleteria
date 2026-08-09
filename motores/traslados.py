@@ -17,14 +17,10 @@ from motores.shared import (
     require_collections,
     role_required,
     url_for,
+    vendedores_con_local,
 )
 from motores.traslado_service import next_traslado_id, registrar_traslado, revertir_traslado
 from motores.validacion import es_boleta_completa, parse_money
-
-
-def _vendedores_con_local() -> list[dict]:
-    lista = list(vendedores.find().sort("_id", 1))
-    return [*[{"_id": VENDEDOR_LOCAL, "nombre": VENDEDOR_LOCAL_LABEL}], *lista]
 
 
 def _validar_traslado(origen: int, destino: int, valor: int, docs: dict, valor_boleta: int, errors: list[str]) -> None:
@@ -88,7 +84,7 @@ def register_routes(app: Flask) -> None:
                 "vendedor_id": vendedor_id,
                 "vendedor_nombre": v_nombre,
             }
-            vendedores_list = _vendedores_con_local()
+            vendedores_list = vendedores_con_local()
 
             errors = []
             if not es_boleta_completa(origen_raw):
@@ -172,7 +168,7 @@ def register_routes(app: Flask) -> None:
 
         return render_template(
             "nuevo_traslado.html",
-            vendedores=_vendedores_con_local(),
+            vendedores=vendedores_con_local(),
             today=today,
             form=empty_form,
         )

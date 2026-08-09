@@ -27,34 +27,52 @@ def _asignar(client, vendedor_id, boletas_str):
     )
 
 
-def test_crear_vendedor_normaliza_id(client):
+def test_crear_vendedor_id_secuencial(client):
     resp = _guardar_vendedor(client, nombre="Vendedor Uno")
     assert resp.status_code == 302
-    v = vendedores.find_one({"_id": "VENDEDOR_UNO"})
+    v = vendedores.find_one({"_id": "VEND_0001"})
     assert v is not None
     assert v["nombre"] == "Vendedor Uno"
     assert v["boletas_asignadas"] == []
 
 
+def test_crear_vendedor_ids_secuenciales(client):
+    _guardar_vendedor(client, nombre="Vendedor Uno")
+    _guardar_vendedor(client, nombre="Vendedor Dos")
+    assert vendedores.find_one({"_id": "VEND_0001"}) is not None
+    v2 = vendedores.find_one({"_id": "VEND_0002"})
+    assert v2 is not None
+    assert v2["nombre"] == "Vendedor Dos"
+
+
+def test_crear_vendedor_salta_id_existente(client):
+    vendedores.insert_one({"_id": "VEND_0001", "nombre": "Ocupado", "boletas_asignadas": []})
+    _guardar_vendedor(client, nombre="Nuevo")
+    assert vendedores.find_one({"_id": "VEND_0001"})["nombre"] == "Ocupado"
+    v = vendedores.find_one({"_id": "VEND_0002"})
+    assert v is not None
+    assert v["nombre"] == "Nuevo"
+
+
 def test_asignar_boletas(client):
     _guardar_vendedor(client)
-    resp = _asignar(client, "VENDEDOR_UNO", "0001, 0002, 0003")
+    resp = _asignar(client, "VEND_0001", "0001, 0002, 0003")
     assert resp.status_code == 302
 
     b1 = boletas.find_one({"_id": 1})
-    assert b1["vendedor_id"] == "VENDEDOR_UNO"
+    assert b1["vendedor_id"] == "VEND_0001"
     assert b1["estado"] == "asignada"
-    v = vendedores.find_one({"_id": "VENDEDOR_UNO"})
+    v = vendedores.find_one({"_id": "VEND_0001"})
     assert sorted(v["boletas_asignadas"]) == [1, 2, 3]
 
 
 def test_quitar_boletas(client):
     _guardar_vendedor(client)
-    _asignar(client, "VENDEDOR_UNO", "0001, 0002")
+    _asignar(client, "VEND_0001", "0001, 0002")
     resp = client.post(
         "/vendedores",
         data={
-            "vendedor_id": "VENDEDOR_UNO",
+            "vendedor_id": "VEND_0001",
             "nombre": "",
             "telefono": "",
             "operacion": "quitar",
@@ -69,11 +87,11 @@ def test_quitar_boletas(client):
 
 def test_asignar_boletas_incompletas_rechazadas(client):
     _guardar_vendedor(client)
-    resp = _asignar(client, "VENDEDOR_UNO", "0001, 42")
+    resp = _asignar(client, "VEND_0001", "0001, 42")
     assert resp.status_code == 200
     b1 = boletas.find_one({"_id": 1})
     assert b1["vendedor_id"] == ""
-    v = vendedores.find_one({"_id": "VENDEDOR_UNO"})
+    v = vendedores.find_one({"_id": "VEND_0001"})
     assert v["boletas_asignadas"] == []
 
 
@@ -89,11 +107,11 @@ def test_asignar_con_pagos_rechazado(client):
         },
     )
     _guardar_vendedor(client)
-    resp = _asignar(client, "VENDEDOR_UNO", "0005")
+    resp = _asignar(client, "VEND_0001", "0005")
     assert resp.status_code == 200
     b5 = boletas.find_one({"_id": 5})
     assert b5["vendedor_id"] == ""
-    assert vendedores.find_one({"_id": "VENDEDOR_UNO"})["boletas_asignadas"] == []
+    assert vendedores.find_one({"_id": "VEND_0001"})["boletas_asignadas"] == []
 
 
 def test_quitar_boleta_ajena_rechazado(client):
@@ -103,7 +121,7 @@ def test_quitar_boleta_ajena_rechazado(client):
     resp = client.post(
         "/vendedores",
         data={
-            "vendedor_id": "VENDEDOR_UNO",
+            "vendedor_id": "VEND_0001",
             "nombre": "",
             "telefono": "",
             "operacion": "quitar",
@@ -117,11 +135,11 @@ def test_quitar_boleta_ajena_rechazado(client):
 
 def test_eliminar_vendedor_libera_boletas(client):
     _guardar_vendedor(client)
-    _asignar(client, "VENDEDOR_UNO", "0001, 0002")
+    _asignar(client, "VEND_0001", "0001, 0002")
     resp = client.post(
         "/vendedores",
         data={
-            "vendedor_id": "VENDEDOR_UNO",
+            "vendedor_id": "VEND_0001",
             "nombre": "",
             "telefono": "",
             "operacion": "eliminar",
@@ -129,8 +147,23 @@ def test_eliminar_vendedor_libera_boletas(client):
         },
     )
     assert resp.status_code == 302
-    assert vendedores.find_one({"_id": "VENDEDOR_UNO"}) is None
+    assert vendedores.find_one({"_id": "VEND_0001"}) is None
     assert boletas.find_one({"_id": 1})["vendedor_id"] == ""
+
+
+def test_operacion_sin_vendedor_seleccionado_rechazada(client):
+    resp = client.post(
+        "/vendedores",
+        data={
+            "vendedor_id": "",
+            "nombre": "Vendedor Uno",
+            "telefono": "",
+            "operacion": "asignar",
+            "boletas": "0001",
+        },
+    )
+    assert resp.status_code == 200
+    assert vendedores.count_documents({"_id": "VEND_0001"}) == 0
 
 
 def test_eliminar_vendedor_con_pagos_bloqueado(client):
@@ -165,4 +198,4 @@ def test_api_vendedores_busqueda(client):
     resp = client.get("/api/vendedores?q=vend")
     assert resp.status_code == 200
     data = resp.get_json()
-    assert any(v["_id"] == "VENDEDOR_UNO" for v in data)
+    assert any(v["_id"] == "VEND_0001" for v in data)

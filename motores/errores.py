@@ -2,20 +2,13 @@ from typing import Any
 
 from flask import Flask, Response, current_app, jsonify, render_template, request
 
+from motores.auth import _es_solicitud_api
+
 
 def safe_error_message(exc: Exception, default: str = "Error interno del servidor.") -> str:
     """Log the exception detail server-side and return a generic client-safe message."""
     current_app.logger.error("Error interno: %s: %s", type(exc).__name__, exc)
     return default
-
-
-def _es_solicitud_api() -> bool:
-    """Return True when the request expects a JSON error (API path or Accept header)."""
-    path = (request.path or "").lower()
-    if path.startswith("/api/") or path == "/health":
-        return True
-    accept = (request.headers.get("Accept") or "").lower()
-    return "application/json" in accept and "text/html" not in accept
 
 
 def _render_error(codigo: int, titulo: str, mensaje: str, exc: Exception | None = None) -> tuple[str | Response, int]:

@@ -4,7 +4,7 @@ from typing import Any
 
 from flask import abort, current_app, flash, jsonify, redirect, request, session, url_for
 
-from motores.constants import ROL_ADMIN, ROL_CAJA
+from motores.constants import ROL_ADMIN
 
 
 def _es_solicitud_api() -> bool:
@@ -48,27 +48,6 @@ def home_endpoint() -> str:
     return "dashboard" if has_role(ROL_ADMIN) else "consultas"
 
 
-def login_required(view_func: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator: require an active session, otherwise redirect to login."""
-
-    @wraps(view_func)
-    def wrapped(*args: Any, **kwargs: Any) -> Any:
-        if current_user() is None:
-            current_app.logger.warning(
-                "Redirigiendo a login (login_required): ruta=%s cookie=%s session_keys=%s",
-                request.path,
-                bool(request.cookies.get(current_app.config.get("SESSION_COOKIE_NAME", "session"))),
-                sorted(session.keys()),
-            )
-            if _es_solicitud_api():
-                return jsonify({"ok": False, "error": "Sesi\u00f3n no activa."}), 401
-            flash("Debes iniciar sesi\u00f3n para acceder.", "warning")
-            return redirect(url_for("login", next=request.full_path))
-        return view_func(*args, **kwargs)
-
-    return wrapped
-
-
 def role_required(*roles: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator: require login and (when roles given) an allowed role."""
 
@@ -96,8 +75,3 @@ def role_required(*roles: str) -> Callable[[Callable[..., Any]], Callable[..., A
         return wrapped
 
     return decorator
-
-
-def roles_admin_caja() -> tuple[str, str]:
-    """Return the two supported roles (convenience for route decorators)."""
-    return ROL_ADMIN, ROL_CAJA

@@ -3,6 +3,7 @@ import re
 from datetime import datetime
 
 from flask import Flask, Response
+from werkzeug.exceptions import BadRequest
 
 from motores.constants import (
     BOLETA_MAX,
@@ -23,6 +24,7 @@ from motores.shared import (
     get_config,
     invalidate_dashboard_cache,
     jsonify,
+    next_vendedor_id,
     normalize_vendedor_id,
     redirect,
     render_template,
@@ -67,7 +69,10 @@ def _validar_form_vendedor(form_data: dict) -> tuple[str, list[int], list[str]]:
         require_collections()
         raw_id = form_data.get("vendedor_id", "").strip()
         if not raw_id:
-            raw_id = form_data["nombre"]
+            if form_data["operacion"] == "guardar":
+                raw_id = next_vendedor_id()
+            else:
+                raise ValueError("Selecciona un vendedor existente de la lista de sugerencias.")
         vendedor_id = normalize_vendedor_id(raw_id)
         form_data["vendedor_id"] = vendedor_id
     except (RuntimeError, ValueError) as exc:
@@ -392,7 +397,7 @@ def register_routes(app: Flask) -> None:
             boletas_list = data.get("boletas", [])
             operacion = data.get("operacion", "").strip()
             vendedor_id = data.get("vendedor_id", "").strip()
-        except Exception:
+        except BadRequest:
             return jsonify({"ok": False, "error": "JSON inv\u00e1lido."}), 400
         if not isinstance(boletas_list, list) or operacion not in ("asignar", "quitar"):
             return jsonify({"ok": False, "error": "Par\u00e1metros inv\u00e1lidos."}), 400
@@ -452,7 +457,7 @@ def register_routes(app: Flask) -> None:
         try:
             data = request.get_json(force=True) or {}
             rows = data.get("rows", [])
-        except Exception:
+        except BadRequest:
             return jsonify({"ok": False, "error": "JSON inv\u00e1lido."}), 400
         if not isinstance(rows, list):
             return jsonify({"ok": False, "error": "Par\u00e1metros inv\u00e1lidos."}), 400

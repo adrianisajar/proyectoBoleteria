@@ -148,7 +148,7 @@ def _seed_once():
         for n in range(N_BOLETAS)
     ]
     boletas.insert_many(docs)
-    configuracion.insert_one({"_id": "rifa", "factura_counter": 0, "traslado_counter": 0})
+    configuracion.insert_one({"_id": "rifa", "factura_counter": 0, "traslado_counter": 0, "vendedor_counter": 0})
     _crear_indices()
     _warm_up()
     invalidate_config_cache()
@@ -172,7 +172,7 @@ def _reset():
             }
         },
     )
-    configuracion.update_one({"_id": "rifa"}, {"$set": {"factura_counter": 0, "traslado_counter": 0}})
+    configuracion.update_one({"_id": "rifa"}, {"$set": {"factura_counter": 0, "traslado_counter": 0, "vendedor_counter": 0}})
     _seed_usuarios()
     invalidate_config_cache()
     invalidate_dashboard_cache()

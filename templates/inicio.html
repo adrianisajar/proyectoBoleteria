@@ -664,14 +664,15 @@
                 window.clearTimeout(numTimer);
                 if (/^\d{4}$/.test(this.value.trim())) {
                     numTimer = window.setTimeout(function() {
-                        document.querySelector("form [type='submit']").click();
+                        const target = numInput.form ? numInput.form.querySelector("[type='submit']") : null;
+                        if (target) target.click();
                     }, 350);
                 }
             });
         }
 
         /* ── Loading state en submit ── */
-        const form = document.querySelector("form");
+        const form = numInput ? numInput.form : document.querySelector("form");
         const submitBtn = form ? form.querySelector("[type='submit']") : null;
         if (form && submitBtn) {
             form.addEventListener("submit", function() {

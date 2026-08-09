@@ -21,8 +21,9 @@ from motores.constants import (
     XLSX_REL_NS,
 )
 from motores.excel_import import clean_excel_text, col_to_index, parse_excel_boleta
-from motores.ticket_service import estado_pipeline_expr, sync_ticket_statuses
-from motores.vendor_service import vendedor_label
+from motores.facturacion_common import verificar_boletas_existen
+from motores.ticket_service import sync_ticket_statuses
+from motores.vendor_service import next_vendedor_id, vendedor_label
 
 
 def compact_model_payments(payments: list, slots: int) -> list:
@@ -99,6 +100,43 @@ def vendor_from_excel(value: Any) -> tuple[str, str]:
     return vendedor_id, nombre.upper()
 
 
+def _normalize_vendor_name(value: Any) -> str:
+    """Normalize a vendor name the same way vendor_from_excel derives ids (for matching)."""
+    raw = re.sub(r"\s+", " ", clean_excel_text(value)).strip()
+    nombre = re.sub(r"^VEND\.?\s*", "", raw, flags=re.IGNORECASE).strip()
+    ascii_name = unicode_normalize("NFKD", nombre).encode("ascii", "ignore").decode("ascii")
+    return ascii_name.upper()
+
+
+def _resolve_vendor_ids(
+    vendor_assignments: dict[str, list[int]],
+    vendor_names: dict[str, str],
+) -> tuple[dict[str, list[int]], dict[str, str]]:
+    """Map Excel-derived vendor ids onto existing vendors by _id or normalized name.
+
+    The export writes the vendor display name (vendedor_label), so re-importing must
+    match against the existing vendor (whose _id may differ from the name) instead of
+    blindly creating a new vendor from the derived id. Brand-new vendors get a
+    system-assigned sequential id via ``next_vendedor_id`` (the id is 100% internal).
+    """
+    existentes = list(vendedores.find({}, {"_id": 1, "nombre": 1}))
+    por_id = {doc["_id"] for doc in existentes}
+    por_nombre: dict[str, str] = {}
+    for doc in existentes:
+        por_nombre.setdefault(_normalize_vendor_name(doc.get("nombre", "")), doc["_id"])
+
+    resolved: dict[str, list[int]] = defaultdict(list)
+    resolved_names: dict[str, str] = {}
+    for vendedor_id, ids in vendor_assignments.items():
+        target = vendedor_id
+        if vendedor_id not in por_id:
+            candidato = por_nombre.get(_normalize_vendor_name(vendor_names.get(vendedor_id, vendedor_id)))
+            target = candidato or next_vendedor_id()
+        resolved[target].extend(ids)
+        resolved_names.setdefault(target, vendor_names.get(vendedor_id, vendedor_id))
+    return resolved, resolved_names
+
+
 def is_assignable_vendor_cell(value: Any) -> bool:
     """Return True if a vendor cell is an assignable vendor (not LOCAL/CAMION/PAQUETE)."""
     raw = re.sub(r"\s+", " ", clean_excel_text(value)).strip()
@@ -108,7 +146,7 @@ def is_assignable_vendor_cell(value: Any) -> bool:
     if not nombre:
         return False
     upper = nombre.upper()
-    if upper == VENDEDOR_LOCAL:
+    if upper in (VENDEDOR_LOCAL, "SIN REGISTRAR"):
         return False
     return not upper.startswith(("CAMION", "CAMI\u00d3N", "PAQUETE"))
 
@@ -171,10 +209,16 @@ def parse_asignaciones_vendedores_xlsx(file_obj: Any) -> tuple[dict, dict, dict]
         raise ValueError("El archivo está vacío.")
 
     headers = [clean_excel_text(value).upper() for value in rows[0]]
-    normalized_headers = {header.strip() for header in headers}
-    missing = [header for header in ("NUMERO DE BOLETA", "VENDEDOR (A)") if header not in normalized_headers]
+    header_map = {}
+    for index, header in enumerate(headers):
+        key = header.strip()
+        if key and key not in header_map:
+            header_map[key] = index
+    missing = [header for header in ("NUMERO DE BOLETA", "VENDEDOR (A)") if header not in header_map]
     if missing:
         raise ValueError("El archivo no parece ser el modelo esperado. Faltan columnas: " + ", ".join(missing))
+    col_numero = header_map["NUMERO DE BOLETA"]
+    col_vendedor = header_map["VENDEDOR (A)"]
 
     vendor_assignments = defaultdict(list)
     vendor_names = {}
@@ -185,13 +229,13 @@ def parse_asignaciones_vendedores_xlsx(file_obj: Any) -> tuple[dict, dict, dict]
     empty_vendor = 0
 
     for excel_row_number, row in enumerate(rows[1:], start=2):
-        numero = parse_excel_boleta(row_value(row, 0))
+        numero = parse_excel_boleta(row_value(row, col_numero))
         if numero is None:
             if any(clean_excel_text(value) for value in row):
                 invalid_rows.append(excel_row_number)
             continue
 
-        vendedor_cell = row_value(row, 3)
+        vendedor_cell = row_value(row, col_vendedor)
         if not clean_excel_text(vendedor_cell):
             empty_vendor += 1
             continue
@@ -202,6 +246,8 @@ def parse_asignaciones_vendedores_xlsx(file_obj: Any) -> tuple[dict, dict, dict]
                 ignored_paquete += 1
             elif nombre_v.startswith(("CAMION", "CAMI\u00d3N")):
                 ignored_camion += 1
+            elif nombre_v == "SIN REGISTRAR":
+                empty_vendor += 1
             else:
                 ignored_local += 1
             continue
@@ -240,19 +286,37 @@ def importar_modelo_rifa(file_obj: Any) -> dict:
     config = get_config()
     valor_boleta = int(config.get("valor_boleta", 10000) or 10000)
     vendor_assignments, vendor_names, summary = parse_asignaciones_vendedores_xlsx(file_obj)
+    vendor_assignments, vendor_names = _resolve_vendor_ids(vendor_assignments, vendor_names)
 
-    assigned_ids = sorted({number for ids in vendor_assignments.values() for number in ids})
+    boleta_a_vendedor = {numero: vendedor_id for vendedor_id, ids in vendor_assignments.items() for numero in ids}
+    assigned_ids = sorted(boleta_a_vendedor)
+
+    docs_map, missing = verificar_boletas_existen(assigned_ids)
+    summary["boletas_inexistentes"] = sorted(missing)
+    for vendedor_id in list(vendor_assignments):
+        vendor_assignments[vendedor_id] = sorted(set(b for b in vendor_assignments[vendedor_id] if b in docs_map))
+    vendor_assignments = {vendedor_id: ids for vendedor_id, ids in vendor_assignments.items() if ids}
+
+    reasignadas_con_pagos = sorted(
+        b for b, doc in docs_map.items() if (doc.get("total_abonado") or 0) > 0 and (doc.get("vendedor_id") or "") != boleta_a_vendedor[b]
+    )
+    if reasignadas_con_pagos:
+        ids_str = ", ".join(f"#{b:04d}" for b in reasignadas_con_pagos)
+        raise ValueError(f"No se pueden reasignar boletas con pagos registrados: {ids_str}")
+
+    existing_ids = sorted(docs_map)
     for vendedor_id, ids in vendor_assignments.items():
-        unique_ids = sorted(set(ids))
-        if unique_ids:
+        if ids:
             boletas.update_many(
-                {"_id": {"$in": unique_ids}},
+                {"_id": {"$in": ids}},
                 {"$set": {"vendedor_id": vendedor_id}},
             )
-            boletas.update_many(
-                {"_id": {"$in": unique_ids}},
-                [{"$set": {"estado": estado_pipeline_expr(valor_boleta)}}],
-            )
+
+    if existing_ids:
+        vendedores.update_many(
+            {},
+            {"$pull": {"boletas_asignadas": {"$in": existing_ids}}},
+        )
 
     vendor_ops = []
     for vendedor_id, assigned in vendor_assignments.items():
@@ -272,7 +336,9 @@ def importar_modelo_rifa(file_obj: Any) -> dict:
     if vendor_ops:
         vendedores.bulk_write(vendor_ops, ordered=False)
 
-    summary["boletas_actualizadas"] = len(assigned_ids)
+    summary["boletas_actualizadas"] = len(existing_ids)
+    summary["boletas_asignadas"] = len(existing_ids)
+    summary["vendedores"] = len(vendor_assignments)
     summary["boletas_locales_omitidas"] = 0
 
     sync_ticket_statuses(valor_boleta)

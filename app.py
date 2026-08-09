@@ -47,6 +47,13 @@ app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") ==
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=int(os.getenv("SESSION_COOKIE_DAYS", "7")))
 app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_MB", "16")) * 1024 * 1024
 
+# Trust X-Forwarded-* headers only when behind a reverse proxy (nginx/Caddy).
+# Required so url_for/redirect generate https:// links and the secure cookie works.
+if os.getenv("TRUST_PROXY_HEADERS", "0") == "1":
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+
 register_template_filters(app)
 register_before_request(app)
 register_context_processor(app)

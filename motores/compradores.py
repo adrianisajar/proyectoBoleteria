@@ -2,6 +2,7 @@ import contextlib
 
 from flask import Flask, Response
 from pymongo import UpdateOne
+from werkzeug.exceptions import BadRequest
 
 from motores.constants import VENDEDOR_LOCAL
 from motores.errores import safe_error_message
@@ -103,7 +104,7 @@ def register_routes(app: Flask) -> None:
         if request.method == "POST":
             try:
                 data = request.get_json(force=True) or {}
-            except Exception:
+            except BadRequest:
                 return jsonify({"ok": False, "error": "JSON inv\u00e1lido."}), 400
             rows = data.get("rows", [])
             if not isinstance(rows, list):
@@ -123,7 +124,7 @@ def register_routes(app: Flask) -> None:
         """Validate a list of tickets and report which already have client data."""
         try:
             data = request.get_json(force=True) or {}
-        except Exception:
+        except BadRequest:
             return jsonify({"ok": False, "error": "JSON inv\u00e1lido."}), 400
         boletas_list = data.get("boletas", [])
         if not boletas_list:

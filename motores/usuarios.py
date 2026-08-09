@@ -1,4 +1,5 @@
 import contextlib
+import logging
 import re
 from typing import Any
 
@@ -18,6 +19,8 @@ from motores.constants import (
 from motores.fechas import now_local
 from motores.shared import jsonify
 from motores.validacion import sanitizar_texto
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_indexes() -> None:
@@ -46,7 +49,8 @@ def ensure_initial_admin() -> None:
                     "ultimo_acceso": None,
                 }
             )
-    except Exception:
+    except Exception as exc:
+        logger.warning("No se pudo crear el usuario administrador inicial: %s", exc)
         _ensure_indexes()
 
 
@@ -55,7 +59,12 @@ def authenticate(usuario: str, password: str) -> dict | None:
     if usuarios is None:
         return None
     doc = usuarios.find_one({"usuario": usuario})
-    if not doc or not doc.get("activo", False):
+    if not doc:
+        return None
+    activo = doc.get("activo", False)
+    if isinstance(activo, str):
+        activo = activo.strip().lower() in ("true", "1", "yes", "s", "si")
+    if not activo:
         return None
     if not check_password_hash(doc.get("password_hash", ""), password):
         return None

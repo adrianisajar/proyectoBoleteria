@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import datetime
 
-from flask import Flask, Response
+from flask import Flask, Response, current_app
 
 from motores.constants import METODO_EFECTIVO, VENDEDOR_LOCAL
 from motores.facturacion_common import deduplicar_filas_boleta, validar_filas_transferencia, verificar_boletas_existen
@@ -242,8 +242,8 @@ def register_routes(app: Flask) -> None:
                             {"_id": {"$in": boleta_ids}},
                             [{"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}}],
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        current_app.logger.warning("Rollback incompleto tras error de factura %s: %s", factura_id, exc)
                 flash(f"Error al generar la factura: {exc}", "danger")
                 return _render_cliente_form(form, form_rows, today)
 

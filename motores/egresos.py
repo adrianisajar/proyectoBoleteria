@@ -34,14 +34,9 @@ from motores.shared import (
     role_required,
     url_for,
     vendedores,
+    vendedores_con_local,
 )
 from motores.validacion import es_boleta_completa, parse_money
-
-
-def _vendedores_con_local() -> list[dict]:
-    """Return the vendor list including the LOCAL system vendor."""
-    lista = list(vendedores.find().sort("_id", 1))
-    return [*[{"_id": VENDEDOR_LOCAL, "nombre": VENDEDOR_LOCAL_LABEL}], *lista]
 
 
 def _build_form_data(vendedor_id: str, fecha: str, egreso_tipo: str, observaciones: str, rows_raw: list[dict]) -> dict:
@@ -65,7 +60,7 @@ def _build_form_data(vendedor_id: str, fecha: str, egreso_tipo: str, observacion
 
 def _render_form(form_data: dict, vendedores_list: list | None = None) -> str:
     if vendedores_list is None:
-        vendedores_list = _vendedores_con_local()
+        vendedores_list = vendedores_con_local()
     today = now_local().strftime("%Y-%m-%d")
     return render_template(
         "nueva_factura_egreso.html",
@@ -164,7 +159,7 @@ def register_routes(app: Flask) -> None:
                     }
                 )
             form_data = _build_form_data(vendedor_id, fecha, egreso_tipo, observaciones, rows_raw)
-            vendedores_list = _vendedores_con_local()
+            vendedores_list = vendedores_con_local()
 
             errors = []
             if not vendedor_id:

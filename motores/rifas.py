@@ -1,4 +1,4 @@
-from flask import Flask, Response
+from flask import Flask, Response, current_app
 
 from motores.config_service import get_rifa_activa
 from motores.constants import CONFIG_ID, DEFAULT_CONFIG
@@ -82,7 +82,8 @@ def register_routes(app: Flask) -> None:
                         return redirect(url_for("configuracion_panel"))
                     try:
                         rifas.update_one({"estado": "activa"}, {"$set": {"nombre": nombre, "valor_boleta": valor_boleta, "cantidad_boletas": cantidad_boletas}})
-                    except Exception:
+                    except Exception as exc:
+                        current_app.logger.warning("No se pudo actualizar el documento de la rifa: %s", exc)
                         flash("Advertencia: no se pudo actualizar el documento de la rifa.", "warning")
                     sync_ticket_statuses(valor_boleta)
                     invalidate_dashboard_cache()
@@ -107,7 +108,8 @@ def register_routes(app: Flask) -> None:
                         configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
                         try:
                             rifas.update_one({"estado": "activa"}, {"$set": update})
-                        except Exception:
+                        except Exception as exc:
+                            current_app.logger.warning("No se pudo actualizar comisiones en el documento de rifa: %s", exc)
                             flash("Advertencia: no se pudo actualizar comisiones en el documento de rifa.", "warning")
                         invalidate_config_cache()
                         flash("Comisiones guardadas correctamente.", "success")
@@ -162,7 +164,7 @@ def register_routes(app: Flask) -> None:
         confirmacion = request.form.get("confirmacion_importacion", "").strip().upper()
 
         if confirmacion != "IMPORTAR":
-            flash("Escribe IMPORTAR para confirmar la actualizaci├│n desde Excel.", "danger")
+            flash("Escribe IMPORTAR para confirmar la actualización desde Excel.", "danger")
             return redirect(url_for("configuracion_panel"))
 
         if not archivo or not archivo.filename:
@@ -195,6 +197,10 @@ def register_routes(app: Flask) -> None:
         )
         if summary["invalid_rows"]:
             message += " Filas omitidas: " + ", ".join(str(row) for row in summary["invalid_rows"])
+        if summary.get("boletas_inexistentes"):
+            missing = summary["boletas_inexistentes"]
+            muestras = ", ".join(f"#{b:04d}" for b in missing[:10])
+            message += f" Boletas inexistentes omitidas ({len(missing)}): {muestras}"
         flash(message, "success")
         return redirect(url_for("dashboard"))
 

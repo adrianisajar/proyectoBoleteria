@@ -51,7 +51,7 @@ def crear_rifa():
 def crear_configuracion_base():
     configuracion.update_one(
         {"_id": CONFIG_ID},
-        {"$setOnInsert": {"factura_counter": 0}},
+        {"$setOnInsert": {"factura_counter": 0, "traslado_counter": 0, "vendedor_counter": 0}},
         upsert=True,
     )
 

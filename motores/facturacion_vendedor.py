@@ -37,14 +37,9 @@ from motores.shared import (
     rollback_pagos_por_factura,
     url_for,
     vendedores,
+    vendedores_con_local,
 )
 from motores.validacion import es_boleta_completa, parse_money
-
-
-def _vendedores_con_local() -> list[dict]:
-    """Return the vendor list (for selects/autocomplete) including the LOCAL system vendor."""
-    lista = list(vendedores.find().sort("_id", 1))
-    return [*[{"_id": VENDEDOR_LOCAL, "nombre": VENDEDOR_LOCAL_LABEL}], *lista]
 
 
 def _build_form_data(
@@ -83,7 +78,7 @@ def _build_form_data(
 def _render_vendedor_form(form_data: dict, vendedores_list: list | None = None) -> str:
     """Render the vendor invoice form with the given values for a re-render."""
     if vendedores_list is None:
-        vendedores_list = _vendedores_con_local()
+        vendedores_list = vendedores_con_local()
     today = now_local().strftime("%Y-%m-%d")
     _cfg = get_config()
     _vb = int(_cfg.get("valor_boleta", 10000) or 10000)
@@ -108,7 +103,7 @@ def register_routes(app: Flask) -> None:
             bancos = request.form.getlist("banco[]")
 
             form_data = _build_form_data(vendedor_id, fecha, boletas_raw, montos_raw, metodos, referencias, bancos)
-            _vendedores_list = _vendedores_con_local()
+            _vendedores_list = vendedores_con_local()
 
             if not vendedor_id:
                 flash("Debe seleccionar un vendedor.", "danger")
@@ -363,7 +358,7 @@ def register_routes(app: Flask) -> None:
                 flash(f"Error al generar la factura: {exc}", "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
-        vendedores_list = _vendedores_con_local()
+        vendedores_list = vendedores_con_local()
         today = now_local().strftime("%Y-%m-%d")
         _cfg = get_config()
         _vb = int(_cfg.get("valor_boleta", 10000) or 10000)

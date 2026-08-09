@@ -9,6 +9,15 @@ from bson import ObjectId, json_util
 from flask import Flask, Response
 
 from motores.config_service import get_rifa_activa, require_collections
+from motores.constants import (
+    BOLETA_MAX,
+    BOLETA_MIN,
+    ESTADOS_BOLETA,
+    MOV_PAGO,
+    MOV_TRASLADO_ENTRADA,
+    MOV_TRASLADO_SALIDA,
+    VENDEDOR_LOCAL,
+)
 from motores.excel_export import make_xlsx_response
 from motores.shared import (
     boletas,
@@ -31,6 +40,129 @@ from motores.shared import (
     usuarios,
     vendedores,
 )
+
+TIPOS_FACTURA = {"cliente", "vendedor", "egreso"}
+
+
+def _es_numero(value: Any) -> bool:
+    """Return True for real numbers (ints/floats, excluding bools)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _validar_respaldo(data: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Validate a backup before any destructive restore.
+
+    Returns (errores, advertencias). Errores abort the restore (nothing is
+    written); advertencias are surfaced but do not block.
+    """
+    errores: list[str] = []
+    advertencias: list[str] = []
+
+    for nombre in ("boletas", "vendedores", "facturas", "configuracion"):
+        if not isinstance(data.get(nombre), list):
+            errores.append(f"{nombre}: el dato no es una lista")
+
+    boletas_backup = [d for d in (data.get("boletas") or []) if isinstance(d, dict)]
+    vendedores_backup = [d for d in (data.get("vendedores") or []) if isinstance(d, dict)]
+    facturas_backup = [d for d in (data.get("facturas") or []) if isinstance(d, dict)]
+    configuracion_backup = [d for d in (data.get("configuracion") or []) if isinstance(d, dict)]
+
+    ids_boletas: set[int] = set()
+    boletas_por_id: dict[int, dict[str, Any]] = {}
+    for doc in boletas_backup:
+        bid = doc.get("_id")
+        if not isinstance(bid, int) or isinstance(bid, bool) or not (BOLETA_MIN <= bid <= BOLETA_MAX):
+            errores.append(f"boletas: _id inválido {bid!r}")
+            continue
+        if bid in ids_boletas:
+            errores.append(f"boletas: _id duplicado #{bid:04d}")
+        ids_boletas.add(bid)
+        boletas_por_id[bid] = doc
+
+        total = doc.get("total_abonado", 0)
+        if not _es_numero(total) or total < 0:
+            errores.append(f"boletas #{bid:04d}: total_abonado inválido {total!r}")
+        if "historial_movimientos" in doc and not isinstance(doc["historial_movimientos"], list):
+            errores.append(f"boletas #{bid:04d}: historial_movimientos no es una lista")
+        estado = doc.get("estado")
+        if estado is not None and estado not in ESTADOS_BOLETA:
+            errores.append(f"boletas #{bid:04d}: estado inválido {estado!r}")
+
+    ids_vendedores: set[str] = set()
+    for doc in vendedores_backup:
+        vid = doc.get("_id")
+        if not isinstance(vid, str) or not vid:
+            errores.append(f"vendedores: _id inválido {vid!r}")
+            continue
+        if vid in ids_vendedores:
+            errores.append(f"vendedores: _id duplicado {vid!r}")
+        ids_vendedores.add(vid)
+
+        asignadas = doc.get("boletas_asignadas", [])
+        if not isinstance(asignadas, list):
+            errores.append(f"vendedores {vid}: boletas_asignadas no es una lista")
+            continue
+        for numero in asignadas:
+            if not isinstance(numero, int) or numero not in ids_boletas:
+                errores.append(f"vendedores {vid}: boleta asignada #{numero:04d} no existe en el respaldo")
+
+    for doc in vendedores_backup:
+        vid = doc.get("_id")
+        for numero in doc.get("boletas_asignadas") or []:
+            if not isinstance(numero, int) or numero not in boletas_por_id:
+                continue
+            vendedor_boleta = boletas_por_id[numero].get("vendedor_id") or ""
+            if vendedor_boleta and vendedor_boleta != vid:
+                errores.append(f"boletas #{numero:04d}: vendedor_id {vendedor_boleta!r} no coincide con la asignación de {vid}")
+
+    for numero, doc in boletas_por_id.items():
+        vendedor_boleta = doc.get("vendedor_id") or ""
+        if vendedor_boleta not in ("", VENDEDOR_LOCAL) and vendedor_boleta not in ids_vendedores:
+            errores.append(f"boletas #{numero:04d}: vendedor_id {vendedor_boleta!r} no existe en el respaldo")
+
+    max_factura_id = -1
+    for doc in facturas_backup:
+        fid = doc.get("_id")
+        if not isinstance(fid, int) or isinstance(fid, bool) or fid <= 0:
+            errores.append(f"facturas: _id inválido {fid!r}")
+            continue
+        max_factura_id = max(max_factura_id, fid)
+        tipo = doc.get("tipo")
+        if tipo is not None and tipo not in TIPOS_FACTURA:
+            errores.append(f"facturas #{fid}: tipo inválido {tipo!r}")
+        if not _es_numero(doc.get("valor_total", 0)):
+            errores.append(f"facturas #{fid}: valor_total inválido")
+
+    config_rifa = next((d for d in configuracion_backup if d.get("_id") == "rifa"), None)
+    if config_rifa is None:
+        errores.append("configuracion: falta el documento 'rifa'")
+    else:
+        counter = config_rifa.get("factura_counter")
+        if isinstance(counter, int) and max_factura_id > counter:
+            errores.append(f"configuracion: factura_counter ({counter}) es menor que el id máximo de factura ({max_factura_id})")
+
+    for numero, doc in boletas_por_id.items():
+        movimientos = doc.get("historial_movimientos") or []
+        if not isinstance(movimientos, list):
+            continue
+        neto = 0
+        for mov in movimientos:
+            if not isinstance(mov, dict):
+                continue
+            valor = mov.get("valor") or 0
+            if not _es_numero(valor):
+                continue
+            tipo = mov.get("tipo") or MOV_PAGO
+            if tipo in (MOV_PAGO, MOV_TRASLADO_ENTRADA):
+                neto += int(valor)
+            elif tipo == MOV_TRASLADO_SALIDA:
+                neto -= int(valor)
+        neto = max(0, neto)
+        total = doc.get("total_abonado", 0)
+        if _es_numero(total) and int(total) != neto:
+            advertencias.append(f"boletas #{numero:04d}: total_abonado ({int(total)}) no coincide con el histórico neto ({neto})")
+
+    return errores, advertencias
 
 
 def _restore_objectids_from_backup(data: dict[str, list[dict[str, Any]]]) -> None:
@@ -194,6 +326,14 @@ def register_routes(app: Flask) -> None:
                 if missing:
                     flash(f"El respaldo está incompleto, faltan colecciones: {', '.join(sorted(missing))}.", "danger")
                     return redirect(url_for("backup"))
+                errores_validacion, advertencias_validacion = _validar_respaldo(data)
+                if errores_validacion:
+                    for error in errores_validacion:
+                        flash(f"Respaldo inválido: {error}", "danger")
+                    flash("La restauración fue cancelada: no se modificó la base de datos.", "danger")
+                    return redirect(url_for("backup"))
+                for advertencia in advertencias_validacion[:50]:
+                    flash(f"Advertencia: {advertencia}", "warning")
                 restaurados = {}
                 errores = []
                 for nombre, col in COLECCIONES:
