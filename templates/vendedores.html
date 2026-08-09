@@ -220,7 +220,7 @@
                                 <th>Boleta</th>
                                 <th>Estado</th>
                                 <th>Abonado</th>
-                                <th>Cliente</th>
+                                <th>Egresos</th>
                                 <th>Fech. adq.</th>
                             </tr>
                         </thead>
@@ -534,11 +534,15 @@
                     data.boletas.forEach((b) => {
                         const tr = document.createElement("tr");
                         const badgeClass = b.estado === "pagada" ? "text-bg-success" : b.estado === "abonando" ? "text-bg-warning" : b.estado === "asignada" ? "text-bg-primary" : b.estado === "separada" ? "text-bg-info" : "text-bg-secondary";
+                        let egresosCell = '<td><span class="text-muted">&mdash;</span></td>';
+                        if (b.egresos && b.egresos.length) {
+                            egresosCell = '<td>' + b.egresos.map((e) => '<div class="small text-danger">' + e.label + ': $' + Number(e.valor).toLocaleString("es-CO") + '</div>').join("") + '</td>';
+                        }
                         tr.innerHTML = [
                             '<td class="fw-bold ticket-number">#' + b.numero + '</td>',
                             '<td><span class="badge rounded-pill ' + badgeClass + ' text-uppercase">' + b.estado + '</span></td>',
                             '<td class="fw-bold text-success">$' + Number(b.abonado).toLocaleString("es-CO") + '</td>',
-                            '<td>' + (b.cliente || "Sin cliente") + '</td>',
+                            egresosCell,
                             '<td class="small">' + (b.fecha_adquisicion || '<span class="text-muted">&mdash;</span>') + '</td>',
                         ].join("");
                         modalBody.appendChild(tr);

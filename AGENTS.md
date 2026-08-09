@@ -123,6 +123,13 @@ Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `SERVER_SELECTION_TIMEOUT_MS` (alias),
 - `ADMIN_INICIAL_PASSWORD` por defecto es `admin`: cámbiala en `.env` antes de exponer el sistema.
 - Usuarios y contaseñas: la app genera un admin inicial automáticamente si no existen usuarios (`ensure_initial_admin`).
 
+## Ejecutables para la PC servidor (PyInstaller)
+- `boleteria.spec` genera en `dist/` tres exes desde el `.venv`: `BoleteriaServidor.exe` (servidor waitress, **embebe** `templates/` y `static/`), `BoleteriaBackup.exe` (`scripts/backup.py`) y `BoleteriaIntegridad.exe` (`scripts/integridad.py`). Build: `python -m PyInstaller --noconfirm --clean boleteria.spec`.
+- **El `.env` NO se empaqueta**: en modo frozen (`sys.frozen`) `app.py`/`database.py` lo leen desde el directorio del `.exe`. Las credenciales quedan fuera del binario y se cambian sin recompilar.
+- `dist/`, `build/`, `*.exe` están en `.gitignore`; `boleteria.spec` está versionado (`!boleteria.spec`).
+- Kit de despliegue (copia a la PC servidor, misma carpeta): los 3 exes + un `.env` con `MONGO_URI`, `SECRET_KEY`, `FLASK_HOST=0.0.0.0`, `PORT`, `ADMIN_INICIAL_PASSWORD`, `SESSION_COOKIE_SECURE`, `TRUST_PROXY_HEADERS`, `BACKUP_DIR`/`BACKUP_KEEP`.
+- Para LAN interna no hace falta proxy: `SESSION_COOKIE_SECURE=0` y `TRUST_PROXY_HEADERS=0`.
+
 ## Architecture notes
 - **Auth system**: session login with two roles (`admin`, `cajero`). `role_required(...)` guards every route (403 for HTML, JSON error for `/api/*`); menu visibility follows the same rules via `can(...)`. Dashboard, Configuración, Gestión de usuarios, Vendedores y respaldos son exclusivos del admin. Caja opera: consultas, compradores, facturas cliente/vendedor, egresos y traslados.
 - **Primary feature**: generate printable invoices (facturas) from ticket sales and seller payments.

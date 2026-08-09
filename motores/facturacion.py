@@ -52,6 +52,7 @@ def register_routes(app: Flask) -> None:
                     {"vendedor_nombre": {"$regex": re.escape(q), "$options": "i"}},
                     {"vendedor_id": {"$regex": re.escape(q), "$options": "i"}},
                 ]
+        query["estado"] = {"$in": ["completa", None]}
         lista = list(facturas.find(query).sort([("fecha", -1), ("_id", -1)]).limit(100))
         return render_template("facturas_list.html", facturas=lista, q=q)
 
@@ -60,7 +61,7 @@ def register_routes(app: Flask) -> None:
     def facturas_cliente() -> str:
         """List customer (cliente) invoices."""
         require_collections()
-        lista = list(facturas.find({"tipo": "cliente"}).sort([("fecha", -1), ("_id", -1)]).limit(100))
+        lista = list(facturas.find({"tipo": "cliente", "estado": {"$in": ["completa", None]}}).sort([("fecha", -1), ("_id", -1)]).limit(100))
         return render_template("facturas_cliente.html", facturas=lista)
 
     @app.route("/facturas/vendedor")
@@ -68,7 +69,7 @@ def register_routes(app: Flask) -> None:
     def facturas_vendedor() -> str:
         """List vendor (vendedor) invoices."""
         require_collections()
-        lista = list(facturas.find({"tipo": "vendedor"}).sort([("fecha", -1), ("_id", -1)]).limit(100))
+        lista = list(facturas.find({"tipo": "vendedor", "estado": {"$in": ["completa", None]}}).sort([("fecha", -1), ("_id", -1)]).limit(100))
         return render_template("facturas_vendedor.html", facturas=lista)
 
     @app.route("/facturas/<int:factura_id>")

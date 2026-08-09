@@ -9,8 +9,11 @@ from motores.constants import (
     BOLETA_MAX,
     BOLETA_MIN,
     METODO_TRANSFERENCIA,
+    MOV_EGRESO,
     MOV_PAGO,
+    MOVIMIENTOS_FIELD,
     OPERACIONES_VENDEDOR,
+    TIPOS_EGRESO,
     VENDEDOR_LOCAL,
     VENDEDOR_LOCAL_LABEL,
     VENDEDOR_SIN_ASIGNAR,
@@ -369,12 +372,20 @@ def register_routes(app: Flask) -> None:
             docs = list(
                 boletas.find(
                     {"vendedor_id": vendedor_id},
-                    {"_id": 1, "estado": 1, "total_abonado": 1, "cliente": 1, "fecha_adquisicion": 1},
+                    {"_id": 1, "estado": 1, "total_abonado": 1, "cliente": 1, "fecha_adquisicion": 1, MOVIMIENTOS_FIELD: 1},
                 ).sort("_id", 1)
             )
             boletas_list = []
             for d in docs:
                 cliente = d.get("cliente") or {}
+                egresos = [
+                    {
+                        "label": TIPOS_EGRESO.get(m.get("egreso_tipo"), m.get("egreso_tipo") or "Egreso"),
+                        "valor": int(m.get("valor") or 0),
+                    }
+                    for m in (d.get(MOVIMIENTOS_FIELD) or [])
+                    if m.get("tipo") == MOV_EGRESO
+                ]
                 boletas_list.append(
                     {
                         "numero": f"{d['_id']:04d}",
@@ -382,6 +393,8 @@ def register_routes(app: Flask) -> None:
                         "abonado": int(d.get("total_abonado", 0) or 0),
                         "cliente": cliente.get("nombre", ""),
                         "fecha_adquisicion": d.get("fecha_adquisicion") or "",
+                        "egresos": egresos,
+                        "total_egresado": sum(e["valor"] for e in egresos),
                     }
                 )
             return jsonify({"ok": True, "total": len(boletas_list), "boletas": boletas_list})

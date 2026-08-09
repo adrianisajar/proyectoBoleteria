@@ -199,6 +199,12 @@ def register_routes(app: Flask) -> None:
                 flash(f"Boletas ya pagadas: {', '.join(f'{b:04d}' for b in pagadas)}", "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
+            monto_por_boleta = {r["boleta"]: r["monto"] for r in rows}
+            sobrepasan = [b for b in boleta_ids if (docs_map[b].get("total_abonado", 0) or 0) + monto_por_boleta.get(b, 0) > _vb]
+            if sobrepasan:
+                flash(f"El abono excede el saldo pendiente en {len(sobrepasan)} boleta(s): {', '.join(f'#{b:04d}' for b in sobrepasan)}.", "danger")
+                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
+
             factura_id = None
             valor_boleta = None
             try:
@@ -233,19 +239,7 @@ def register_routes(app: Flask) -> None:
                     }
                 )
 
-                # ── 2. Validar montos (sin viajes extra a MongoDB) ──
-                sobrepasan = []
-                for r in rows:
-                    doc = docs_map.get(r["boleta"])
-                    if not doc:
-                        continue
-                    actual = doc.get("total_abonado", 0) or 0
-                    if actual + r["monto"] > valor_boleta:
-                        sobrepasan.append(r["boleta"])
-                if sobrepasan:
-                    raise ValueError(f"El abono excede el saldo pendiente en {len(sobrepasan)} boleta(s): {', '.join(f'#{b:04d}' for b in sobrepasan)}.")
-
-                # ── 3. Un solo bulk_write con todos los pagos ──
+                # ── 2. Un solo bulk_write con todos los pagos ──
                 ops = []
                 usuario = (current_user() or {}).get("username", USUARIO_SISTEMA)
                 for r in rows:
@@ -292,19 +286,16 @@ def register_routes(app: Flask) -> None:
                     boletas.bulk_write(ops, ordered=False)
                 except BulkWriteError:
                     rollback_pagos_por_factura(factura_id, valor_boleta)
-                    facturas.update_one(
-                        {"_id": factura_id},
-                        {"$set": {"estado": "error", "error": "Error de escritura en MongoDB durante el bulk_write."}},
-                    )
+                    facturas.delete_one({"_id": factura_id, "estado": {"$ne": "completa"}})
                     flash(
-                        f"Error al registrar los pagos (factura #{factura_id:05d}). Los pagos se revirtieron automáticamente. Intente de nuevo.",
+                        f"Error al registrar los pagos. Se eliminó la factura #{factura_id:05d} y se revirtieron los pagos. Intente de nuevo.",
                         "danger",
                     )
                     return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
                 invalidate_dashboard_cache()
 
-                # ── 4. Calcular comisiones (después de los pagos) ──
+                # ── 3. Calcular comisiones (después de los pagos) ──
                 tiers = config.get("comisiones_tiers", COMISION_DEFAULT_TIERS)
                 existing_vendidas = boletas.count_documents(
                     {
@@ -327,7 +318,7 @@ def register_routes(app: Flask) -> None:
                     comision_por_boleta = calc_comision_por_boleta(total_vendidas, tiers)
                     total_comision = total_vendidas * comision_por_boleta
 
-                # ── 5. Construir detalle y finalizar factura ──
+                # ── 4. Construir detalle y finalizar factura ──
                 detalle = build_factura_detalle(boleta_ids, factura_id)
                 valor_total = sum(d["valor"] for d in detalle)
 
@@ -351,10 +342,7 @@ def register_routes(app: Flask) -> None:
             except Exception as exc:
                 if factura_id is not None:
                     rollback_pagos_por_factura(factura_id, valor_boleta)
-                    facturas.update_one(
-                        {"_id": factura_id},
-                        {"$set": {"estado": "error", "error": str(exc)[:200]}},
-                    )
+                    facturas.delete_one({"_id": factura_id, "estado": {"$ne": "completa"}})
                 flash(f"Error al generar la factura: {exc}", "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 

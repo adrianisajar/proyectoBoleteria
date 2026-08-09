@@ -14,6 +14,7 @@ dist/
 build/
 *.exe
 *.spec
+!boleteria.spec
 *.log
 *.egg-info/
 .eggs/

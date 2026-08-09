@@ -109,8 +109,8 @@ def test_factura_vendedor_sobrepasa_rollback(client):
     resp = _post_factura(client, "VEND01", ["0003"], ["50000"])
     assert resp.status_code == 200
 
-    f = facturas.find_one({"tipo": "vendedor"})
-    assert f["estado"] == "error"
+    # No debe quedar ningún comprobante vacío con estado "error"
+    assert facturas.count_documents({"tipo": "vendedor"}) == 0
     b = boletas.find_one({"_id": 3})
     assert b["total_abonado"] == 60000
     assert b["historial_movimientos"][0]["valor"] == 60000

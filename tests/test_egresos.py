@@ -134,6 +134,36 @@ def test_api_boletas_vendedor_egreso(client):
     assert resp.status_code == 404
 
 
+def test_api_vendedor_boletas_incluye_egresos(client):
+    vendedores.insert_one({"_id": "VEND01", "nombre": "Vendedor Uno"})
+    boletas.update_one(
+        {"_id": 1},
+        {
+            "$set": {
+                "vendedor_id": "VEND01",
+                "estado": "pagada",
+                "total_abonado": 70000,
+                "historial_movimientos": [
+                    {"tipo": MOV_PAGO, "fecha": "2026-07-01", "valor": 70000, "metodo": "efectivo", "factura_id": 50},
+                    {"tipo": MOV_EGRESO, "fecha": "2026-07-02", "valor": 20000, "metodo": "efectivo", "factura_id": 51, "egreso_tipo": "comision_vendedor"},
+                ],
+            }
+        },
+    )
+    boletas.update_one({"_id": 2}, {"$set": {"vendedor_id": "VEND01", "estado": "pagada", "total_abonado": 70000}})
+
+    resp = client.get("/api/vendedores/VEND01/boletas")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ok"] is True
+    b1 = next(b for b in data["boletas"] if b["numero"] == "0001")
+    assert b1["total_egresado"] == 20000
+    assert b1["egresos"] == [{"label": "Comisión de vendedor", "valor": 20000}]
+    b2 = next(b for b in data["boletas"] if b["numero"] == "0002")
+    assert b2["total_egresado"] == 0
+    assert b2["egresos"] == []
+
+
 def test_egreso_sin_vendedor(client):
     resp = _post_egreso(client, vendedor_id="")
     assert resp.status_code == 200
