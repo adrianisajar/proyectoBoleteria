@@ -1,19 +1,19 @@
 import threading
 
 CONFIG_CACHE: dict = {"data": None, "loaded_at": 0}
-CONFIG_CACHE_SECONDS: int = 30
+CONFIG_CACHE_SECONDS: int = 5
 CONFIG_LOCK = threading.Lock()
 
 RIFA_CACHE: dict = {"data": None, "loaded_at": 0}
-RIFA_CACHE_SECONDS: int = 30
+RIFA_CACHE_SECONDS: int = 5
 RIFA_LOCK = threading.Lock()
 
 DASHBOARD_CACHE: dict = {"data": None, "loaded_at": 0}
-DASHBOARD_CACHE_SECONDS: int = 30
+DASHBOARD_CACHE_SECONDS: int = 10
 DASHBOARD_LOCK = threading.Lock()
 
 VENDOR_PANEL_CACHE: dict = {"data": None, "loaded_at": 0}
-VENDOR_PANEL_CACHE_SECONDS: int = 30
+VENDOR_PANEL_CACHE_SECONDS: int = 10
 VENDOR_PANEL_LOCK = threading.Lock()
 
 GLOBAL_COUNTS_CACHE: dict = {"data": None, "loaded_at": 0, "valor": None}
