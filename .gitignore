@@ -1,4 +1,7 @@
 .env
+.env.example
+.env.render.example
+.env.local
 respaldos/
 __pycache__/
 *.py[cod]
