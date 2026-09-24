@@ -30,6 +30,17 @@ services:
         value: "16"
       - key: LOG_LEVEL
         value: INFO
+      - key: PORT
+        value: "8000"
+      - key: MONGO_DB
+        value: sistema_boleteria
+      - key: TZ_OFFSET
+        value: "-05:00"
+      - key: SESSION_COOKIE_DAYS
+        value: "7"
+      - key: SESSION_IDLE_TIMEOUT_SECONDS
+        value: "1800"
+      # NOTA: ANOTAR SECRET_KEY y ADMIN_INICIAL_PASSWORD generados para el .env local
     routes:
       - type: https
         path: /
