@@ -63,7 +63,8 @@ def test_asignar_a_local(client):
     assert resp.status_code == 302
     b1 = boletas.find_one({"_id": 1})
     assert b1["vendedor_id"] == VENDEDOR_LOCAL
-    assert b1["estado"] == "separada"
+    # Sin cliente asignado, LOCAL → disponible (no separada)
+    assert b1["estado"] == "disponible"
     assert vendedores.find_one({"_id": VENDEDOR_LOCAL}) is None
 
 

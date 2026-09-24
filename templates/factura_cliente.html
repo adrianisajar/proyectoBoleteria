@@ -1,99 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Factura Cliente FC-{{ "%05d" % factura._id }} — {{ super() }}{% endblock %}
 {% block head %}
-<style>
-@media print {
-  @page { margin: 2mm; }
-  html, body { min-height: auto !important; height: auto !important; }
-  nav, .navbar, .navbar *, .no-print, .modal, .modal-backdrop, .flash-stack,
-  .btn, button:not(.no-print), a:not(.no-print),
-  [class*="modal"], [id*="modal"] {
-    display: none !important;
-  }
-  body { margin: 0 !important; padding: 0 !important; background: #fff !important; min-height: auto !important; height: auto !important; }
-  .app-main { padding: 0 !important; margin: 0 !important; min-height: auto !important; height: auto !important; }
-  .container { padding: 0 !important; max-width: none !important; margin: 0 !important; min-height: auto !important; height: auto !important; }
-  .recibo {
-    max-width: none !important; width: 100% !important;
-    margin: 0 !important; padding: 0 !important;
-    font-size: 1.3rem !important;
-    line-height: 1.8 !important;
-  }
-  .recibo-header { margin-bottom: 0.6rem !important; }
-  .recibo-empresa { font-size: 1.75rem !important; font-weight: 800 !important; }
-  .recibo-titulo { font-size: 1.55rem !important; font-weight: 700 !important; }
-  .recibo-dir { font-size: 1.15rem !important; color: #333 !important; }
-  .recibo-linea { margin: 0.4rem 0 !important; }
-  .recibo-linea-doble { margin: 0.45rem 0 !important; }
-  .recibo-label {
-    color: #222 !important;
-    font-weight: 600 !important;
-  }
-  .recibo > .recibo-label {
-    font-size: 1.5rem !important;
-    font-weight: 700 !important;
-  }
-  .recibo-boleta {
-    margin: 0.35rem 0 !important; padding: 0.3rem 0 !important;
-  }
-  .recibo-boleta-num {
-    font-size: 1.2rem !important;
-  }
-  .recibo-campo { padding: 0.15rem 0 !important; }
-  .recibo-mov { margin: 0.2rem 0 0.2rem 0.6rem !important; }
-  .recibo-mov-line { padding: 0.12rem 0 !important; }
-  .recibo-total { margin-top: 0.5rem !important; padding-top: 0.35rem !important; font-size: 1.3rem !important; }
-  .recibo-footer { margin-top: 0.4rem !important; padding-top: 0.4rem !important; font-size: 1.15rem !important; }
-  .recibo-historial { margin-top: 0.5rem !important; }
-  .recibo-historial table { font-size: 1.05rem !important; }
-  .recibo-estado { font-size: 1.05rem !important; }
-  div[style*="font-size:0.8rem"] { font-size: 1.3rem !important; }
-  div[style*="font-size:0.75rem"] { font-size: 1.15rem !important; }
-  div[style*="font-size:0.7rem"] { font-size: 1.05rem !important; }
-  .recibo-firma { margin-top: 1.2rem !important; }
-  .recibo-firma-linea { width: 10rem !important; font-size: 1.1rem !important; }
-  .recibo-firma-nombre { font-size: 1.1rem !important; }
-}
-.recibo {
-  max-width: 340px; margin: 0 auto;
-  padding: 1rem 1rem;
-  font-family: "Courier New", Courier, monospace;
-  font-size: 0.78rem;
-  line-height: 1.6;
-  background: #fff;
-  color: #111;
-}
-.recibo .no-print .btn-outline-secondary { --bs-btn-color: #495057; --bs-btn-border-color: #6c757d; --bs-btn-hover-color: #fff; --bs-btn-hover-bg: #6c757d; --bs-btn-hover-border-color: #6c757d; }
-.recibo .no-print .btn-outline-danger { --bs-btn-color: #b02a37; --bs-btn-border-color: #dc3545; --bs-btn-hover-color: #fff; --bs-btn-hover-bg: #dc3545; --bs-btn-hover-border-color: #dc3545; }
-.recibo .alert-danger { --bs-alert-bg: #f8d7da; --bs-alert-color: #842029; --bs-alert-border-color: #f5c2c7; }
-.recibo .alert-warning { --bs-alert-bg: #fff3cd; --bs-alert-color: #664d03; --bs-alert-border-color: #ffecb5; }
-.recibo-header { text-align: center; margin-bottom: 0.8rem; }
-.recibo-empresa { font-size: 1.1rem; font-weight: 800; letter-spacing: 0.05em; }
-.recibo-titulo { font-size: 0.9rem; font-weight: 700; margin-top: 0.25rem; }
-.recibo-dir { font-size: 0.7rem; color: #555; }
-.recibo-linea { border: 0; border-top: 1px dashed #999; margin: 0.6rem 0; }
-.recibo-linea-doble { border: 0; border-top: 3px double #000; margin: 0.6rem 0; }
-.recibo-campo { display: flex; justify-content: space-between; }
-.recibo-label { color: #555; }
-.recibo-boleta { margin: 0.5rem 0; padding: 0.3rem 0; border-bottom: 1px dotted #ccc; }
-.recibo-boleta-num { font-size: 0.95rem; font-weight: 700; }
-.recibo-mov { margin: 0.25rem 0 0.25rem 0.4rem; }
-.recibo-mov-line { display: flex; justify-content: space-between; }
-.recibo-total { border-top: 2px solid #000; margin-top: 0.5rem; padding-top: 0.4rem; font-weight: 700; font-size: 0.85rem; }
-.recibo-footer { text-align: center; margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px dashed #999; font-size: 0.7rem; color: #555; }
-.recibo-historial { margin-top: 0.6rem; }
-.recibo-historial table { width: 100%; font-size: 0.7rem; }
-.recibo-historial th { border-bottom: 1px dotted #ccc; text-align: left; }
-.recibo-estado { font-size: 0.7rem; }
-.recibo-firma { margin-top: 1.6rem; display: flex; flex-direction: column; align-items: center; }
-.recibo-firma-linea { width: 8rem; border-top: 1px solid #000; padding-top: 0.3rem; text-align: center; font-size: 0.7rem; font-weight: 600; }
-.recibo-firma-nombre { text-align: center; font-size: 0.78rem; font-weight: 700; margin-bottom: 0.35rem; }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/thermal.css') }}">
 {% endblock %}
 {% block content %}
 <div class="recibo">
   <div class="text-end mb-1 no-print">
-    <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir</button>
+    {% if printer_configured %}<form method="post" action="{{ url_for('imprimir_factura', factura_id=factura._id) }}" class="d-inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn btn-success btn-sm" onclick="return confirm('¿Desea imprimir esta factura?');"><i class="bi bi-printer-fill"></i> Imprimir directo</button></form>{% endif %}
     <a href="{{ url_for('facturas_cliente') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
     {% if not factura.get("anulada") and current_user and current_user.role == "admin" %}
     <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#anularModal"><i class="bi bi-x-circle"></i> Anular</button>
@@ -152,7 +65,7 @@
     <div class="recibo-mov">
       <div class="recibo-mov-line"><span class="recibo-label">Pago realizado</span><span>${{ "{:,}".format(invoice_pago) }}</span></div>
       {% for p in boleta_pagos %}
-      <div class="recibo-mov-line"><span class="recibo-label">Método</span><span>{{ "Transferencia" if p.metodo == "transferencia" else "Efectivo" }}</span></div>
+      <div class="recibo-mov-line"><span class="recibo-label">Método</span><span>{{ "Transferencia" if p.metodo == "transferencia" else "Pago a Delio" if p.metodo == "pago_a_delio" else "Efectivo" }}</span></div>
       {% if p.metodo == "transferencia" %}
         {% if p.get("banco") %}<div class="recibo-mov-line"><span class="recibo-label">Banco</span> {{ p.banco }}</div>{% endif %}
         {% if p.get("referencia") %}<div class="recibo-mov-line"><span class="recibo-label">Referencia</span> {{ p.referencia }}</div>{% endif %}
@@ -176,8 +89,6 @@
   <div class="recibo-footer">
     <div>Gracias por confiar en nosotros.</div>
     <div>Conserve este comprobante.</div>
-    <div class="fw-bold" style="font-size:0.75rem">FC-{{ "%05d" % factura._id }}</div>
-    <div>{{ config.get("footer_texto") or "Documento interno, no tiene validez fiscal." }}</div>
   </div>
 </div>
 
@@ -210,8 +121,4 @@
   </div>
 </div>
 {% endblock %}
-{% block scripts %}
-{% if imprimir %}
-<script>window.addEventListener("load", function(){ window.print(); });</script>
-{% endif %}
-{% endblock %}
+{% block scripts %}{% endblock %}

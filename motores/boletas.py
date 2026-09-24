@@ -3,7 +3,7 @@ import csv
 import io
 import re
 
-from flask import Flask, Response, current_app
+from flask import Flask, Response, current_app, stream_with_context
 from werkzeug.exceptions import BadRequest
 
 from motores.constants import (
@@ -23,22 +23,23 @@ from motores.shared import (
     build_consulta_context,
     build_page_url,
     estado_pipeline_expr,
-    facturas,
     flash,
     get_config,
     get_dashboard_counts,
     get_vendedor_options,
     invalidate_dashboard_cache,
     jsonify,
-    movimiento_neto_expr,
     redirect,
     render_template,
     request,
     require_collections,
+    reservas,
     role_required,
     url_for,
     vendedores,
 )
+from motores.validacion import safe_error_message as _safe_flash_error
+from motores.validacion import sanitizar_texto
 
 SORT_WHITELIST = {"_id", "vendedor_id", "estado", "total_abonado", "cliente.nombre"}
 
@@ -61,7 +62,7 @@ def register_routes(app: Flask) -> None:
     """Register the ticket search and ticket management routes."""
 
     @app.route("/consultas")
-    @role_required("admin", "cajero", "consulta")
+    @role_required("admin", "cajero")
     def consultas() -> str | Response:
         """Ticket search page with filters, pagination and state metrics."""
         filters, query, errors, page, limite, offset, has_filters, numero_exacto = build_consulta_context(request.args)
@@ -76,9 +77,11 @@ def register_routes(app: Flask) -> None:
                 valor_boleta = int(config["valor_boleta"])
                 counts = get_dashboard_counts(valor_boleta=valor_boleta)
             except Exception as exc:
-                flash(f"No se pudieron cargar las métricas: {exc}", "danger")
+                flash(_safe_flash_error(exc), "danger")
         sort_by = request.args.get("sort_by", "_id").strip()
         sort_dir = request.args.get("sort_dir", "asc").strip()
+        if sort_dir not in {"asc", "desc"}:
+            sort_dir = "asc"
         if sort_by not in SORT_WHITELIST:
             sort_by = "_id"
         sort_direction = 1 if sort_dir == "asc" else -1
@@ -109,15 +112,18 @@ def register_routes(app: Flask) -> None:
                     boleta_detalle = boletas.find_one({"_id": query["_id"]})
                     if boleta_detalle and boleta_detalle.get("vendedor_id"):
                         v = vendedores.find_one({"_id": boleta_detalle["vendedor_id"]}, {"nombre": 1})
-                        boleta_detalle["vendedor_nombre"] = v["nombre"] if v else None
+                        boleta_detalle["vendedor_nombre"] = v.get("nombre") if v else None
                     if boleta_detalle:
                         boleta_detalle["movimientos"] = _normalizar_movimientos(boleta_detalle)
+                        with contextlib.suppress(Exception):
+                            boleta_detalle["reserva"] = reservas.find_one({"_id": query["_id"]}) if reservas is not None else None
             except Exception as exc:
-                flash(f"No se pudo ejecutar la consulta: {exc}", "danger")
+                flash(_safe_flash_error(exc), "danger")
 
         total_pages = 1 if limite == 0 else max(1, (total_resultados + limite - 1) // limite)
+        sort_params = {"sort_by": sort_by, "sort_dir": sort_dir}
         if page > total_pages and total_resultados:
-            return redirect(build_page_url("consultas", filters, total_pages))
+            return redirect(build_page_url("consultas", filters, total_pages, sort_params))
 
         filtered_counts = None
         if has_filters and not errors:
@@ -143,10 +149,11 @@ def register_routes(app: Flask) -> None:
             except Exception as exc:
                 current_app.logger.warning("No se pudieron calcular métricas filtradas de consultas: %s", exc)
 
-        prev_url = build_page_url("consultas", filters, page - 1) if page > 1 else None
-        next_url = build_page_url("consultas", filters, page + 1) if page < total_pages else None
+        prev_url = build_page_url("consultas", filters, page - 1, sort_params) if page > 1 else None
+        next_url = build_page_url("consultas", filters, page + 1, sort_params) if page < total_pages else None
 
         export_params = {k: v for k, v in filters.items() if v}
+        export_params.update(sort_params)
         export_url = url_for("exportar_consultas", **export_params)
 
         vendedor_label = ""
@@ -194,44 +201,61 @@ def register_routes(app: Flask) -> None:
         )
 
     @app.route("/consultas/exportar")
-    @role_required("admin", "cajero", "consulta")
+    @role_required("admin", "cajero")
     def exportar_consultas() -> Response:
-        """Export filtered ticket results as a semicolon-separated CSV."""
+        """Export filtered ticket results as a semicolon-separated CSV.
+
+        Uses a generator + ``stream_with_context`` to avoid buffering the full
+        result set in RAM (supports up to 50,000 rows).
+        """
         _filters, query, errors, _page, _limite, _offset, _has_filters, _numero_exacto = build_consulta_context(request.args)
         if errors:
             flash("Error al exportar: corrija los filtros.", "danger")
             return redirect(url_for("consultas"))
+        sort_by = request.args.get("sort_by", "_id").strip()
+        sort_dir = request.args.get("sort_dir", "asc").strip()
+        if sort_dir not in {"asc", "desc"}:
+            sort_dir = "asc"
+        if sort_by not in SORT_WHITELIST:
+            sort_by = "_id"
+        sort_direction = 1 if sort_dir == "asc" else -1
         try:
             require_collections()
             projection = {"_id": 1, "vendedor_id": 1, "cliente": 1, "estado": 1, "total_abonado": 1, MOVIMIENTOS_FIELD: 1}
-            docs = list(boletas.find(query, projection).sort("_id", 1))
+            cursor = boletas.find(query, projection).sort(sort_by, sort_direction).limit(50000)
 
-            output = io.StringIO()
-            writer = csv.writer(output, delimiter=";")
-            writer.writerow(["Boleta", "Vendedor", "Estado", "Cliente", "Telefono", "Abonado", "UltimoPago"])
-            for doc in docs:
-                pagos = [m for m in (doc.get(MOVIMIENTOS_FIELD) or []) if _mov_tipo(m) == MOV_PAGO]
-                ultimo_pago = pagos[-1].get("fecha", "") if pagos else ""
-                writer.writerow(
-                    [
-                        f"{doc['_id']:04d}",
-                        doc.get("vendedor_id", ""),
-                        doc.get("estado", ""),
-                        (doc.get("cliente") or {}).get("nombre", ""),
-                        (doc.get("cliente") or {}).get("telefono", ""),
-                        doc.get("total_abonado", 0),
-                        ultimo_pago,
-                    ]
-                )
-            csv_content = output.getvalue()
-            output.close()
+            def _generate():
+                buf = io.StringIO()
+                writer = csv.writer(buf, delimiter=";")
+                writer.writerow(["Boleta", "Vendedor", "Estado", "Cliente", "Telefono", "Abonado", "UltimoPago"])
+                yield buf.getvalue()
+                buf.close()
+                for doc in cursor:
+                    buf = io.StringIO()
+                    pagos = [m for m in (doc.get(MOVIMIENTOS_FIELD) or []) if _mov_tipo(m) == MOV_PAGO]
+                    ultimo_pago = pagos[-1].get("fecha", "") if pagos else ""
+                    writer = csv.writer(buf, delimiter=";")
+                    writer.writerow(
+                        [
+                            f"{doc['_id']:04d}",
+                            doc.get("vendedor_id", ""),
+                            doc.get("estado", ""),
+                            (doc.get("cliente") or {}).get("nombre", ""),
+                            (doc.get("cliente") or {}).get("telefono", ""),
+                            doc.get("total_abonado", 0),
+                            ultimo_pago,
+                        ]
+                    )
+                    yield buf.getvalue()
+                    buf.close()
+
             return Response(
-                csv_content,
+                stream_with_context(_generate()),
                 mimetype="text/csv; charset=utf-8",
                 headers={"Content-Disposition": "attachment; filename=resultados_consultas.csv"},
             )
         except Exception as exc:
-            flash(f"Error al exportar: {exc}", "danger")
+            flash(_safe_flash_error(exc), "danger")
             return redirect(url_for("consultas"))
 
     @app.route("/boletas/<int:boleta_id>/cliente", methods=["POST"])
@@ -252,152 +276,54 @@ def register_routes(app: Flask) -> None:
             require_collections()
 
             nombre = request.form.get("nombre", "").strip().upper()
-            telefono = request.form.get("telefono", "").strip()
+            telefono = sanitizar_texto(request.form.get("telefono", ""), "numbers")
             direccion = request.form.get("direccion", "").strip().upper()
             vendedor_id = request.form.get("vendedor_id", "").strip()
 
-            set_fields = {"cliente": {"nombre": nombre, "telefono": telefono, "direccion": direccion}}
-
+            vendedor_existe = False
             if vendedor_id:
-                v_exists = vendedores.find_one({"_id": vendedor_id}, {"_id": 1})
-                if v_exists:
-                    set_fields["vendedor_id"] = vendedor_id
-
-            boletas.update_one({"_id": boleta_id}, {"$set": set_fields})
-
-            if nombre and not vendedor_id:
-                boletas.update_one(
-                    {
-                        "_id": boleta_id,
-                        "$or": [{"vendedor_id": {"$in": ["", None]}}, {"vendedor_id": VENDEDOR_LOCAL}],
-                        "total_abonado": 0,
-                        "estado": {"$nin": ["pagada", "abonando"]},
-                    },
-                    {"$set": {"vendedor_id": VENDEDOR_LOCAL}},
-                )
-
-            config_local = get_config()
-            valor_boleta_local = int(config_local.get("valor_boleta", 10000) or 10000)
-            boletas.update_one(
-                {"_id": boleta_id},
-                [{"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}}],
-            )
-
-            invalidate_dashboard_cache()
-            flash(f"Datos guardados para #{boleta_id:04d}.", "success")
-        except Exception as exc:
-            flash(f"Error al guardar: {exc}", "danger")
-
-        return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
-
-    @app.route("/boletas/<int:boleta_id>/pago/<int:idx>/eliminar", methods=["POST"])
-    @role_required("admin", "cajero")
-    def eliminar_pago_boleta(boleta_id: int, idx: int) -> Response:
-        """Remove one payment from a ticket's history and recalc totals (updates factura)."""
-        if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
-            flash("N\u00famero de boleta inv\u00e1lido.", "warning")
-            return redirect(url_for("consultas"))
-
-        try:
-            require_collections()
-            doc = boletas.find_one({"_id": boleta_id}, {MOVIMIENTOS_FIELD: 1})
-            if not doc:
-                flash(f"No existe la boleta #{boleta_id:04d}.", "warning")
-                return redirect(url_for("consultas"))
-
-            movimientos = doc.get(MOVIMIENTOS_FIELD) or []
-            pagos = [m for m in movimientos if _mov_tipo(m) == MOV_PAGO]
-            if idx < 0 or idx >= len(pagos):
-                flash("\u00cdndice de pago inv\u00e1lido.", "danger")
-                return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
-
-            pago = pagos[idx]
-            actual_idx = -1
-            seen = -1
-            for i, m in enumerate(movimientos):
-                if _mov_tipo(m) == MOV_PAGO:
-                    seen += 1
-                    if seen == idx:
-                        actual_idx = i
-                        break
-            factura_id = pago.get("factura_id")
-            valor = int(pago.get("valor", 0) or 0)
+                vendedor_existe = vendedores.find_one({"_id": vendedor_id}, {"_id": 1}) is not None
 
             config_local = get_config()
             valor_boleta_local = int(config_local.get("valor_boleta", 10000) or 10000)
 
-            boletas.update_one(
-                {"_id": boleta_id},
-                [
-                    {
-                        "$set": {
-                            MOVIMIENTOS_FIELD: {
-                                "$concatArrays": [
-                                    {"$slice": ["$" + MOVIMIENTOS_FIELD, actual_idx]},
-                                    {"$slice": ["$" + MOVIMIENTOS_FIELD, {"$add": [actual_idx, 1]}, {"$size": "$" + MOVIMIENTOS_FIELD}]},
-                                ]
-                            }
-                        }
-                    },
-                    {"$set": {"total_abonado": movimiento_neto_expr()}},
-                    {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
-                ],
-            )
-
-            if factura_id:
-                metodo = pago.get("metodo", "")
-                facturas.update_one(
-                    {"_id": factura_id},
-                    {"$pull": {"detalle": {"boleta": boleta_id, "valor": valor, "metodo": metodo}}},
-                )
-                factura_doc = facturas.find_one({"_id": factura_id}, {"detalle": 1})
-                if factura_doc:
-                    detalle_restante = factura_doc.get("detalle") or []
-                    if not detalle_restante:
-                        facturas.delete_one({"_id": factura_id})
-                    else:
-                        nuevo_total = sum(d.get("valor", 0) or 0 for d in detalle_restante)
-                        facturas.update_one({"_id": factura_id}, {"$set": {"valor_total": nuevo_total}})
-
-            invalidate_dashboard_cache()
-            flash(f"Pago eliminado de #{boleta_id:04d}.", "success")
-        except Exception as exc:
-            flash(f"Error al eliminar pago: {exc}", "danger")
-
-        return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
-
-    @app.route("/boletas/<int:boleta_id>/recalcular", methods=["POST"])
-    @role_required("admin", "cajero")
-    def recalcular_boleta(boleta_id: int) -> Response:
-        """Recompute total_abonado and estado from a ticket's payment history."""
-        if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
-            flash("N\u00famero de boleta inv\u00e1lido.", "warning")
-            return redirect(url_for("consultas"))
-
-        try:
-            require_collections()
-            if not boletas.find_one({"_id": boleta_id}, {"_id": 1}):
-                flash(f"No existe la boleta #{boleta_id:04d}.", "warning")
-                return redirect(url_for("consultas"))
-
-            config_local = get_config()
-            valor_boleta_local = int(config_local.get("valor_boleta", 10000) or 10000)
+            # Una sola escritura atómica: cliente + vendedor + estado se aplican
+            # juntos o no se aplica nada (sin estados intermedios a medias).
+            if vendedor_existe:
+                vendedor_expr: str | dict = vendedor_id
+            elif nombre and not vendedor_id:
+                vendedor_expr = {
+                    "$cond": [
+                        {
+                            "$and": [
+                                {"$in": [{"$ifNull": ["$vendedor_id", ""]}, ["", VENDEDOR_LOCAL]]},
+                                {"$eq": [{"$ifNull": ["$total_abonado", 0]}, 0]},
+                                {"$not": {"$in": ["$estado", ["pagada", "abonando"]]}},
+                            ]
+                        },
+                        VENDEDOR_LOCAL,
+                        "$vendedor_id",
+                    ]
+                }
+            else:
+                vendedor_expr = "$vendedor_id"
 
             result = boletas.update_one(
                 {"_id": boleta_id},
                 [
-                    {"$set": {"total_abonado": movimiento_neto_expr()}},
+                    {"$set": {"cliente": {"nombre": nombre, "telefono": telefono, "direccion": direccion}}},
+                    {"$set": {"vendedor_id": vendedor_expr}},
                     {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
                 ],
             )
+            if result.matched_count == 0:
+                flash(f"No existe la boleta #{boleta_id:04d}.", "warning")
+                return redirect(url_for("consultas"))
 
             invalidate_dashboard_cache()
-            if result.modified_count:
-                flash(f"#{boleta_id:04d} recalcular: OK.", "success")
-            else:
-                flash(f"#{boleta_id:04d} sin cambios.", "info")
+            flash(f"Datos guardados para #{boleta_id:04d}.", "success")
         except Exception as exc:
-            flash(f"Error al recalcular: {exc}", "danger")
+            flash(_safe_flash_error(exc), "danger")
 
         return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
 
@@ -411,24 +337,30 @@ def register_routes(app: Flask) -> None:
 
         try:
             require_collections()
-            if not boletas.find_one({"_id": boleta_id}, {"_id": 1}):
+            doc = boletas.find_one({"_id": boleta_id}, {"_id": 1, "vendedor_id": 1})
+            if not doc:
                 flash(f"No existe la boleta #{boleta_id:04d}.", "warning")
                 return redirect(url_for("consultas"))
 
+            config_local = get_config()
+            valor_boleta_local = int(config_local.get("valor_boleta", 10000) or 10000)
             boletas.update_one(
                 {"_id": boleta_id},
-                {"$set": {"cliente": {"nombre": "", "telefono": "", "direccion": ""}}},
+                [
+                    {"$set": {"cliente": {"nombre": "", "telefono": "", "direccion": ""}}},
+                    {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
+                ],
             )
 
             invalidate_dashboard_cache()
             flash(f"Datos del cliente eliminados de #{boleta_id:04d}.", "success")
         except Exception as exc:
-            flash(f"Error al limpiar cliente: {exc}", "danger")
+            flash(_safe_flash_error(exc), "danger")
 
         return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
 
     @app.route("/api/clientes")
-    @role_required("admin", "cajero", "consulta")
+    @role_required("admin", "cajero")
     def api_clientes() -> Response | tuple[Response, int]:
         """Autocomplete endpoint for saved clients (name/phone, min 2 chars)."""
         try:
@@ -438,8 +370,8 @@ def register_routes(app: Flask) -> None:
                 return jsonify([])
             query = {
                 "$or": [
-                    {"cliente.nombre": {"$regex": re.escape(q), "$options": "i"}},
-                    {"cliente.telefono": {"$regex": re.escape(q)}},
+                    {"cliente.nombre": {"$regex": f"^{re.escape(q)}", "$options": "i"}},
+                    {"cliente.telefono": {"$regex": f"^{re.escape(q)}"}},
                 ]
             }
             docs = boletas.find(query, {"cliente": 1}).limit(12)
@@ -463,7 +395,7 @@ def register_routes(app: Flask) -> None:
             return jsonify({"ok": False, "error": safe_error_message(exc)}), 500
 
     @app.route("/api/boletas/<int:boleta_id>")
-    @role_required("admin", "cajero", "consulta")
+    @role_required("admin", "cajero")
     def api_boleta(boleta_id: int) -> Response | tuple[Response, int]:
         """JSON lookup of a single ticket with vendor/client info."""
         if boleta_id < BOLETA_MIN or boleta_id > BOLETA_MAX:
@@ -507,6 +439,56 @@ def register_routes(app: Flask) -> None:
             }
         )
 
+    @app.route("/api/boletas/validar", methods=["POST"])
+    @role_required("admin", "cajero")
+    def api_boletas_validar_batch() -> Response:
+        """Batch-validate ticket numbers: returns estado + vendedor for each."""
+        try:
+            data = request.get_json(force=True) or {}
+            nums = data.get("boletas", [])
+        except BadRequest:
+            return jsonify({"ok": False, "error": "JSON invalido."}), 400
+
+        nums = [int(n) for n in nums if isinstance(n, int) or (isinstance(n, str) and n.strip().isdigit())]
+        nums = sorted({n for n in nums if BOLETA_MIN <= n <= BOLETA_MAX})
+
+        if not nums:
+            return jsonify({"ok": True, "resultados": {}})
+
+        try:
+            require_collections()
+            cursor = boletas.find(
+                {"_id": {"$in": nums}},
+                {"_id": 1, "vendedor_id": 1, "estado": 1, "total_abonado": 1, "cliente": 1},
+            )
+            docs = list(cursor)
+            unique_vids = {d.get("vendedor_id", "") for d in docs if d.get("vendedor_id", "") and d.get("vendedor_id") != VENDEDOR_LOCAL}
+            vid_names: dict[str, str] = {}
+            if unique_vids:
+                for vd in vendedores.find({"_id": {"$in": list(unique_vids)}}, {"_id": 1, "nombre": 1}):
+                    vid_names[vd["_id"]] = vd.get("nombre", vd["_id"])
+            vid_names[VENDEDOR_LOCAL] = VENDEDOR_LOCAL_LABEL
+            resultados = {}
+            for doc in docs:
+                vid = doc.get("vendedor_id", "")
+                v_nombre = vid_names.get(vid, vid) if vid else ""
+                cliente = doc.get("cliente") or {}
+                resultados[f"{doc['_id']:04d}"] = {
+                    "ok": True,
+                    "estado": doc.get("estado", ""),
+                    "vendedor_id": vid,
+                    "vendedor_nombre": v_nombre,
+                    "total_abonado": int(doc.get("total_abonado", 0) or 0),
+                    "cliente_nombre": cliente.get("nombre", ""),
+                }
+            for n in nums:
+                key = f"{n:04d}"
+                if key not in resultados:
+                    resultados[key] = {"ok": False, "estado": "no_existe"}
+            return jsonify({"ok": True, "resultados": resultados})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": safe_error_message(exc)}), 500
+
     @app.route("/api/validar-boleta-vendedor", methods=["POST"])
     @role_required("admin", "cajero")
     def validar_boleta_vendedor() -> Response | tuple[Response, int]:
@@ -521,7 +503,7 @@ def register_routes(app: Flask) -> None:
             return jsonify({"ok": False, "error": "Se requiere una lista de boletas."}), 400
         try:
             require_collections()
-            int_ids = [int(b) for b in boletas_list if BOLETA_MIN <= int(b) <= BOLETA_MAX]
+            int_ids = [int(b) for b in boletas_list if isinstance(b, int) and BOLETA_MIN <= b <= BOLETA_MAX]
         except (ValueError, TypeError):
             return jsonify({"ok": False, "error": "Boleta(s) inv\u00e1lida(s)."}), 400
         try:
@@ -555,7 +537,7 @@ def register_routes(app: Flask) -> None:
             return jsonify({"ok": False, "error": "Se requiere una lista de boletas."}), 400
         try:
             require_collections()
-            int_ids = [int(b) for b in boletas_list if BOLETA_MIN <= int(b) <= BOLETA_MAX]
+            int_ids = [int(b) for b in boletas_list if isinstance(b, int) and BOLETA_MIN <= b <= BOLETA_MAX]
         except (ValueError, TypeError):
             return jsonify({"ok": False, "error": "Boleta(s) inv\u00e1lida(s)."}), 400
         try:

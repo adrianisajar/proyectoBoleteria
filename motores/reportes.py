@@ -8,6 +8,7 @@ from typing import Any
 from bson import ObjectId, json_util
 from flask import Flask, Response
 
+import database
 from motores.config_service import get_rifa_activa, require_collections
 from motores.constants import (
     BOLETA_MAX,
@@ -33,6 +34,7 @@ from motores.shared import (
     redirect,
     render_template,
     request,
+    reservas,
     rifas,
     role_required,
     traslados,
@@ -40,8 +42,11 @@ from motores.shared import (
     usuarios,
     vendedores,
 )
+from motores.usuarios import requiere_clave_admin
+from motores.validacion import safe_error_message
 
 TIPOS_FACTURA = {"cliente", "vendedor", "egreso"}
+MAX_BACKUP_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
 
 
 def _es_numero(value: Any) -> bool:
@@ -112,7 +117,7 @@ def _validar_respaldo(data: dict[str, Any]) -> tuple[list[str], list[str]]:
             if not isinstance(numero, int) or numero not in boletas_por_id:
                 continue
             vendedor_boleta = boletas_por_id[numero].get("vendedor_id") or ""
-            if vendedor_boleta and vendedor_boleta != vid:
+            if vendedor_boleta and vendedor_boleta != VENDEDOR_LOCAL and vendedor_boleta != vid:
                 errores.append(f"boletas #{numero:04d}: vendedor_id {vendedor_boleta!r} no coincide con la asignación de {vid}")
 
     for numero, doc in boletas_por_id.items():
@@ -202,6 +207,7 @@ def register_routes(app: Flask) -> None:
                 "pagos_hoy": 0,
                 "pagos_efectivo": 0,
                 "pagos_transferencia": 0,
+                "total_pagos_delio": 0,
                 "saldo_pendiente": 0,
                 "vendidas": 0,
                 "pagadas": 0,
@@ -212,21 +218,31 @@ def register_routes(app: Flask) -> None:
                 "progreso_ventas_pct": 0,
                 "progreso_recaudo_pct": 0,
                 "recaudo_potencial": 0,
+                "recaudo_neto": 0,
+                "total_egresos": 0,
                 "ranking": [],
             }
             rifa = {}
-            flash(f"No se pudo cargar el dashboard: {exc}", "danger")
+            flash(safe_error_message(exc), "danger")
         return render_template("dashboard.html", stats=stats, rifa=rifa)
 
     @app.route("/buscar")
-    @role_required("admin", "cajero", "consulta")
+    @role_required("admin", "cajero")
     def buscar() -> str | Response:
         """Global search across invoices and vendors."""
         require_collections()
         q = request.args.get("q", "").strip()
-        if not q or len(q) < 1:
+        if not q:
             flash("Ingrese al menos 1 caracter para buscar.", "warning")
             return redirect(url_for(home_endpoint()))
+
+        sort_by = request.args.get("sort_by", "_id").strip()
+        sort_dir = request.args.get("sort_dir", "asc").strip()
+        if sort_dir not in {"asc", "desc"}:
+            sort_dir = "asc"
+        if sort_by not in {"_id", "fecha", "tipo", "cliente.nombre", "valor_total"}:
+            sort_by = "_id"
+        sort_direction = 1 if sort_dir == "asc" else -1
 
         results = {"facturas": [], "vendedores": []}
 
@@ -238,28 +254,32 @@ def register_routes(app: Flask) -> None:
                 results["facturas"].append(factura)
         except ValueError:
             pass
-        cursor = facturas.find(
-            {
-                "$or": [
-                    {"vendedor_nombre": {"$regex": regex, "$options": "i"}},
-                    {"cliente.nombre": {"$regex": regex, "$options": "i"}},
-                ]
-            }
-        ).limit(20)
+        cursor = (
+            facturas.find(
+                {
+                    "$or": [
+                        {"vendedor_nombre": {"$regex": f"^{regex}", "$options": "i"}},
+                        {"cliente.nombre": {"$regex": f"^{regex}", "$options": "i"}},
+                    ]
+                }
+            )
+            .sort(sort_by, sort_direction)
+            .limit(20)
+        )
         for f in cursor:
             results["facturas"].append(f)
         cursor = vendedores.find(
             {
                 "$or": [
-                    {"_id": {"$regex": regex, "$options": "i"}},
-                    {"nombre": {"$regex": regex, "$options": "i"}},
+                    {"_id": {"$regex": f"^{regex}", "$options": "i"}},
+                    {"nombre": {"$regex": f"^{regex}", "$options": "i"}},
                 ]
             }
         ).limit(10)
         for v in cursor:
             results["vendedores"].append(v)
 
-        return render_template("buscar.html", q=q, results=results)
+        return render_template("buscar.html", q=q, results=results, sort_by=sort_by, sort_dir=sort_dir)
 
     @app.route("/reportes/modelo-rifa.xlsx")
     @role_required("admin")
@@ -268,7 +288,7 @@ def register_routes(app: Flask) -> None:
         try:
             headers, rows = modelo_rifa_report_rows()
         except Exception as exc:
-            flash(f"No se pudo generar el modelo de rifa: {exc}", "danger")
+            flash(safe_error_message(exc), "danger")
             return redirect(url_for(home_endpoint()))
 
         filename = f"modelo_rifa_{date.today().isoformat()}"
@@ -287,6 +307,7 @@ def register_routes(app: Flask) -> None:
             ("configuracion", configuracion),
             ("usuarios", usuarios),
             ("traslados", traslados),
+            ("reservas", reservas),
         ]
         if request.method == "POST":
             accion = request.form.get("accion", "")
@@ -305,18 +326,28 @@ def register_routes(app: Flask) -> None:
                     headers={"Content-Disposition": f"attachment; filename=backup_{date.today().isoformat()}.zip"},
                 )
             elif accion == "importar":
+                if not requiere_clave_admin():
+                    return redirect(url_for("backup"))
                 archivo = request.files.get("archivo")
                 if not archivo or not archivo.filename:
                     flash("Seleccione un archivo ZIP.", "danger")
                     return redirect(url_for("backup"))
                 try:
-                    with zipfile.ZipFile(archivo.stream) as zf, zf.open("backup.json") as f:
-                        raw = f.read().decode("utf-8")
-                    data = json_util.loads(raw)
+                    with zipfile.ZipFile(archivo.stream) as zf:
+                        info = zf.getinfo("backup.json")
+                        if info.file_size > MAX_BACKUP_UNCOMPRESSED_BYTES:
+                            raise ValueError("El respaldo descomprimido supera el límite permitido de 64 MB.")
+                        if info.compress_size and info.file_size / info.compress_size > 100:
+                            raise ValueError("El respaldo tiene una relación de compresión no permitida.")
+                        with zf.open(info) as f:
+                            raw = f.read(MAX_BACKUP_UNCOMPRESSED_BYTES + 1)
+                    if len(raw) > MAX_BACKUP_UNCOMPRESSED_BYTES:
+                        raise ValueError("El respaldo descomprimido supera el límite permitido de 64 MB.")
+                    data = json_util.loads(raw.decode("utf-8"))
                     # Backward compat: convert string ObjectId for old backups
                     _restore_objectids_from_backup(data)
                 except Exception as exc:
-                    flash(f"Error al leer el archivo de respaldo: {exc}", "danger")
+                    flash(safe_error_message(exc), "danger")
                     return redirect(url_for("backup"))
                 if not isinstance(data, dict):
                     flash("El archivo de respaldo no tiene el formato esperado.", "danger")
@@ -336,6 +367,7 @@ def register_routes(app: Flask) -> None:
                     flash(f"Advertencia: {advertencia}", "warning")
                 restaurados = {}
                 errores = []
+                colecciones_a_restaurar = []
                 for nombre, col in COLECCIONES:
                     if col is None or nombre not in data:
                         continue
@@ -343,22 +375,35 @@ def register_routes(app: Flask) -> None:
                     if not isinstance(docs, list):
                         errores.append(f"{nombre}: el dato no es una lista")
                         continue
-                    try:
-                        col.delete_many({})
-                        if docs:
-                            col.insert_many(docs, ordered=False)
-                        restaurados[nombre] = len(docs)
-                    except Exception as exc:
-                        errores.append(f"{nombre}: {exc}")
-                        restaurados[nombre] = 0
+                    colecciones_a_restaurar.append((nombre, col, docs))
+                if errores:
+                    for error in errores:
+                        flash(f"Error al restaurar {error}.", "danger")
+                    return redirect(url_for("backup"))
+                client = getattr(database, "_client", None)
+                if client is None:
+                    flash("No hay conexión a MongoDB para restaurar el respaldo.", "danger")
+                    return redirect(url_for("backup"))
+                try:
+
+                    def restaurar_en_transaccion(session):
+                        for _nombre, col, docs in colecciones_a_restaurar:
+                            col.delete_many({}, session=session)
+                            if docs:
+                                col.insert_many(docs, ordered=True, session=session)
+
+                    with client.start_session() as session:
+                        session.with_transaction(restaurar_en_transaccion)
+                    restaurados = {nombre: len(docs) for nombre, _col, docs in colecciones_a_restaurar}
+                except Exception as exc:
+                    flash(safe_error_message(exc), "danger")
+                    return redirect(url_for("backup"))
                 if restaurados:
                     invalidate_config_cache()
                     invalidate_rifa_cache()
                     invalidate_dashboard_cache()
                     total = sum(restaurados.values())
                     flash(f"Respaldo restaurado: {total} documentos en {len(restaurados)} colecciones.", "success")
-                for error in errores:
-                    flash(f"Error al restaurar {error}.", "danger")
                 return redirect(url_for("backup"))
 
         return render_template("backup.html")

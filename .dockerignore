@@ -11,3 +11,9 @@ tests
 .agents
 deploy/certs
 *.zip
+*.exe
+*.spec
+build
+dist
+*.md
+.github

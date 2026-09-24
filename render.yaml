@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: boleteria
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: FLASK_HOST
+        value: 0.0.0.0
+      - key: FLASK_DEBUG
+        value: "0"
+      - key: OPEN_BROWSER
+        value: "0"
+      - key: SESSION_COOKIE_SECURE
+        value: "1"
+      - key: TRUST_PROXY_HEADERS
+        value: "1"
+      - key: SESSION_COOKIE_SAMESITE
+        value: Lax
+      - key: ADMIN_INICIAL_USUARIO
+        value: admin
+      - key: ADMIN_INICIAL_PASSWORD
+        generateValue: true
+      - key: MAX_CONTENT_LENGTH_MB
+        value: "16"
+      - key: LOG_LEVEL
+        value: INFO
+    routes:
+      - type: https
+        path: /
+        ssl:
+          certificate:
+            type: auto

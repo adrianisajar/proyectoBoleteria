@@ -71,21 +71,24 @@ def ticket_number_query(value: str, errors: list) -> tuple[int | dict, bool]:
             return None, False
         return number, True
 
-    MAX_MATCHES = 200
-    matches = [number for number in range(BOLETA_MIN, BOLETA_MAX + 1) if raw_value in f"{number:04d}"]
+    pad = 4 - len(raw_value)
+    lo = int(raw_value) * (10**pad)
+    hi = lo + (10**pad) - 1
+    matches = list(range(lo, hi + 1))
     if not matches:
         errors.append("No hay boletas que contengan esos d\u00edgitos.")
         return None, False
-    if len(matches) > MAX_MATCHES:
-        errors.append(f"Demasiados resultados ({len(matches)}). Se usan los primeros {MAX_MATCHES}.")
-        matches = matches[:MAX_MATCHES]
 
     return {"$in": matches}, False
 
 
 def parse_money(value: str | int | None) -> int:
     """Extract integer amount from text, ignoring currency symbols and separators."""
-    cleaned = re.sub(r"[^\d]", "", value or "")
+    if isinstance(value, int):
+        return value
+    if value is None:
+        return 0
+    cleaned = re.sub(r"[^\d]", "", str(value))
     return int(cleaned) if cleaned else 0
 
 
@@ -116,3 +119,15 @@ def parse_boletas(raw_numbers: str) -> tuple[list[int], list[str], list[str]]:
     """Parse a raw ticket list into (unique_ids, invalid, out_of_range)."""
     boleta_ids, invalid, out_of_range, _duplicates = parse_boletas_detailed(raw_numbers)
     return boleta_ids, invalid, out_of_range
+
+
+def safe_error_message(exc: Exception) -> str:
+    """Return a user-safe error message from an exception, hiding DB internals."""
+    type_name = type(exc).__name__
+    if type_name in ("ConnectionFailure", "ServerSelectionTimeoutError"):
+        return "Error de conexión a la base de datos. Intente de nuevo."
+    if type_name == "DuplicateKeyError":
+        return "Ya existe un registro con esos datos."
+    if type_name == "TimeoutError":
+        return "La operación tardó demasiado. Intente de nuevo."
+    return "Ocurrió un error inesperado. Intente de nuevo."

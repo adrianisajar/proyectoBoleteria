@@ -2,11 +2,12 @@ import re
 import time
 from datetime import UTC, datetime
 
-from conftest import ADMIN_USUARIO, CAJA_PASSWORD, CAJA_USUARIO, login
+from conftest import ADMIN_PASSWORD, ADMIN_USUARIO, CAJA_PASSWORD, CAJA_USUARIO, login
 
 from database import facturas, usuarios
 from motores.constants import SESSION_IDLE_TIMEOUT_SECONDS
 from motores.fechas import now_local
+from motores.usuarios import LOGIN_MAX_INTENTOS
 
 
 def _cookie_expires(set_cookie: str):
@@ -44,7 +45,7 @@ def test_login_fallido(client_anon):
 
 def test_login_usuario_inactivo(client, client_anon):
     caja = usuarios.find_one({"usuario": CAJA_USUARIO})
-    resp = client.post(f"/usuarios/{caja['_id']}/estado", data={"activo": "0"})
+    resp = client.post(f"/usuarios/{caja['_id']}/estado", data={"activo": "0", "clave_admin": ADMIN_PASSWORD})
     assert resp.status_code == 302
     resp = login(client_anon, usuario=CAJA_USUARIO, password=CAJA_PASSWORD)
     assert resp.status_code == 401
@@ -144,7 +145,7 @@ def test_crear_usuario_password_corta(client):
 
 def test_no_desactivar_propio_usuario(client):
     admin = usuarios.find_one({"usuario": ADMIN_USUARIO})
-    resp = client.post(f"/usuarios/{admin['_id']}/estado", data={"activo": "0"})
+    resp = client.post(f"/usuarios/{admin['_id']}/estado", data={"activo": "0", "clave_admin": ADMIN_PASSWORD})
     assert resp.status_code == 302
     assert usuarios.find_one({"usuario": ADMIN_USUARIO})["activo"] is True
 
@@ -158,7 +159,7 @@ def test_no_cambiar_propio_rol(client):
 
 def test_cambiar_contrasena(client, client_anon):
     caja = usuarios.find_one({"usuario": CAJA_USUARIO})
-    resp = client.post(f"/usuarios/{caja['_id']}/contrasena", data={"password": "nueva-clave"})
+    resp = client.post(f"/usuarios/{caja['_id']}/contrasena", data={"password": "nueva-clave", "clave_admin": ADMIN_PASSWORD})
     assert resp.status_code == 302
     resp = login(client_anon, usuario=CAJA_USUARIO, password="nueva-clave")
     assert resp.status_code == 302
@@ -219,19 +220,19 @@ def test_factura_antigua_muestra_no_registrado(client):
 
 def test_eliminar_usuario(client, client_anon):
     caja = usuarios.find_one({"usuario": CAJA_USUARIO})
-    resp = client.post(f"/usuarios/{caja['_id']}/eliminar", data={"confirmacion": "ELIMINAR"})
+    resp = client.post(f"/usuarios/{caja['_id']}/eliminar", data={"clave_admin": ADMIN_PASSWORD})
     assert resp.status_code == 302
     assert usuarios.find_one({"usuario": CAJA_USUARIO}) is None
 
 
 def test_no_eliminar_propio_usuario(client):
     admin = usuarios.find_one({"usuario": ADMIN_USUARIO})
-    resp = client.post(f"/usuarios/{admin['_id']}/eliminar", data={"confirmacion": "ELIMINAR"})
+    resp = client.post(f"/usuarios/{admin['_id']}/eliminar", data={"clave_admin": ADMIN_PASSWORD})
     assert resp.status_code == 302
     assert usuarios.find_one({"usuario": ADMIN_USUARIO}) is not None
 
 
-def test_eliminar_usuario_requiere_confirmacion(client):
+def test_eliminar_usuario_requiere_clave(client):
     caja = usuarios.find_one({"usuario": CAJA_USUARIO})
     resp = client.post(f"/usuarios/{caja['_id']}/eliminar")
     assert resp.status_code == 302
@@ -240,6 +241,26 @@ def test_eliminar_usuario_requiere_confirmacion(client):
 
 def test_usuario_eliminado_no_inicia_sesion(client, client_anon):
     caja = usuarios.find_one({"usuario": CAJA_USUARIO})
-    client.post(f"/usuarios/{caja['_id']}/eliminar", data={"confirmacion": "ELIMINAR"})
+    client.post(f"/usuarios/{caja['_id']}/eliminar", data={"clave_admin": ADMIN_PASSWORD})
     resp = login(client_anon, usuario=CAJA_USUARIO, password=CAJA_PASSWORD)
     assert resp.status_code == 401
+
+
+def test_login_bloqueado_por_intentos(client_anon):
+    for _ in range(LOGIN_MAX_INTENTOS):
+        resp = client_anon.post("/login", data={"usuario": ADMIN_USUARIO, "password": "incorrecta"})
+        assert resp.status_code == 401
+    resp = login(client_anon)
+    assert resp.status_code == 429
+    assert "Demasiados intentos" in resp.get_data(as_text=True)
+
+
+def test_login_exitoso_limpia_intentos(client_anon):
+    for _ in range(LOGIN_MAX_INTENTOS - 1):
+        client_anon.post("/login", data={"usuario": ADMIN_USUARIO, "password": "incorrecta"})
+    resp = login(client_anon)
+    assert resp.status_code == 302
+    for _ in range(LOGIN_MAX_INTENTOS - 1):
+        client_anon.post("/login", data={"usuario": ADMIN_USUARIO, "password": "incorrecta"})
+    resp = login(client_anon)
+    assert resp.status_code == 302

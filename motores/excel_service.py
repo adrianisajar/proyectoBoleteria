@@ -61,7 +61,7 @@ def modelo_rifa_report_rows() -> tuple[list, list]:
     """Build (headers, rows) for the modelo-rifa Excel export from all tickets."""
     nombres_vendedores = {doc["_id"]: doc.get("nombre", "") for doc in vendedores.find({}, {"nombre": 1})}
     rows = []
-    for doc in boletas.find({}).sort("_id", 1):
+    for doc in boletas.find({}, {"_id": 1, "cliente": 1, "vendedor_id": 1, "total_abonado": 1, "fecha_adquisicion": 1, MOVIMIENTOS_FIELD: 1}).sort("_id", 1):
         cliente = doc.get("cliente") or {}
         historial = [mov for mov in (doc.get(MOVIMIENTOS_FIELD) or []) if (mov.get("tipo") or MOV_PAGO) == MOV_PAGO]
         efectivo = [payment for payment in historial if payment.get("metodo") != METODO_TRANSFERENCIA]
@@ -154,6 +154,8 @@ def is_assignable_vendor_cell(value: Any) -> bool:
 def read_xlsx_first_sheet_rows(file_obj: Any) -> list[list]:
     """Parse the first worksheet of an .xlsx into rows of cell values (no openpyxl)."""
     data = file_obj.read()
+    if len(data) > 16 * 1024 * 1024:
+        raise ValueError("El archivo excede el tamaño máximo permitido.")
     with zipfile.ZipFile(io.BytesIO(data)) as workbook_zip:
         shared_strings = []
         if "xl/sharedStrings.xml" in workbook_zip.namelist():
@@ -191,7 +193,8 @@ def read_xlsx_first_sheet_rows(file_obj: Any) -> list[list]:
                 value_node = cell.find("main:v", XLSX_NS)
                 value = "" if value_node is None or value_node.text is None else value_node.text
                 if cell.attrib.get("t") == "s" and value != "":
-                    value = shared_strings[int(value)]
+                    idx = int(value)
+                    value = shared_strings[idx] if idx < len(shared_strings) else ""
                 values[index] = value
             rows.append(values)
         return rows

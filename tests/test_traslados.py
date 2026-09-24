@@ -29,8 +29,13 @@ def _cargar_saldo(boleta_id, valor, vendedor_id="VEND01"):
     )
 
 
+def _asignar_vendedor(boleta_id, vendedor_id="VEND01"):
+    boletas.update_one({"_id": boleta_id}, {"$set": {"vendedor_id": vendedor_id}})
+
+
 def test_traslado_ok_mueve_saldo(client):
     _cargar_saldo(1, 30000)
+    _asignar_vendedor(2)
     resp = _post_traslado(client)
     assert resp.status_code == 302
     assert "/traslados/" in resp.headers["Location"]
@@ -60,13 +65,26 @@ def test_traslado_caja_permitido(client_caja):
     resp = client_caja.get("/traslados/nuevo")
     assert resp.status_code == 200
     _cargar_saldo(1, 30000)
+    _asignar_vendedor(2)
     resp = _post_traslado(client_caja)
     assert resp.status_code == 302
     assert traslados.count_documents({}) == 1
 
 
+def test_traslado_distinto_vendedor_rechazado(client):
+    _cargar_saldo(1, 30000, vendedor_id="VEND01")
+    _cargar_saldo(2, 10000, vendedor_id="VEND02")
+    resp = _post_traslado(client)
+    assert resp.status_code == 200
+    assert "mismo vendedor" in resp.get_data(as_text=True)
+    assert traslados.count_documents({}) == 0
+    assert boletas.find_one({"_id": 1})["total_abonado"] == 30000
+    assert boletas.find_one({"_id": 2})["total_abonado"] == 10000
+
+
 def test_traslado_sin_saldo_origen(client):
     _cargar_saldo(1, 0)
+    _asignar_vendedor(2)
     resp = _post_traslado(client, valor="10000")
     assert resp.status_code == 200
     assert "no tiene saldo" in resp.get_data(as_text=True)
@@ -75,6 +93,7 @@ def test_traslado_sin_saldo_origen(client):
 
 def test_traslado_valor_supera_saldo(client):
     _cargar_saldo(1, 5000)
+    _asignar_vendedor(2)
     resp = _post_traslado(client, valor="10000")
     assert resp.status_code == 200
     assert "supera el saldo disponible" in resp.get_data(as_text=True)
@@ -122,6 +141,7 @@ def test_traslado_valor_cero_rechazado(client):
 
 def test_traslado_list_renders(client):
     _cargar_saldo(1, 30000)
+    _asignar_vendedor(2)
     _post_traslado(client)
     resp = client.get("/traslados")
     assert resp.status_code == 200
@@ -130,6 +150,7 @@ def test_traslado_list_renders(client):
 
 def test_ver_traslado_renders(client):
     _cargar_saldo(1, 30000)
+    _asignar_vendedor(2)
     _post_traslado(client)
     t = traslados.find_one({})
     resp = client.get(f"/traslados/{t['_id']}")

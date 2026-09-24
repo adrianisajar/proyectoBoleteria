@@ -2,7 +2,7 @@ import contextlib
 
 from flask import Flask, Response, current_app, jsonify
 
-from database import boletas, configuracion, facturas, rifas, vendedores
+from database import boletas, configuracion, facturas, rifas, traslados, vendedores
 from motores.config_service import require_collections
 from motores.constants import CONFIG_ID
 from optimizar_db import REQUIRED_INDEXES
@@ -13,6 +13,7 @@ _COLLECTIONS = {
     "facturas": facturas,
     "rifas": rifas,
     "configuracion": configuracion,
+    "traslados": traslados,
 }
 
 
@@ -28,7 +29,8 @@ def _missing_indexes() -> list[str]:
         existing = set()
         with contextlib.suppress(Exception):
             existing = {frozenset(dict(doc["key"]).items()) for doc in collection.list_indexes()}
-        for key_spec, expected_name in required:
+        for entry in required:
+            key_spec, expected_name = entry[0], entry[1]
             normalized = {key_spec: 1} if isinstance(key_spec, str) else dict(key_spec)
             if frozenset(normalized.items()) not in existing:
                 missing.append(f"{nombre_col}.{expected_name}")

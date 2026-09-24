@@ -63,3 +63,4 @@ def register_error_handlers(app: Flask) -> None:
     @app.errorhandler(500)
     def server_error(exc: Any) -> tuple[str | Response, int]:
         """Render the 500 error response (with exception logged)."""
+        return _render_error(500, "Error interno", "Ocurrió un error inesperado. Intenta de nuevo.", exc)

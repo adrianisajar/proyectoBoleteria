@@ -27,7 +27,7 @@ def test_fecha_adquisicion_lte(client):
 
 def test_fecha_adquisicion_formato_invalido(client):
     _f, query, errors, *_ = _ctx({"fecha_adquisicion": "05/08/2026", "fecha_adquisicion_op": "eq"})
-    assert any("formato AAAA-MM-DD" in e for e in errors)
+    assert any("formato aaaa-mm-dd" in e for e in errors)
     assert "fecha_adquisicion" not in query
 
 
@@ -119,3 +119,11 @@ def test_consultas_filtro_fecha_excluye_boletas_sin_fecha(client):
     assert "#0002" in html
     # Las boletas sin fecha de adquisición no deben aparecer.
     assert "#0003" not in html
+
+
+def test_consultas_paginacion_y_export_preservan_sort(client):
+    resp = client.get("/consultas?sort_by=estado&sort_dir=desc")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "sort_by=estado" in html
+    assert "sort_dir=desc" in html

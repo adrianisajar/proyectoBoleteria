@@ -1,0 +1,364 @@
+{% extends "base.html" %}
+{% block title %}Reservas fijas &mdash; {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+  <div>
+    <p class="text-uppercase text-secondary fw-bold mb-1 small">Compradores</p>
+    <h1 class="h3 mb-0">Reservas fijas</h1>
+    <p class="text-secondary small mb-0">Números fijos de compradores del local. Se conservan como separadas al crear una nueva rifa. Pegue filas desde Excel.</p>
+  </div>
+  <div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('compradores_rapido') }}"><i class="bi bi-arrow-left me-1"></i>Ingreso rápido</a>
+  </div>
+</div>
+
+<div class="office-card bg-body p-3 p-md-4 mb-3">
+  <div class="row g-2 align-items-end mb-3">
+    <div class="col-auto">
+      <button type="button" class="btn btn-outline-primary btn-sm" onclick="agregarFilas(1)"><i class="bi bi-plus-lg me-1"></i>Fila</button>
+    </div>
+    <div class="col-auto">
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="agregarFilas(5)">+5 filas</button>
+    </div>
+    <div class="col-auto">
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copiarUltimaFila()"><i class="bi bi-arrow-down me-1"></i>Copiar última fila</button>
+    </div>
+    <div class="col-auto ms-md-auto">
+      <span class="text-muted small me-2" id="resumenCuenta">0 filas</span>
+      <button type="button" class="btn btn-success" onclick="return confirm('¿Desea guardar los cambios?') && guardarCambios()" id="btnGuardar">
+        <i class="bi bi-save me-1"></i>Guardar reservas
+      </button>
+    </div>
+  </div>
+
+  <div class="table-responsive" style="max-height:50vh;overflow-y:auto;">
+<table class="table table-bordered table-sm mb-0" id="tablaReservas" style="font-size:0.85rem;" data-sort-dir="asc">
+       <thead class="table-light" style="position:sticky;top:0;z-index:2;">
+        <tr>
+          <th style="width:50px;" class="sortable" onclick="sortTableFrontend('tablaReservas', 0, true)">#</th>
+          <th style="width:110px;" class="sortable" onclick="sortTableFrontend('tablaReservas', 1, true)">Boleta</th>
+          <th class="sortable" onclick="sortTableFrontend('tablaReservas', 2, false)">Comprador</th>
+          <th style="width:220px;" class="sortable" onclick="sortTableFrontend('tablaReservas', 3, false)">Direcci&oacute;n</th>
+          <th style="width:160px;" class="sortable" onclick="sortTableFrontend('tablaReservas', 4, false)">Tel&eacute;fono</th>
+          <th style="width:50px;"></th>
+        </tr>
+      </thead>
+      <tbody id="tbodyReservas">
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="office-card bg-body p-3 p-md-4 mb-3">
+  <h2 class="h5 mb-3">Reservas registradas</h2>
+  <div class="table-responsive">
+<table class="table table-bordered table-sm mb-0" style="font-size:0.85rem;">
+       <thead class="table-light">
+        <tr>
+          <th data-sort="_id" class="sortable" style="width:100px;">Boleta</th>
+          <th data-sort="comprador" class="sortable">Comprador</th>
+          <th data-sort="telefono" class="sortable" style="width:140px;">Tel&eacute;fono</th>
+          <th data-sort="direccion" class="sortable">Direcci&oacute;n</th>
+          <th data-sort="reservada" class="sortable" style="width:130px;">Reservada</th>
+          <th style="width:60px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reservas %}
+        <tr>
+          <td class="fw-bold ticket-number">#{{ "%04d" % r._id }}</td>
+          <td class="text-uppercase">{{ r.cliente.nombre }}</td>
+          <td>{{ r.cliente.telefono or "—" }}</td>
+          <td class="text-uppercase">{{ r.cliente.direccion or "—" }}</td>
+          <td class="small text-secondary">{{ r.creado_en.strftime("%d/%m/%Y") if r.creado_en else "—" }}</td>
+          <td class="text-center">
+            <form method="post" onsubmit="return confirm('¿Eliminar la reserva de la boleta #{{ '%04d'|format(r._id) }}?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="action" value="eliminar">
+              <input type="hidden" name="boleta" value="{{ r._id }}">
+              <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-1" title="Eliminar reserva">&times;</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center text-secondary py-3">Sin reservas fijas registradas.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="modalResultado" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Resultado</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="modalResultadoBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="location.reload()">Aceptar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function escHtml(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+const apiGuardar = "{{ url_for('api_reservas_guardar') }}";
+
+function rowHTML(idx) {
+  const n = idx + 1;
+  return `<tr>
+    <td class="text-center text-muted small">${n}</td>
+    <td><input type="text" class="form-control form-control-sm boleta-input" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" data-validation="numbers"></td>
+    <td><input type="text" class="form-control form-control-sm nombre-input" autocomplete="off" data-validation="name"></td>
+    <td><input type="text" class="form-control form-control-sm direccion-input" autocomplete="off" data-validation="address"></td>
+    <td><input type="text" class="form-control form-control-sm telefono-input" inputmode="numeric" autocomplete="off" data-validation="numbers"></td>
+    <td class="text-center"><button type="button" class="btn btn-outline-danger btn-sm py-0 px-1 btn-eliminar-fila">&times;</button></td>
+  </tr>`;
+}
+
+function agregarFilas(n) {
+  const tbody = document.getElementById("tbodyReservas");
+  const start = tbody.children.length;
+  const html = Array.from({length: n}, (_, i) => rowHTML(start + i)).join("");
+  tbody.insertAdjacentHTML("beforeend", html);
+  actualizarCuenta();
+  if (tbody.lastElementChild) {
+    tbody.lastElementChild.querySelector(".boleta-input").focus();
+  }
+}
+
+function renumberRows() {
+  const tbody = document.getElementById("tbodyReservas");
+  Array.from(tbody.children).forEach((tr, i) => {
+    tr.querySelector("td:first-child").textContent = i + 1;
+  });
+}
+
+function actualizarCuenta() {
+  const tbody = document.getElementById("tbodyReservas");
+  const total = tbody.children.length;
+  const llenas = Array.from(tbody.querySelectorAll(".boleta-input")).filter(i => i.value.trim()).length;
+  document.getElementById("resumenCuenta").textContent = `${llenas}/${total} filas con boleta`;
+  document.getElementById("btnGuardar").disabled = (llenas === 0);
+}
+
+function obtenerFilas() {
+  const tbody = document.getElementById("tbodyReservas");
+  const filas = [];
+  for (const tr of tbody.children) {
+    const boleta = tr.querySelector(".boleta-input").value.trim();
+    if (!boleta) continue;
+    filas.push({
+      boleta: boleta,
+      nombre: (tr.querySelector(".nombre-input").value || "").trim(),
+      telefono: (tr.querySelector(".telefono-input").value || "").trim(),
+      direccion: (tr.querySelector(".direccion-input").value || "").trim(),
+    });
+  }
+  return filas;
+}
+
+function copiarUltimaFila() {
+  const tbody = document.getElementById("tbodyReservas");
+  const rows = Array.from(tbody.children);
+
+  // 1. Encontrar la última fila con datos (empezar desde el final)
+  let srcIdx = -1;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const boleta = rows[i].querySelector(".boleta-input").value.trim();
+    if (boleta) { srcIdx = i; break; }
+  }
+  if (srcIdx < 0) return; // ninguna fila con datos
+
+  // 2. Tomar la fila fuente
+  const src = rows[srcIdx];
+
+  // 3. Crear UNA nueva fila justo después de la fuente
+  const newRowHTML = rowHTML(srcIdx + 1);
+  tbody.insertAdjacentHTML("beforeend", newRowHTML);
+  const newRow = tbody.lastElementChild;
+  const srcInputs = src.querySelectorAll("input");
+  const newInputs = newRow.querySelectorAll("input");
+
+  // 4. Copiar todos los campos de texto de la última fila a la nueva
+  if (srcInputs[0]) newInputs[0].value = srcInputs[0].value;   // boleta
+  if (srcInputs[1]) newInputs[1].value = srcInputs[1].value;   // nombre
+  if (srcInputs[2]) newInputs[2].value = srcInputs[2].value;   // teléfono
+  if (srcInputs[3]) newInputs[3].value = srcInputs[3].value;   // dirección
+  actualizarCuenta();
+}
+
+function onKeyNav(e) {
+  const tr = e.target.closest("tr");
+  if (!tr || e.target.tagName !== "INPUT") return;
+  const inputs = Array.from(tr.querySelectorAll("input"));
+  const idx = inputs.indexOf(e.target);
+  if (idx < 0) return;
+
+  if (e.key === ",") {
+    e.preventDefault();
+    if (idx < inputs.length - 1) inputs[idx + 1].focus();
+    else {
+      const nextTr = tr.nextElementSibling || (agregarFilas(1), tr.nextElementSibling);
+      if (nextTr) nextTr.querySelector("input").focus();
+    }
+    return;
+  }
+
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const nextTr = tr.nextElementSibling;
+    if (nextTr) nextTr.querySelector("input").focus();
+    return;
+  }
+
+  if (e.key === "Tab" && !e.shiftKey && idx < inputs.length - 1) {
+    e.preventDefault();
+    inputs[idx + 1].focus();
+    return;
+  }
+
+  if (e.key === "Tab" && e.shiftKey && idx > 0) {
+    e.preventDefault();
+    inputs[idx - 1].focus();
+    return;
+  }
+
+  if ((e.ctrlKey || e.metaKey) && e.key === "d") {
+    e.preventDefault();
+    copiarUltimaFila();
+    return;
+  }
+}
+
+function guardarCambios() {
+  const filas = obtenerFilas();
+  if (!filas.length) {
+    alert("No hay filas con boleta para guardar.");
+    return;
+  }
+  const btn = document.getElementById("btnGuardar");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Guardando...';
+
+  fetch(apiGuardar, {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-CSRF-Token": getCsrfToken()},
+    body: JSON.stringify({rows: filas}),
+  })
+    .then(r => r.json().then(data => ({ok: r.ok, data: data})))
+    .then(({ok, data}) => {
+      if (!ok || !data.ok) {
+        throw new Error(data.error || "Error al guardar.");
+      }
+      const fmt = (ids) => ids.map(n => "#" + String(n).padStart(4, "0")).join(", ");
+      let html = `<p class="text-success mb-1"><i class="bi bi-check-circle me-1"></i>${data.guardadas} reserva(s) guardada(s)</p>`;
+      if (data.ya_reservadas && data.ya_reservadas.length) {
+        html += `<p class="text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>${data.ya_reservadas.length} ya reservada(s): ${fmt(data.ya_reservadas)}</p>`;
+      }
+      if (data.duplicadas && data.duplicadas.length) {
+        html += `<p class="text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>${data.duplicadas.length} duplicada(s) en el lote: ${fmt(data.duplicadas)}</p>`;
+      }
+      if (data.invalidas && data.invalidas.length) {
+        html += `<p class="text-danger mb-1"><i class="bi bi-x-circle me-1"></i>${escHtml(String(data.invalidas.length))} inválida(s): ${escHtml(data.invalidas.join("; "))}</p>`;
+      }
+      if (data.no_existe && data.no_existe.length) {
+        html += `<p class="text-danger mb-1"><i class="bi bi-x-circle me-1"></i>${escHtml(String(data.no_existe.length))} no existe(n): ${fmt(data.no_existe)}</p>`;
+      }
+      document.getElementById("modalResultadoBody").innerHTML = html;
+      new bootstrap.Modal(document.getElementById("modalResultado")).show();
+    })
+    .catch((err) => {
+      alert(err.message || "Error al guardar.");
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-save me-1"></i>Guardar reservas';
+    });
+}
+
+document.addEventListener("paste", function(e) {
+  const tbody = document.getElementById("tbodyReservas");
+  const target = e.target.closest("td");
+  if (!target || !tbody.contains(target)) return;
+
+  const text = (e.clipboardData || window.clipboardData).getData("text");
+  if (!text) return;
+
+  // Detectar separador: tabulación o múltiples espacios (2+)
+  const hasTabs = text.includes("\t");
+  const separator = hasTabs ? "\t" : /\s{2,}/;
+  const rawLines = text.split(/\r?\n/).filter(l => l.trim());
+  if (rawLines.length < 1) return;
+
+  e.preventDefault();
+  const tr0 = target.closest("tr");
+
+  // Función para procesar una línea de datos y asignar a campos
+  const processLine = (line, row) => {
+    const cells = line.split(separator).map(c => c.trim()).filter(c => c.length > 0);
+    if (cells.length === 0) return;
+    // Índices de inputs: 0=boleta, 1=nombre, 2=direccion, 3=telefono
+    const dataFields = [0, 1, 2, 3];
+    for (let k = 0; k < cells.length && k < dataFields.length; k++) {
+      const inp = row.querySelectorAll("input")[dataFields[k]];
+      if (inp) {
+        if (dataFields[k] === 0) {
+          inp.value = cells[k].replace(/\D/g, "").slice(0, 4);
+        } else {
+          inp.value = cells[k];
+        }
+      }
+    }
+  };
+
+  // Primera línea -> fila destino (la donde se hizo clic)
+  processLine(rawLines[0], tr0);
+
+  // Si hay más líneas, crear nuevas filas para el resto
+  if (rawLines.length > 1) {
+    const existingCount = tbody.children.length;
+    const newRowsNeeded = rawLines.length - 1;
+    const html = Array.from({length: newRowsNeeded}, (_, i) => rowHTML(existingCount + i)).join("");
+    tbody.insertAdjacentHTML("beforeend", html);
+    const allRows = Array.from(tbody.children);
+    for (let i = 1; i < rawLines.length; i++) {
+      processLine(rawLines[i], allRows[existingCount + i - 1]);
+    }
+  }
+
+  actualizarCuenta();
+});
+
+document.getElementById("tbodyReservas").addEventListener("input", function(e) {
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  if (e.target.classList.contains("boleta-input")) {
+    const input = e.target;
+    input.value = input.value.replace(/\D/g, "").slice(0, 4);
+  }
+  actualizarCuenta();
+});
+
+document.getElementById("tbodyReservas").addEventListener("keydown", onKeyNav);
+
+document.getElementById("tbodyReservas").addEventListener("click", function(e) {
+  if (e.target.closest(".btn-eliminar-fila")) {
+    const tr = e.target.closest("tr");
+    if (tr) {
+      tr.remove();
+      renumberRows();
+      actualizarCuenta();
+    }
+  }
+});
+
+agregarFilas(5);
+initSortableTables();
+</script>
+{% endblock %}

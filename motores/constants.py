@@ -12,7 +12,8 @@ VENDEDOR_SIN_ASIGNAR = ""
 # ── Payment ──
 METODO_EFECTIVO = "efectivo"
 METODO_TRANSFERENCIA = "transferencia"
-METODOS_PAGO = {METODO_EFECTIVO, METODO_TRANSFERENCIA}
+METODO_PAGO_DELIO = "pago_a_delio"
+METODOS_PAGO = {METODO_EFECTIVO, METODO_TRANSFERENCIA, METODO_PAGO_DELIO}
 REFERENCIA_N_A = "N/A"
 
 # ── User ──
@@ -20,9 +21,11 @@ USUARIO_SISTEMA = "sistema"
 ROL_ADMIN = "admin"
 ROL_CAJA = "cajero"
 ROLES = {ROL_ADMIN, ROL_CAJA}
-SESSION_IDLE_TIMEOUT_SECONDS = int(os.getenv("SESSION_IDLE_TIMEOUT_SECONDS", "1800"))
-ADMIN_INICIAL_USUARIO = os.getenv("ADMIN_INICIAL_USUARIO", "admin")
-ADMIN_INICIAL_PASSWORD = os.getenv("ADMIN_INICIAL_PASSWORD", "admin")
+SESSION_IDLE_TIMEOUT_SECONDS = int(os.getenv("SESSION_IDLE_TIMEOUT_SECONDS") or "1800")
+ADMIN_INICIAL_USUARIO = os.getenv("ADMIN_INICIAL_USUARIO")
+ADMIN_INICIAL_PASSWORD = os.getenv("ADMIN_INICIAL_PASSWORD")
+if not ADMIN_INICIAL_USUARIO or not ADMIN_INICIAL_PASSWORD:
+    raise ValueError("ADMIN_INICIAL_USUARIO y ADMIN_INICIAL_PASSWORD son obligatorios en .env")
 
 # ── Ticket states ──
 ESTADO_DISPONIBLE = "disponible"
@@ -55,7 +58,7 @@ BOLETA_MIN = 0
 BOLETA_MAX = 9999
 
 # ── Vendor operations ──
-OPERACIONES_VENDEDOR = {"guardar", "asignar", "quitar", "eliminar", "registrar_fecha_adquisicion"}
+OPERACIONES_VENDEDOR = {"guardar", "asignar", "quitar", "eliminar", "cambiar_nombre", "registrar_fecha_adquisicion"}
 
 # ── Query limits ──
 CONSULTA_LIMIT_DEFAULT = 50
@@ -72,8 +75,8 @@ COMISION_DEFAULT_TIERS = [
 # ── Default config ──
 DEFAULT_CONFIG = {
     "_id": CONFIG_ID,
-    "nombre_rifa": os.getenv("NOMBRE_RIFA", "Asociacion De Vendedores Rifas Transparencia"),
-    "valor_boleta": int(os.getenv("VALOR_BOLETA", "70000")),
+    "nombre_rifa": os.getenv("NOMBRE_RIFA") or "Asociacion De Vendedores Rifas Transparencia",
+    "valor_boleta": int(os.getenv("VALOR_BOLETA") or "70000"),
     "cantidad_boletas": 10000,
     "premio_mayor": "",
     "estado": "activa",
@@ -81,16 +84,14 @@ DEFAULT_CONFIG = {
     "direccion": "",
     "telefono": "",
     "ciudad": "",
-    "footer_texto": "Documento interno, no tiene validez fiscal.",
-    "observaciones_recaudo": "Todos los pagos fueron registrados correctamente.\nLas boletas actualizan autom\u00e1ticamente su saldo en el sistema.",
     "comisiones_tiers": COMISION_DEFAULT_TIERS,
 }
 
 # ── Default rifa ──
 DEFAULT_RIFA = {
-    "nombre": os.getenv("NOMBRE_RIFA", "Asociacion De Vendedores Rifas Transparencia"),
+    "nombre": os.getenv("NOMBRE_RIFA") or "Asociacion De Vendedores Rifas Transparencia",
     "anio": date.today().year,
-    "valor_boleta": int(os.getenv("VALOR_BOLETA", "70000")),
+    "valor_boleta": int(os.getenv("VALOR_BOLETA") or "70000"),
     "cantidad_boletas": 10000,
     "premio_mayor": "",
     "comisiones_tiers": COMISION_DEFAULT_TIERS,
@@ -100,14 +101,14 @@ DEFAULT_RIFA = {
 
 # ── Excel ──
 MODELO_RIFA_HEADERS = [
-    "NUMERO DE BOLETA ",
-    "TOTAL ABONO ",
+    "NUMERO DE BOLETA",
+    "TOTAL ABONO",
     "FECHA ADQUISICION",
     "VENDEDOR (A)",
     "COMPRADOR(A)",
-    "DIRECCION ",
-    "TELEFONO ",
-    "FECHA ",
+    "DIRECCION",
+    "TELEFONO",
+    "FECHA",
     "FACT",
     "ABONO 1",
     "FECHA",
@@ -125,9 +126,11 @@ MODELO_RIFA_HEADERS = [
     "FECHA",
     "FACT",
     "ABONO 6",
-    "FECHA ",
+    "FECHA",
     "FACT",
     "ABONO 7",
+    "FECHA",
+    "FACT",
     "TOTAL ABONOS EFECTIVO",
     "VS",
     "FECHA",
@@ -146,7 +149,7 @@ MODELO_RIFA_HEADERS = [
     "FACT",
     "TFR 5",
     "PAGOS TOTAL TFR",
-    "TOTAL ABONADO ",
+    "TOTAL ABONADO",
 ]
 
 XLSX_NS = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}

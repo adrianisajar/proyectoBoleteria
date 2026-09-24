@@ -237,3 +237,120 @@ def test_compradores_no_sobreescribe_fecha_existente(client):
     )
     assert resp.status_code == 200
     assert boletas.find_one({"_id": 10})["fecha_adquisicion"] == "2026-07-01"
+
+
+# ── compradores con pago inicial ───────────────────
+
+
+def _mov_pagos(bid):
+    doc = boletas.find_one({"_id": bid})
+    return [m for m in (doc.get("historial_movimientos") or []) if (m.get("tipo") or "pago") == "pago"]
+
+
+def test_compradores_con_pago_efectivo(client):
+    resp = client.post(
+        "/compradores/rapido",
+        json={"rows": [{"boleta": 10, "nombre": "Pedro", "telefono": "300", "direccion": "", "pago": "30000", "pago_metodo": "efectivo"}]},
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert data["pagos_registrados"] == 1
+    assert data["pagos_total"] == 30000
+    doc = boletas.find_one({"_id": 10})
+    assert doc["total_abonado"] == 30000
+    assert doc["estado"] == "abonando"
+    pagos = _mov_pagos(10)
+    assert len(pagos) == 1
+    assert pagos[0]["valor"] == 30000
+    assert pagos[0]["metodo"] == "efectivo"
+    assert "factura_id" not in pagos[0]
+
+
+def test_compradores_pago_transferencia_sin_referencia(client):
+    resp = client.post(
+        "/compradores/rapido",
+        json={
+            "rows": [
+                {
+                    "boleta": 10,
+                    "nombre": "Pedro",
+                    "telefono": "",
+                    "direccion": "",
+                    "fecha_adquisicion": "2026-07-10",
+                    "pago": "20000",
+                    "pago_metodo": "transferencia",
+                }
+            ]
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["pagos_registrados"] == 1
+    doc = boletas.find_one({"_id": 10})
+    assert doc["fecha_adquisicion"] == "2026-07-10"
+    pagos = _mov_pagos(10)
+    assert len(pagos) == 1
+    assert pagos[0]["metodo"] == "transferencia"
+    assert pagos[0]["fecha"] == "2026-07-10"
+    assert "referencia" not in pagos[0]
+    assert "banco" not in pagos[0]
+
+
+def test_compradores_pago_total_deja_pagada(client):
+    resp = client.post(
+        "/compradores/rapido",
+        json={"rows": [{"boleta": 10, "nombre": "Pedro", "telefono": "", "direccion": "", "pago": "70000", "pago_metodo": "efectivo"}]},
+    )
+    assert resp.status_code == 200
+    doc = boletas.find_one({"_id": 10})
+    assert doc["total_abonado"] == 70000
+    assert doc["estado"] == "pagada"
+
+
+def test_compradores_pago_individual_supera_valor_se_rechaza(client):
+    resp = client.post(
+        "/compradores/rapido",
+        json={"rows": [{"boleta": 10, "nombre": "Pedro", "telefono": "", "direccion": "", "pago": "80000", "pago_metodo": "efectivo"}]},
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["pagos_registrados"] == 0
+    assert len(data["pagos_rechazados"]) == 1
+    assert boletas.find_one({"_id": 10})["total_abonado"] == 0
+    assert boletas.find_one({"_id": 10})["cliente"]["nombre"] == "PEDRO"
+
+
+def test_compradores_pago_acumulado_puede_exceder_valor(client):
+    boletas.update_one(
+        {"_id": 10},
+        {
+            "$set": {
+                "estado": "abonando",
+                "total_abonado": 60000,
+                "historial_movimientos": [{"fecha": "2026-07-01", "valor": 60000, "metodo": "efectivo"}],
+            }
+        },
+    )
+    resp = client.post(
+        "/compradores/rapido",
+        json={"rows": [{"boleta": 10, "nombre": "Pedro", "telefono": "", "direccion": "", "pago": "20000", "pago_metodo": "efectivo"}]},
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["pagos_registrados"] == 1
+    assert len(data["pagos_rechazados"]) == 0
+    doc = boletas.find_one({"_id": 10})
+    assert doc["total_abonado"] == 80000
+    assert doc["estado"] == "pagada"
+
+
+def test_compradores_pago_sin_datos_se_ignora(client):
+    resp = client.post(
+        "/compradores/rapido",
+        json={"rows": [{"boleta": 10, "nombre": "", "telefono": "", "direccion": "", "pago": "30000", "pago_metodo": "efectivo"}]},
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert 10 in data["sin_datos"]
+    assert data["pagos_registrados"] == 0
+    assert boletas.find_one({"_id": 10})["total_abonado"] == 0

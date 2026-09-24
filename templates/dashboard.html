@@ -67,15 +67,6 @@
             <div class="metric-subtext">Boletas abonando no pagadas</div>
         </div>
     </div>
-    {% if stats.pagos_otros %}
-    <div class="col-6 col-md-4">
-        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-secondary);">
-            <div class="metric-label mb-2">Otros pagos</div>
-            <div class="metric-value">{{ stats.pagos_otros|cop }}</div>
-            <div class="metric-subtext">Métodos de pago no clasificados</div>
-        </div>
-    </div>
-    {% endif %}
     <div class="col-6 col-md-4">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-danger);">
             <div class="metric-label mb-2">Egresos</div>
@@ -84,10 +75,17 @@
         </div>
     </div>
     <div class="col-6 col-md-4">
+        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-warning);">
+            <div class="metric-label mb-2">Pago a Delio</div>
+            <div class="metric-value">{{ stats.total_pagos_delio|cop }}</div>
+            <div class="metric-subtext">Pagos directos al propietario</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4">
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-teal);">
             <div class="metric-label mb-2">Recaudo neto</div>
             <div class="metric-value">{{ stats.recaudo_neto|cop }}</div>
-            <div class="metric-subtext">Recaudo total menos egresos</div>
+            <div class="metric-subtext">Total menos egresos y pago a Delio</div>
         </div>
     </div>
     <div class="col-6 col-md-4">
@@ -156,7 +154,7 @@
                     {% for item in stats.ranking %}
                         <tr>
                             <td>{{ item.nombre or item._id }}</td>
-                            <td class="text-end fw-bold ticket-number">{{ item.vendidas }}</td>
+                            <td class="text-end fw-bold ticket-number">{{ item.con_abono }}</td>
                             <td class="text-end ticket-number">{{ item.pagadas }}</td>
                             <td class="text-end fw-bold text-success">{{ item.recaudo|cop }}</td>
                         </tr>

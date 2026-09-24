@@ -15,12 +15,12 @@
     <table class="table table-bordered table-hover table-sm align-middle">
         <thead class="table-light">
             <tr>
-                <th>N°</th>
-                <th>Fecha</th>
+                <th data-sort="_id" class="sortable">N°</th>
+                <th data-sort="fecha" class="sortable">Fecha</th>
                 <th>Origen</th>
                 <th>Destino</th>
                 <th>Vendedor</th>
-                <th class="text-end">Valor</th>
+                <th data-sort="valor" class="sortable text-end">Valor</th>
                 <th></th>
             </tr>
         </thead>
@@ -28,7 +28,7 @@
             {% for t in traslados %}
             <tr>
                 <td class="fw-bold">{{ "%05d" % t._id }}</td>
-                <td>{{ t.fecha }}</td>
+                <td>{{ t.fecha|fecha }}</td>
                 <td class="ticket-number">#{{ "%04d" % t.boleta_origen }}</td>
                 <td class="ticket-number">#{{ "%04d" % t.boleta_destino }}</td>
                 <td>{{ t.vendedor_nombre or t.vendedor_id }}</td>
@@ -42,3 +42,4 @@
     </table>
 </div>
 {% endblock %}
+{% block scripts %}{{ super() }}<script>initSortableTables();</script>{% endblock %}

@@ -20,7 +20,7 @@ from motores.shared import (
     vendedores_con_local,
 )
 from motores.traslado_service import next_traslado_id, registrar_traslado, revertir_traslado
-from motores.validacion import es_boleta_completa, parse_money
+from motores.validacion import es_boleta_completa, parse_money, safe_error_message
 
 
 def _validar_traslado(origen: int, destino: int, valor: int, docs: dict, valor_boleta: int, errors: list[str]) -> None:
@@ -30,6 +30,10 @@ def _validar_traslado(origen: int, destino: int, valor: int, docs: dict, valor_b
     if doc_origen.get("rifa_id") != doc_destino.get("rifa_id"):
         errors.append("Las dos boletas deben pertenecer a la misma rifa.")
         return
+    v_origen = doc_origen.get("vendedor_id", "") or ""
+    v_destino = doc_destino.get("vendedor_id", "") or ""
+    if v_origen != v_destino:
+        errors.append("Las boletas de origen y destino deben pertenecer al mismo vendedor.")
     saldo_origen = int(doc_origen.get("total_abonado") or 0)
     saldo_destino = int(doc_destino.get("total_abonado") or 0)
     if saldo_origen <= 0:
@@ -48,8 +52,15 @@ def register_routes(app: Flask) -> None:
     def traslados_list() -> str:
         """List traslados (comprobantes de cambio de n\u00famero)."""
         require_collections()
-        lista = list(traslados.find().sort([("fecha", -1), ("_id", -1)]).limit(100))
-        return render_template("traslados_list.html", traslados=lista)
+        sort_by = request.args.get("sort_by", "_id").strip()
+        sort_dir = request.args.get("sort_dir", "asc").strip()
+        if sort_dir not in {"asc", "desc"}:
+            sort_dir = "asc"
+        if sort_by not in {"_id", "fecha", "valor"}:
+            sort_by = "_id"
+        sort_direction = 1 if sort_dir == "asc" else -1
+        lista = list(traslados.find().sort(sort_by, sort_direction).limit(100))
+        return render_template("traslados_list.html", traslados=lista, sort_by=sort_by, sort_dir=sort_dir)
 
     @app.route("/traslados/nuevo", methods=["GET", "POST"])
     @role_required("admin", "cajero")
@@ -64,6 +75,7 @@ def register_routes(app: Flask) -> None:
             "fecha": "",
             "vendedor_id": "",
             "vendedor_nombre": "",
+            "observaciones": "",
         }
 
         if request.method == "POST":
@@ -72,6 +84,7 @@ def register_routes(app: Flask) -> None:
             valor_raw = request.form.get("valor", "").strip()
             fecha = request.form.get("fecha", "").strip()
             vendedor_id = request.form.get("vendedor_id", "").strip()
+            observaciones = request.form.get("observaciones", "").strip()
             v_nombre = VENDEDOR_LOCAL_LABEL if vendedor_id == VENDEDOR_LOCAL else ""
             if vendedor_id and vendedor_id != VENDEDOR_LOCAL:
                 _v = vendedores.find_one({"_id": vendedor_id}, {"nombre": 1})
@@ -83,6 +96,7 @@ def register_routes(app: Flask) -> None:
                 "fecha": fecha,
                 "vendedor_id": vendedor_id,
                 "vendedor_nombre": v_nombre,
+                "observaciones": observaciones,
             }
             vendedores_list = vendedores_con_local()
 
@@ -150,15 +164,16 @@ def register_routes(app: Flask) -> None:
                     v_nombre,
                     usuario,
                     user.get("nombre") or user.get("username") or usuario,
+                    observaciones=observaciones,
                 )
 
                 flash(f"Traslado N\u00b0 {traslado_id:05d} registrado.", "success")
-                return redirect(url_for("ver_traslado", traslado_id=traslado_id, imprimir=1))
+                return redirect(url_for("ver_traslado", traslado_id=traslado_id))
 
             except Exception as exc:
                 if traslado_id is not None:
                     revertir_traslado(traslado_id, _vb)
-                flash(f"Error al registrar el traslado: {exc}", "danger")
+                flash(safe_error_message(exc), "danger")
                 return render_template(
                     "nuevo_traslado.html",
                     vendedores=vendedores_list,

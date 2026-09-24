@@ -8,7 +8,6 @@ from motores.shared import (
     crear_nueva_rifa,
     flash,
     get_config,
-    importar_modelo_rifa,
     invalidate_config_cache,
     invalidate_dashboard_cache,
     redirect,
@@ -20,8 +19,8 @@ from motores.shared import (
     sync_ticket_statuses,
     url_for,
 )
-from motores.usuarios import list_usuarios
-from motores.validacion import parse_money, sanitizar_texto
+from motores.usuarios import list_usuarios, requiere_clave_admin
+from motores.validacion import parse_money, safe_error_message, sanitizar_texto
 
 
 def register_routes(app: Flask) -> None:
@@ -36,6 +35,8 @@ def register_routes(app: Flask) -> None:
         rifa = get_rifa_activa()
         if request.method == "POST":
             action = request.form.get("action", "")
+            if action in ("guardar_config", "guardar_empresa", "guardar_comisiones") and not requiere_clave_admin():
+                return redirect(url_for("configuracion_panel"))
 
             if action == "guardar_empresa":
                 update = {
@@ -43,8 +44,6 @@ def register_routes(app: Flask) -> None:
                     "direccion": sanitizar_texto(request.form.get("direccion", ""), "address").upper(),
                     "telefono": sanitizar_texto(request.form.get("telefono", ""), "numbers"),
                     "ciudad": sanitizar_texto(request.form.get("ciudad", ""), "titulo").upper(),
-                    "footer_texto": request.form.get("footer_texto", "").strip(),
-                    "observaciones_recaudo": request.form.get("observaciones_recaudo", "").strip(),
                 }
                 try:
                     configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
@@ -52,7 +51,7 @@ def register_routes(app: Flask) -> None:
                     invalidate_dashboard_cache()
                     flash("Datos de la empresa guardados.", "success")
                 except Exception as exc:
-                    flash(f"Error al guardar los datos de la empresa: {exc}", "danger")
+                    flash(safe_error_message(exc), "danger")
                 return redirect(url_for("configuracion_panel"))
 
             elif action == "guardar_config":
@@ -76,15 +75,13 @@ def register_routes(app: Flask) -> None:
                         "cantidad_boletas": cantidad_boletas,
                     }
                     try:
-                        configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
-                    except Exception as exc:
-                        flash(f"Error al guardar los par\u00e1metros: {exc}", "danger")
-                        return redirect(url_for("configuracion_panel"))
-                    try:
                         rifas.update_one({"estado": "activa"}, {"$set": {"nombre": nombre, "valor_boleta": valor_boleta, "cantidad_boletas": cantidad_boletas}})
+                        # Limpiar overrides legacy en configuracion para que
+                        # get_config() lea de rifas sin stale overrides.
+                        configuracion.update_one({"_id": CONFIG_ID}, {"$unset": {"nombre_rifa": "", "valor_boleta": "", "cantidad_boletas": ""}})
                     except Exception as exc:
-                        current_app.logger.warning("No se pudo actualizar el documento de la rifa: %s", exc)
-                        flash("Advertencia: no se pudo actualizar el documento de la rifa.", "warning")
+                        flash(safe_error_message(exc), "danger")
+                        return redirect(url_for("configuracion_panel"))
                     sync_ticket_statuses(valor_boleta)
                     invalidate_dashboard_cache()
                     invalidate_config_cache()
@@ -105,7 +102,6 @@ def register_routes(app: Flask) -> None:
                     else:
                         nuevos_tiers.sort(key=lambda t: t["min"])
                         update = {"comisiones_tiers": nuevos_tiers}
-                        configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
                         try:
                             rifas.update_one({"estado": "activa"}, {"$set": update})
                         except Exception as exc:
@@ -114,19 +110,27 @@ def register_routes(app: Flask) -> None:
                         invalidate_config_cache()
                         flash("Comisiones guardadas correctamente.", "success")
                 except Exception as exc:
-                    flash(f"Error al guardar comisiones: {exc}", "danger")
+                    flash(safe_error_message(exc), "danger")
                 return redirect(url_for("configuracion_panel"))
 
-        return render_template("configuracion.html", config=config, rifa=rifa, usuarios=list_usuarios())
+        sort_by = request.args.get("sort_by", "rol").strip()
+        sort_dir = request.args.get("sort_dir", "asc").strip()
+        if sort_dir not in {"asc", "desc"}:
+            sort_dir = "asc"
+        if sort_by not in {"_id", "usuario", "nombre", "rol", "activo", "ultimo_acceso"}:
+            sort_by = "rol"
+        return render_template("configuracion.html", config=config, rifa=rifa, usuarios=list_usuarios(sort_by, sort_dir), sort_by=sort_by, sort_dir=sort_dir)
 
     @app.route("/rifas/nueva", methods=["POST"])
     @role_required("admin")
     def nueva_rifa() -> Response:
-        """Reset the system for a new rifa (confirmation-gated, optional vendor keep)."""
+        """Reset the system for a new rifa (admin-password-gated, optional vendor keep)."""
+        if not requiere_clave_admin():
+            return redirect(url_for("configuracion_panel"))
         nombre = sanitizar_texto(request.form.get("nombre_rifa_nueva", ""), "titulo") or f"Rifa {now_local().date().isoformat()}"
         valor_boleta = parse_money(request.form.get("valor_boleta_nueva", ""))
         conservar_vendedores = request.form.get("conservar_vendedores") == "on"
-        confirmacion = request.form.get("confirmacion", "").strip().upper()
+        conservar_reservas = request.form.get("conservar_reservas", "on") == "on"
         cantidad_boletas = parse_money(request.form.get("cantidad_boletas", "10000")) or 10000
 
         errors = []
@@ -134,8 +138,6 @@ def register_routes(app: Flask) -> None:
             errors.append("El valor de la nueva rifa debe ser mayor que cero.")
         if cantidad_boletas < 1:
             errors.append("La cantidad de boletas debe ser al menos 1.")
-        if confirmacion != "NUEVA RIFA":
-            errors.append("Escribe NUEVA RIFA para confirmar la reinicializaci\u00f3n.")
 
         if errors:
             for error in errors:
@@ -143,77 +145,23 @@ def register_routes(app: Flask) -> None:
             return redirect(url_for("configuracion_panel"))
 
         try:
-            crear_nueva_rifa(
+            resumen = crear_nueva_rifa(
                 nombre,
                 valor_boleta,
                 conservar_vendedores,
                 cantidad_boletas=cantidad_boletas,
+                conservar_reservas=conservar_reservas,
             )
         except Exception as exc:
-            flash(f"No se pudo crear la nueva rifa: {exc}", "danger")
+            flash(safe_error_message(exc), "danger")
             return redirect(url_for("configuracion_panel"))
 
         flash("Nueva rifa creada correctamente.", "success")
+        if conservar_reservas:
+            aplicadas = int((resumen or {}).get("reservas_aplicadas", 0) or 0)
+            omitidas = (resumen or {}).get("reservas_omitidas", []) or []
+            if aplicadas:
+                flash(f"{aplicadas} reserva(s) fija(s) conservadas como separadas.", "success")
+            if omitidas:
+                flash(f"{len(omitidas)} reserva(s) omitida(s) (fuera de rango o sin comprador).", "warning")
         return redirect(url_for("dashboard"))
-
-    @app.route("/rifas/importar", methods=["POST"])
-    @role_required("admin")
-    def importar_rifa_excel() -> Response:
-        """Import vendor assignments from an xlsx modelo-rifa file."""
-        archivo = request.files.get("archivo_rifa")
-        confirmacion = request.form.get("confirmacion_importacion", "").strip().upper()
-
-        if confirmacion != "IMPORTAR":
-            flash("Escribe IMPORTAR para confirmar la actualización desde Excel.", "danger")
-            return redirect(url_for("configuracion_panel"))
-
-        if not archivo or not archivo.filename:
-            flash("Selecciona un archivo .xlsx para importar.", "danger")
-            return redirect(url_for("configuracion_panel"))
-
-        if not archivo.filename.lower().endswith(".xlsx"):
-            flash("El archivo debe tener formato .xlsx.", "danger")
-            return redirect(url_for("configuracion_panel"))
-
-        try:
-            summary = importar_modelo_rifa(archivo.stream)
-        except Exception as exc:
-            flash(f"No se pudo importar el modelo de rifa: {exc}", "danger")
-            return redirect(url_for("configuracion_panel"))
-
-        omitidas = []
-        if summary.get("local_ignoradas"):
-            omitidas.append(f"{summary['local_ignoradas']} LOCAL")
-        if summary.get("camion_ignoradas"):
-            omitidas.append(f"{summary['camion_ignoradas']} CAMI\u00d3N")
-        if summary.get("paquete_ignoradas"):
-            omitidas.append(f"{summary['paquete_ignoradas']} PAQUETE")
-        omit_msg = f" ({', '.join(omitidas)} omitida(s))" if omitidas else ""
-
-        message = (
-            f"Asignaciones actualizadas: {summary['boletas_asignadas']} boleta(s) procesada(s), "
-            f"{summary['vendedores']} vendedor(es), {summary['boletas_actualizadas']} actualizada(s)"
-            f"{omit_msg}."
-        )
-        if summary["invalid_rows"]:
-            message += " Filas omitidas: " + ", ".join(str(row) for row in summary["invalid_rows"])
-        if summary.get("boletas_inexistentes"):
-            missing = summary["boletas_inexistentes"]
-            muestras = ", ".join(f"#{b:04d}" for b in missing[:10])
-            message += f" Boletas inexistentes omitidas ({len(missing)}): {muestras}"
-        flash(message, "success")
-        return redirect(url_for("dashboard"))
-
-    @app.route("/rifas/sincronizar-estados", methods=["POST"])
-    @role_required("admin")
-    def sincronizar_estados() -> Response:
-        """Recalculate every ticket state from its total_abonado."""
-        try:
-            require_collections()
-            config = get_config()
-            valor_boleta = int(config.get("valor_boleta", 10000) or 10000)
-            sync_ticket_statuses(valor_boleta)
-            flash("Estados sincronizados correctamente.", "success")
-        except Exception as exc:
-            flash(f"Error al sincronizar estados: {exc}", "danger")
-        return redirect(url_for("configuracion_panel"))

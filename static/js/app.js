@@ -241,4 +241,112 @@
             if (search) search.focus();
         }
     });
+
+    var pendingForm = null;
+    var modalClave = document.getElementById("modalConfirmarClave");
+    var formClave = document.getElementById("formConfirmarClave");
+    var inputClave = document.getElementById("confirmarClaveInput");
+    var textoClave = document.getElementById("confirmarClaveTexto");
+
+    if (modalClave && formClave && inputClave) {
+        document.addEventListener("click", function(e) {
+            var btn = e.target.closest("[data-confirmar-clave]");
+            if (!btn) return;
+            e.preventDefault();
+            pendingForm = btn.closest("form");
+            if (textoClave) {
+                textoClave.textContent = btn.dataset.confirmarTexto || "Confirme esta acci\u00f3n con su contrase\u00f1a de administrador.";
+            }
+            inputClave.value = "";
+            bootstrap.Modal.getOrCreateInstance(modalClave).show();
+        });
+
+        formClave.addEventListener("submit", function(e) {
+            e.preventDefault();
+            var clave = inputClave.value;
+            if (!pendingForm || !clave) return;
+            var hidden = pendingForm.querySelector('input[name="clave_admin"]');
+            if (!hidden) {
+                hidden = document.createElement("input");
+                hidden.type = "hidden";
+                hidden.name = "clave_admin";
+                pendingForm.appendChild(hidden);
+            }
+            hidden.value = clave;
+            bootstrap.Modal.getOrCreateInstance(modalClave).hide();
+            if (typeof pendingForm.requestSubmit === "function") {
+                pendingForm.requestSubmit();
+            } else {
+                pendingForm.submit();
+            }
+        });
+    }
+window.initSortableTables = function(containerSelector) {
+    var container = document.querySelector(containerSelector || 'body');
+    if (!container) return;
+    var ths = container.querySelectorAll('th.sortable');
+    ths.forEach(function(th) {
+        th.style.cursor = 'pointer';
+        var col = th.getAttribute('data-sort');
+        if (!col) return;
+        var params = new URLSearchParams(window.location.search);
+        var currentSort = params.get('sort_by') || '_id';
+        var currentDir = params.get('sort_dir') || 'asc';
+        // Limpiar iconos previos
+        th.querySelectorAll('.sort-icon').forEach(function(e) { e.remove(); });
+        if (col === currentSort) {
+            var icon = document.createElement('i');
+            icon.className = 'bi bi-caret-' + (currentDir === 'asc' ? 'up' : 'down') + '-fill ms-1 sort-icon';
+            th.appendChild(icon);
+        }
+        th.addEventListener('click', function() {
+            var params2 = new URLSearchParams(window.location.search);
+            if (col === currentSort) {
+                params2.set('sort_dir', currentDir === 'asc' ? 'desc' : 'asc');
+            } else {
+                params2.set('sort_by', col);
+                params2.set('sort_dir', 'asc');
+            }
+            params2.delete('page');
+            window.location.search = params2.toString();
+        });
+    });
+};
+
+window.sortTableFrontend = function(tableId, colIndex, isNumeric) {
+    var table = document.getElementById(tableId);
+    if (!table) return;
+    var tbody = table.querySelector("tbody");
+    if (!tbody) return;
+    var rows = Array.from(tbody.querySelectorAll("tr"));
+    var dir = table.getAttribute("data-sort-dir") || "asc";
+    table.setAttribute("data-sort-dir", dir === "asc" ? "desc" : "asc");
+    rows.sort(function(a, b) {
+        var va = a.querySelectorAll("td")[colIndex] ? a.querySelectorAll("td")[colIndex].textContent.trim() : "";
+        var vb = b.querySelectorAll("td")[colIndex] ? b.querySelectorAll("td")[colIndex].textContent.trim() : "";
+        if (isNumeric) {
+            var na = parseFloat(va.replace(/[^0-9.-]/g, "")) || 0;
+            var nb = parseFloat(vb.replace(/[^0-9.-]/g, "")) || 0;
+            return dir === "asc" ? na - nb : nb - na;
+        }
+        return dir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
+    });
+    rows.forEach(function(row) { tbody.appendChild(row); });
+};
+
+if (typeof window.ordenar === 'undefined') {
+    window.ordenar = function(col) {
+        var params = new URLSearchParams(window.location.search);
+        var currentSort = params.get('sort_by') || '_id';
+        var currentDir = params.get('sort_dir') || 'asc';
+        if (col === currentSort) {
+            params.set('sort_dir', currentDir === 'asc' ? 'desc' : 'asc');
+        } else {
+            params.set('sort_by', col);
+            params.set('sort_dir', 'asc');
+        }
+        params.delete('page');
+        window.location.search = params.toString();
+    };
+}
 })();

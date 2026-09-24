@@ -242,6 +242,21 @@ def test_validar_factura_vendedor_monto_multiplica(client):
     assert len(data["filas"][0]["monto"]) == 1
 
 
+def test_validar_factura_vendedor_monto_excede_valor_por_boleta(client):
+    resp = _validar(
+        client,
+        {
+            "tipo": "vendedor",
+            "vendedor_id": "LOCAL",
+            "fecha": "2026-07-30",
+            "filas": [{"boletas": "0010, 0011", "monto": "71000", "metodo": "efectivo"}],
+        },
+    )
+    data = resp.get_json()
+    assert data["can_submit"] is False
+    assert len(data["filas"][0]["monto"]) == 1
+
+
 def test_validar_factura_sin_filas(client):
     resp = _validar(client, {"tipo": "cliente", "nombre": "JUAN PEREZ", "fecha": "2026-07-30", "filas": []})
     data = resp.get_json()

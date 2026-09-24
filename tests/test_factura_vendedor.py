@@ -54,6 +54,24 @@ def test_factura_vendedor_abono_parcial(client):
     assert boletas.find_one({"_id": 1})["total_abonado"] == 30000
 
 
+def test_factura_vendedor_monto_excede_valor_rechazado(client):
+    _crear_vendedor_con_boletas(ids=(1,))
+    resp = _post_factura(client, "VEND01", ["0001"], ["75000"])
+    assert resp.status_code == 200
+    assert "supera el valor de la boleta" in resp.get_data(as_text=True)
+    assert facturas.count_documents({"tipo": "vendedor"}) == 0
+    assert boletas.find_one({"_id": 1})["total_abonado"] == 0
+
+
+def test_factura_vendedor_monto_por_boleta_excede_rechazado(client):
+    _crear_vendedor_con_boletas(ids=(1, 2))
+    resp = _post_factura(client, "VEND01", ["0001, 0002"], ["75000"])
+    assert resp.status_code == 200
+    assert "supera el valor de la boleta" in resp.get_data(as_text=True)
+    assert facturas.count_documents({"tipo": "vendedor"}) == 0
+    assert boletas.find_one({"_id": 1})["total_abonado"] == 0
+
+
 def test_factura_vendedor_boleta_ajena(client):
     _crear_vendedor_con_boletas(ids=(1,))
     resp = _post_factura(client, "VEND01", ["0001", "0005"], ["70000", "70000"])
@@ -93,7 +111,7 @@ def test_factura_vendedor_sin_vendedor(client):
     assert facturas.count_documents({}) == 0
 
 
-def test_factura_vendedor_sobrepasa_rollback(client):
+def test_factura_vendedor_acumulado_puede_exceder_valor(client):
     vendedores.insert_one({"_id": "VEND01", "nombre": "Ana", "telefono": "", "boletas_asignadas": [3]})
     boletas.update_one(
         {"_id": 3},
@@ -107,13 +125,34 @@ def test_factura_vendedor_sobrepasa_rollback(client):
         },
     )
     resp = _post_factura(client, "VEND01", ["0003"], ["50000"])
-    assert resp.status_code == 200
+    assert resp.status_code == 302
 
-    # No debe quedar ningún comprobante vacío con estado "error"
-    assert facturas.count_documents({"tipo": "vendedor"}) == 0
+    f = facturas.find_one({"tipo": "vendedor"})
+    assert f is not None
+    assert f["valor_total"] == 50000
     b = boletas.find_one({"_id": 3})
-    assert b["total_abonado"] == 60000
-    assert b["historial_movimientos"][0]["valor"] == 60000
+    assert b["total_abonado"] == 110000
+    assert b["estado"] == "pagada"
+
+
+def test_factura_vendedor_pago_individual_supera_valor_rechazado(client):
+    vendedores.insert_one({"_id": "VEND01", "nombre": "Ana", "telefono": "", "boletas_asignadas": [3]})
+    boletas.update_one(
+        {"_id": 3},
+        {
+            "$set": {
+                "vendedor_id": "VEND01",
+                "estado": "abonando",
+                "total_abonado": 10000,
+                "historial_movimientos": [{"fecha": "2026-07-01", "valor": 10000, "metodo": "efectivo"}],
+            }
+        },
+    )
+    resp = _post_factura(client, "VEND01", ["0003"], ["80000"])
+    assert resp.status_code == 200
+    assert "supera el valor de la boleta" in resp.get_data(as_text=True)
+    assert facturas.count_documents({"tipo": "vendedor"}) == 0
+    assert boletas.find_one({"_id": 3})["total_abonado"] == 10000
 
 
 def test_factura_vendedor_transferencia_ok(client):
@@ -131,3 +170,53 @@ def test_ver_factura_vendedor_renders(client):
     f = facturas.find_one({"tipo": "vendedor"})
     resp = client.get(f"/facturas/{f['_id']}")
     assert resp.status_code == 200
+
+
+def _marcar_pagada_vendedor(bid=3, total=70000):
+    vendedores.insert_one({"_id": "VEND01", "nombre": "Ana", "telefono": "", "boletas_asignadas": [bid]})
+    boletas.update_one(
+        {"_id": bid},
+        {
+            "$set": {
+                "vendedor_id": "VEND01",
+                "estado": "pagada",
+                "total_abonado": total,
+                "historial_movimientos": [{"fecha": "2026-07-01", "valor": total, "metodo": "efectivo"}],
+            }
+        },
+    )
+
+
+def test_factura_vendedor_pagada_sin_confirmar_pide_confirmacion(client):
+    _marcar_pagada_vendedor()
+    resp = _post_factura(client, "VEND01", ["0003"], ["20000"])
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True).lower()
+    assert "confirme" in html
+    assert "excedente" in html
+    assert facturas.count_documents({"tipo": "vendedor"}) == 0
+    assert boletas.find_one({"_id": 3})["total_abonado"] == 70000
+
+
+def test_factura_vendedor_pagada_confirmada_registra_excedente(client):
+    _marcar_pagada_vendedor()
+    resp = client.post(
+        "/facturas/nueva/vendedor",
+        data={
+            "vendedor_id": "VEND01",
+            "fecha": "2026-07-30",
+            "boleta[]": ["0003"],
+            "monto[]": ["20000"],
+            "metodo[]": ["efectivo"],
+            "referencia[]": [""],
+            "banco[]": [""],
+            "confirmar_pagadas": "1",
+        },
+    )
+    assert resp.status_code == 302
+    f = facturas.find_one({"tipo": "vendedor"})
+    assert f is not None
+    assert f["valor_total"] == 20000
+    b = boletas.find_one({"_id": 3})
+    assert b["total_abonado"] == 90000
+    assert b["estado"] == "pagada"

@@ -28,7 +28,10 @@ def parse_excel_boleta(value: Any) -> int | None:
     if text == "":
         return None
     try:
-        number = int(float(text))
+        number = float(text)
+        if number != int(number):
+            return None
+        number = int(number)
     except ValueError:
         digits = re.sub(r"\D", "", text)
         number = int(digits) if digits else None

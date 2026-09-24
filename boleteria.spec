@@ -1,70 +1,71 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""Spec de PyInstaller para generar los ejecutables de la PC servidor.
+import os
 
-Build:
-    python -m PyInstaller --noconfirm --clean boleteria.spec
+common_kwargs = dict(
+    pathex=[],
+    binaries=[],
+    datas=[
+        ('templates', 'templates'),
+        ('static', 'static'),
+    ],
+    hiddenimports=['pymongo', 'flask', 'jinja2', 'dotenv', 'datetime', 'logging', 'werkzeug', 'werkzeug.security'],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=['tkinter', 'unittest', 'numpy', 'matplotlib'],
+    noarchive=False,
+    optimize=0,
+)
 
-Genera en dist/:
-    BoleteriaServidor.exe   -> servidor waitress (run_server.py), embebe templates/ y static/
-    BoleteriaBackup.exe     -> scripts/backup.py
-    BoleteriaIntegridad.exe -> scripts/integridad.py
+a_servidor = Analysis(['run_server.py'], **common_kwargs)
+a_backup = Analysis(['scripts/backup.py'], **common_kwargs)
+a_integridad = Analysis(['scripts/integridad.py'], **common_kwargs)
 
-El archivo .env NO se empaqueta: se lee desde el directorio del .exe (ver
-app.py y database.py en modo frozen), por lo que las credenciales no viajan
-en el binario y se pueden actualizar sin recompilar.
-"""
+pyz_servidor = PYZ(a_servidor.pure)
+pyz_backup = PYZ(a_backup.pure)
+pyz_integridad = PYZ(a_integridad.pure)
 
-from PyInstaller.utils.hooks import collect_submodules
+common_exe = dict(
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
 
-_SITE_DATAS = [
-    ("templates", "templates"),
-    ("static", "static"),
-]
-_HIDDEN_IMPORTS = collect_submodules("motores")
+exe_servidor = EXE(
+    pyz_servidor,
+    a_servidor.scripts,
+    a_servidor.binaries,
+    a_servidor.datas,
+    [],
+    name='BoleteriaServidor',
+    **common_exe,
+)
 
+exe_backup = EXE(
+    pyz_backup,
+    a_backup.scripts,
+    a_backup.binaries,
+    a_backup.datas,
+    [],
+    name='BoleteriaBackup',
+    **common_exe,
+)
 
-def _analisis(script, datas):
-    return Analysis(
-        [script],
-        pathex=[],
-        binaries=[],
-        datas=datas,
-        hiddenimports=_HIDDEN_IMPORTS,
-        hookspath=[],
-        hooksconfig={},
-        runtime_hooks=[],
-        excludes=[],
-        noarchive=False,
-        optimize=0,
-    )
-
-
-def _exe(nombre, analisis):
-    pyz = PYZ(analisis.pure)
-    return EXE(
-        pyz,
-        analisis.scripts,
-        analisis.binaries,
-        analisis.datas,
-        [],
-        name=nombre,
-        debug=False,
-        bootloader_ignore_signals=False,
-        strip=False,
-        upx=False,
-        console=True,
-        disable_windowed_traceback=False,
-        argv_emulation=False,
-        target_arch=None,
-        codesign_identity=None,
-        entitlements_file=None,
-    )
-
-
-a_servidor = _analisis("run_server.py", _SITE_DATAS)
-a_backup = _analisis("scripts/backup.py", [])
-a_integridad = _analisis("scripts/integridad.py", [])
-
-exe_servidor = _exe("BoleteriaServidor", a_servidor)
-exe_backup = _exe("BoleteriaBackup", a_backup)
-exe_integridad = _exe("BoleteriaIntegridad", a_integridad)
+exe_integridad = EXE(
+    pyz_integridad,
+    a_integridad.scripts,
+    a_integridad.binaries,
+    a_integridad.datas,
+    [],
+    name='BoleteriaIntegridad',
+    **common_exe,
+)

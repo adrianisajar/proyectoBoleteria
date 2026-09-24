@@ -1,9 +1,10 @@
-from database import boletas, configuracion, facturas, rifas, traslados, vendedores
+from database import boletas, configuracion, facturas, reservas, rifas, traslados, vendedores
 from motores.cache import invalidate_config_cache, invalidate_dashboard_cache
 from motores.config_service import require_collections
-from motores.constants import BOLETA_MAX, BOLETA_MIN, COMISION_DEFAULT_TIERS, CONFIG_ID
+from motores.constants import BOLETA_MAX, BOLETA_MIN, COMISION_DEFAULT_TIERS, CONFIG_ID, VENDEDOR_LOCAL
 from motores.fechas import now_local
 from motores.modelos import crear_boleta_base
+from motores.ticket_service import estado_pipeline_expr
 
 
 def crear_indices_boletas() -> None:
@@ -21,7 +22,7 @@ def crear_indices_boletas() -> None:
     vendedores.create_index("telefono")
     facturas.create_index([("fecha", -1)])
     facturas.create_index("tipo")
-    rifas.create_index("estado")
+    rifas.create_index("estado", unique=True, sparse=True)
     traslados.create_index([("fecha", -1)])
     traslados.create_index("boleta_origen")
     traslados.create_index("boleta_destino")
@@ -34,8 +35,14 @@ def crear_nueva_rifa(
     cantidad_boletas: int = 10000,
     premio_mayor: str = "",
     estado: str = "activa",
-) -> None:
-    """Reset all collections for a new rifa (optionally keeping vendor profiles)."""
+    conservar_reservas: bool = True,
+) -> dict:
+    """Reset all collections for a new rifa (optionally keeping vendor profiles).
+
+    Fixed reservations survive the rollover: they are re-applied as separadas
+    with their buyer data (reserva wins over vendor assignments).
+    Returns {"reservas_aplicadas": int, "reservas_omitidas": list}.
+    """
     require_collections()
     asignaciones = []
     if conservar_vendedores:
@@ -66,9 +73,45 @@ def crear_nueva_rifa(
         for vendedor in asignaciones:
             ids = [number for number in vendedor.get("boletas_asignadas", []) if isinstance(number, int) and BOLETA_MIN <= number <= BOLETA_MAX]
             if ids:
-                boletas.update_many({"_id": {"$in": ids}}, {"$set": {"vendedor_id": vendedor["_id"], "estado": "asignada"}})
+                boletas.update_many(
+                    {"_id": {"$in": ids}},
+                    [
+                        {"$set": {"vendedor_id": vendedor["_id"]}},
+                        {"$set": {"estado": estado_pipeline_expr(valor_boleta)}},
+                    ],
+                )
     else:
         vendedores.delete_many({})
+
+    resumen_reservas = {"reservas_aplicadas": 0, "reservas_omitidas": []}
+    aplicadas_ids: list[int] = []
+    if conservar_reservas and reservas is not None:
+        for reserva in reservas.find({}).sort("_id", 1):
+            bid = reserva.get("_id")
+            cliente = reserva.get("cliente") or {}
+            if not isinstance(bid, int) or not (BOLETA_MIN <= bid <= BOLETA_MAX) or bid >= cantidad_boletas or not str(cliente.get("nombre", "")).strip():
+                resumen_reservas["reservas_omitidas"].append(bid)
+                continue
+            boletas.update_one(
+                {"_id": bid},
+                [
+                    {
+                        "$set": {
+                            "cliente": {
+                                "nombre": str(cliente.get("nombre", "")),
+                                "telefono": str(cliente.get("telefono", "")),
+                                "direccion": str(cliente.get("direccion", "")),
+                            },
+                            "vendedor_id": VENDEDOR_LOCAL,
+                        }
+                    },
+                    {"$set": {"estado": estado_pipeline_expr(valor_boleta)}},
+                ],
+            )
+            aplicadas_ids.append(bid)
+            resumen_reservas["reservas_aplicadas"] += 1
+        if aplicadas_ids:
+            vendedores.update_many({}, {"$pull": {"boletas_asignadas": {"$in": aplicadas_ids}}})
 
     crear_indices_boletas()
 
@@ -83,3 +126,4 @@ def crear_nueva_rifa(
     configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
     invalidate_config_cache()
     invalidate_dashboard_cache()
+    return resumen_reservas

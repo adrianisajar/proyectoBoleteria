@@ -82,9 +82,17 @@ def test_parse_int_filter():
 def test_estado_para_total():
     assert estado_para_total(70000, 70000) == "pagada"
     assert estado_para_total(30000, 70000) == "abonando"
-    assert estado_para_total(0, 70000, vendedor_id="LOCAL") == "separada"
-    assert estado_para_total(0, 70000, vendedor_id="V1") == "asignada"
+    # Sin cliente y sin vendedor real = disponible
+    assert estado_para_total(0, 70000, vendedor_id="LOCAL") == "disponible"
     assert estado_para_total(0, 70000) == "disponible"
+    # Con vendedor real sin cliente = asignada
+    assert estado_para_total(0, 70000, vendedor_id="V1") == "asignada"
+    # Con cliente y sin pagos:
+    #   vendedor real → asignada (comprador tiene vendedor asignado)
+    assert estado_para_total(0, 70000, vendedor_id="V1", cliente_nombre="Juan") == "asignada"
+    #   vendedor LOCAL o vacío → separada (reserva local)
+    assert estado_para_total(0, 70000, cliente_nombre="Juan") == "separada"
+    assert estado_para_total(0, 70000, vendedor_id="LOCAL", cliente_nombre="Juan") == "separada"
 
 
 def test_calc_comision_por_boleta():

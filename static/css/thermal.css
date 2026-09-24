@@ -1,0 +1,65 @@
+/* ── Thermal printer 80mm shared styles ── */
+/* Include via: <link rel="stylesheet" href="{{ url_for('static', filename='css/thermal.css') }}"> */
+
+/* ── Screen preview (narrow container) ── */
+.recibo {
+  max-width: 340px; margin: 0 auto;
+  padding: 1rem 1rem;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  background: #fff;
+  color: #111;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.recibo .no-print .btn-outline-danger { --bs-btn-color: #b02a37; --bs-btn-border-color: #dc3545; --bs-btn-hover-color: #fff; --bs-btn-hover-bg: #dc3545; --bs-btn-hover-border-color: #dc3545; }
+.recibo .alert-danger { --bs-alert-bg: #f8d7da; --bs-alert-color: #842029; --bs-alert-border-color: #f5c2c7; }
+.recibo .alert-warning { --bs-alert-bg: #fff3cd; --bs-alert-color: #664d03; --bs-alert-border-color: #ffecb5; }
+.recibo-header { text-align: center; margin-bottom: 0.8rem; }
+.recibo-empresa { font-size: 1.1rem; font-weight: 800; letter-spacing: 0.05em; }
+.recibo-titulo { font-size: 0.9rem; font-weight: 700; margin-top: 0.25rem; }
+.recibo-dir { font-size: 0.7rem; color: #555; }
+.recibo-linea { border: 0; border-top: 1px dashed #999; margin: 0.6rem 0; }
+.recibo-linea-doble { border: 0; border-top: 3px double #000; margin: 0.6rem 0; }
+.recibo-campo { display: flex; justify-content: space-between; word-wrap: break-word; overflow-wrap: break-word; }
+.recibo-label { color: #555; }
+.recibo-boleta { margin: 0.5rem 0; padding: 0.3rem 0; border-bottom: 1px dotted #ccc; }
+.recibo-boleta-num { font-size: 0.95rem; font-weight: 700; }
+.recibo-mov { margin: 0.25rem 0 0.25rem 0.4rem; }
+.recibo-mov-line { display: flex; justify-content: space-between; word-wrap: break-word; overflow-wrap: break-word; }
+.recibo-total { border-top: 2px solid #000; margin-top: 0.5rem; padding-top: 0.4rem; font-weight: 700; font-size: 0.85rem; }
+.recibo-footer { text-align: center; margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px dashed #999; font-size: 0.7rem; color: #555; }
+.recibo-historial { margin-top: 0.6rem; }
+.recibo-historial table { width: 100%; font-size: 0.7rem; }
+.recibo-historial th { border-bottom: 1px dotted #ccc; text-align: left; }
+.recibo-estado { font-size: 0.7rem; }
+.recibo-firma { margin-top: 1.6rem; display: flex; flex-direction: column; align-items: center; }
+.recibo-firma-linea { width: 8rem; border-top: 1px solid #000; padding-top: 0.3rem; text-align: center; font-size: 0.7rem; font-weight: 600; }
+.recibo-firma-nombre { text-align: center; font-size: 0.78rem; font-weight: 700; margin-bottom: 0.35rem; }
+.grupo { margin: 0.5rem 0; padding: 0.35rem 0; border-bottom: 1px dotted #ccc; }
+.grupo-valor { font-weight: 700; font-size: 0.85rem; }
+.grupo-sub { text-align: right; font-weight: 600; margin-top: 0.2rem; font-size: 0.7rem; }
+.resumen { border-top: 3px double #000; margin-top: 0.6rem; padding-top: 0.4rem; }
+.resumen-row { display: flex; justify-content: space-between; padding: 0.15rem 0; }
+.total-row { font-size: 0.9rem; font-weight: 800; border-top: 2px solid #000; padding-top: 0.35rem; margin-top: 0.2rem; }
+.comision { margin-top: 0.5rem; padding: 0.3rem; background: #f5f5f5; font-size: 0.7rem; }
+.obs { margin-top: 0.6rem; padding-top: 0.4rem; border-top: 1px dashed #999; font-size: 0.8rem; color: #333; }
+.firmas { margin-top: 1.8rem; display: flex; justify-content: center; text-align: center; font-size: 0.7rem; }
+.firma-linea { width: 8rem; border-top: 1px solid #000; padding-top: 0.25rem; margin-top: 0.3rem; }
+.egreso-item { margin: 0.4rem 0; padding: 0.3rem 0; border-bottom: 1px dotted #ccc; }
+.egreso-valor { font-weight: 700; }
+.movimiento { margin: 0.6rem 0; padding: 0.4rem; border: 1px dashed #999; }
+.mov-valor { font-weight: 800; font-size: 0.9rem; }
+.boletas-grid {
+  display: flex; flex-wrap: wrap; gap: 0.1rem 0.8rem;
+  margin: 0.35rem 0;
+}
+.boletas-grid span { white-space: nowrap; font-size: 0.85rem; }
+
+/* ── Sortable tables ── */
+th.sortable { user-select: none; cursor: pointer; }
+th.sortable:hover { background: #e9ecef; }
+[data-bs-theme="dark"] th.sortable:hover { background: var(--bs-secondary-bg-subtle); }
+th.sortable .sort-icon { opacity: 0.7; }
+[data-bs-theme="dark"] th.sortable .sort-icon { opacity: 0.5; }

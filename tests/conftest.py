@@ -16,7 +16,7 @@ from werkzeug.security import generate_password_hash
 
 import database
 from app import app as flask_app
-from database import boletas, configuracion, facturas, rifas, traslados, usuarios, vendedores
+from database import boletas, configuracion, facturas, login_intentos, reservas, rifas, traslados, usuarios, vendedores
 from motores.cache import invalidate_config_cache, invalidate_dashboard_cache
 from motores.fechas import now_local
 from optimizar_db import REQUIRED_INDEXES
@@ -107,9 +107,11 @@ def _crear_indices():
     for nombre_col, collection in collections.items():
         if collection is None:
             continue
-        for key_spec, name in REQUIRED_INDEXES.get(nombre_col, []):
+        for entry in REQUIRED_INDEXES.get(nombre_col, []):
+            key_spec, name = entry[0], entry[1]
+            options = entry[2] if len(entry) > 2 else {}
             spec = {key_spec: 1} if isinstance(key_spec, str) else key_spec
-            collection.create_index(spec, name=name)
+            collection.create_index(spec, name=name, **options)
 
 
 def _seed_once():
@@ -119,6 +121,8 @@ def _seed_once():
     rifas.drop()
     configuracion.drop()
     traslados.drop()
+    reservas.drop()
+    login_intentos.drop()
     _seed_usuarios()
 
     rifa_id = rifas.insert_one(
@@ -159,6 +163,8 @@ def _reset():
     facturas.delete_many({})
     vendedores.delete_many({})
     traslados.delete_many({})
+    reservas.delete_many({})
+    login_intentos.delete_many({})
     boletas.update_many(
         {},
         {

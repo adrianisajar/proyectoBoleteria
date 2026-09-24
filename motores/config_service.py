@@ -6,8 +6,10 @@ from database import boletas, configuracion, facturas, rifas, vendedores
 from motores.cache import (
     CONFIG_CACHE,
     CONFIG_CACHE_SECONDS,
+    CONFIG_LOCK,
     RIFA_CACHE,
     RIFA_CACHE_SECONDS,
+    RIFA_LOCK,
 )
 from motores.constants import COMISION_DEFAULT_TIERS, CONFIG_ID, DEFAULT_CONFIG, DEFAULT_RIFA
 from motores.fechas import now_local
@@ -15,8 +17,10 @@ from motores.fechas import now_local
 
 def get_rifa_activa(force: bool = False) -> dict:
     """Return active rifa document with 30s cache."""
-    if not force and RIFA_CACHE["data"] and time.monotonic() - RIFA_CACHE["loaded_at"] < RIFA_CACHE_SECONDS:
-        return RIFA_CACHE["data"].copy()
+    if not force:
+        with RIFA_LOCK:
+            if RIFA_CACHE["data"] and time.monotonic() - RIFA_CACHE["loaded_at"] < RIFA_CACHE_SECONDS:
+                return copy.deepcopy(RIFA_CACHE["data"])
 
     if rifas is None:
         return DEFAULT_RIFA.copy()
@@ -31,14 +35,14 @@ def get_rifa_activa(force: bool = False) -> dict:
                 rifa = DEFAULT_RIFA.copy()
                 rifa["creada_en"] = now_local()
                 rifa["_id"] = rifas.insert_one(rifa).inserted_id
-        else:
-            RIFA_CACHE["data"] = rifa.copy()
-        RIFA_CACHE["loaded_at"] = time.monotonic()
+        with RIFA_LOCK:
+            RIFA_CACHE["data"] = copy.deepcopy(rifa)
+            RIFA_CACHE["loaded_at"] = time.monotonic()
         migrar_boletas_existentes(rifa["_id"])
-        return rifa.copy()
+        return copy.deepcopy(rifa)
     except Exception as exc:
         logging.getLogger(__name__).error("get_rifa_activa: %s: %s", type(exc).__name__, exc)
-        return DEFAULT_RIFA.copy()
+        return copy.deepcopy(DEFAULT_RIFA)
 
 
 def migrar_config_a_rifa(config_doc: dict) -> dict | None:
@@ -56,9 +60,10 @@ def migrar_config_a_rifa(config_doc: dict) -> dict | None:
     result = rifas.update_one({"estado": "activa"}, {"$setOnInsert": rifa}, upsert=True)
     if result.upserted_id:
         rifa["_id"] = result.upserted_id
-    else:
-        rifa = rifas.find_one({"estado": "activa"})
-    return rifa
+        return rifa
+    # Rifa already existed (concurrent creation or prior run).
+    existing = rifas.find_one({"estado": "activa"})
+    return existing if existing else rifa
 
 
 def migrar_boletas_existentes(rifa_id: str) -> None:
@@ -79,16 +84,18 @@ def require_collections() -> None:
 
 def get_config(force: bool = False) -> dict:
     """Return merged config (rifa + stored overrides) with 30s cache."""
-    if not force and CONFIG_CACHE["data"] and time.monotonic() - CONFIG_CACHE["loaded_at"] < CONFIG_CACHE_SECONDS:
-        return copy.deepcopy(CONFIG_CACHE["data"])
+    if not force:
+        with CONFIG_LOCK:
+            if CONFIG_CACHE["data"] and time.monotonic() - CONFIG_CACHE["loaded_at"] < CONFIG_CACHE_SECONDS:
+                return copy.deepcopy(CONFIG_CACHE["data"])
 
     rifa = get_rifa_activa(force)
     config = copy.deepcopy(DEFAULT_CONFIG)
     config.update(
         {
             "nombre_rifa": rifa.get("nombre", DEFAULT_CONFIG["nombre_rifa"]),
-            "valor_boleta": int(rifa.get("valor_boleta", DEFAULT_CONFIG["valor_boleta"])),
-            "cantidad_boletas": int(rifa.get("cantidad_boletas", 10000)),
+            "valor_boleta": int(rifa.get("valor_boleta") or DEFAULT_CONFIG["valor_boleta"]),
+            "cantidad_boletas": int(rifa.get("cantidad_boletas") or DEFAULT_CONFIG["cantidad_boletas"]),
             "premio_mayor": rifa.get("premio_mayor", ""),
             "estado": rifa.get("estado", "activa"),
             "comisiones_tiers": rifa.get("comisiones_tiers", COMISION_DEFAULT_TIERS),
@@ -101,19 +108,20 @@ def get_config(force: bool = False) -> dict:
         if stored.get("nombre_rifa"):
             config["nombre_rifa"] = stored["nombre_rifa"]
         if stored.get("valor_boleta") is not None:
-            config["valor_boleta"] = int(stored["valor_boleta"])
+            config["valor_boleta"] = int(stored["valor_boleta"] or DEFAULT_CONFIG["valor_boleta"])
         if stored.get("cantidad_boletas") is not None:
-            config["cantidad_boletas"] = int(stored["cantidad_boletas"])
+            config["cantidad_boletas"] = int(stored["cantidad_boletas"] or DEFAULT_CONFIG["cantidad_boletas"])
         if stored.get("premio_mayor"):
             config["premio_mayor"] = stored["premio_mayor"]
         if stored.get("estado"):
             config["estado"] = stored["estado"]
         if stored.get("comisiones_tiers") is not None:
             config["comisiones_tiers"] = stored["comisiones_tiers"]
-        for k in ("nombre_empresa", "direccion", "telefono", "ciudad", "footer_texto", "observaciones_recaudo"):
+        for k in ("nombre_empresa", "direccion", "telefono", "ciudad"):
             if stored.get(k):
                 config[k] = stored[k]
 
-    CONFIG_CACHE["data"] = copy.deepcopy(config)
-    CONFIG_CACHE["loaded_at"] = time.monotonic()
+    with CONFIG_LOCK:
+        CONFIG_CACHE["data"] = copy.deepcopy(config)
+        CONFIG_CACHE["loaded_at"] = time.monotonic()
     return config

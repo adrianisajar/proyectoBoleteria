@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Egreso general &mdash; {{ super() }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4">
+  <div>
+    <p class="text-uppercase text-secondary fw-bold mb-1 small">Comprobantes internos</p>
+    <h1 class="h3 mb-0">Egreso general</h1>
+    <p class="text-secondary small mb-0">Gasto directo al total recaudado, sin boletas. Disponible actual: <strong class="text-success">${{ "{:,}".format(disponible) }}</strong></p>
+  </div>
+  <div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('egresos_list') }}"><i class="bi bi-arrow-left me-1"></i>Volver</a>
+  </div>
+</div>
+
+<div class="office-card bg-body p-3 p-md-4 mb-3">
+  <form method="post" class="row g-3" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="col-md-8">
+      <label for="descripcion" class="form-label fw-semibold">Descripción</label>
+      <input type="text" class="form-control" id="descripcion" name="descripcion" value="{{ descripcion }}" placeholder="Ej: Arriendo del local" required maxlength="200">
+    </div>
+    <div class="col-md-2">
+      <label for="fecha" class="form-label fw-semibold">Fecha</label>
+      <input type="date" class="form-control" id="fecha" name="fecha" value="{{ fecha }}" max="{{ fecha }}" required>
+    </div>
+    <div class="col-md-2">
+      <label for="monto" class="form-label fw-semibold">Monto a egresar</label>
+      <input type="text" class="form-control" id="monto" name="monto" placeholder="Valor" inputmode="numeric" required data-money-input>
+    </div>
+    <div class="col-12">
+      <button type="submit" class="btn btn-danger btn-lg"><i class="bi bi-box-arrow-down me-1"></i>Generar egreso</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

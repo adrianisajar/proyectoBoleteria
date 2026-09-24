@@ -158,6 +158,7 @@
         vendedorSearch.value = {{ form.vendedor_nombre | tojson }};
         {% endif %}
 
+        const esc = (s) => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
         const mostrarSugerencias = (filtro) => {
             const q = filtro.toLowerCase();
             const opts = vendedores.filter(function(v) {
@@ -166,7 +167,7 @@
             if (!q || !opts.length) { sugerencias.style.display = "none"; return; }
             sugerencias.innerHTML = opts.map(function(v) {
                 var active = selectedVendedor && selectedVendedor.id === v.id ? " active" : "";
-                return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + v.id + '" data-nombre="' + v.nombre + '">' + v.nombre + ' <small class="text-secondary">(' + v.id + ')</small></button>';
+                return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + esc(v.id) + '" data-nombre="' + esc(v.nombre) + '">' + esc(v.nombre) + ' <small class="text-secondary">(' + esc(v.id) + ')</small></button>';
             }).join("");
             sugerencias.style.display = "";
         };
@@ -200,6 +201,8 @@
             if (this.value) mostrarSugerencias(this.value);
         });
 
+        function escHtml(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+        function escAttr(s) { return String(s).replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
         const badgeClass = (estado) => {
             if (estado === "pagada") return "text-bg-success";
             if (estado === "abonando") return "text-bg-warning";
@@ -238,25 +241,29 @@
             const restante = b.total_ingresado - b.total_egresado;
             tr.dataset.numero = b.numero;
             tr.dataset.previo = b.tiene_egresos_previos ? "1" : "0";
+            tr.dataset.ingresado = b.total_ingresado;
+            tr.dataset.egresado = b.total_egresado;
+            tr.dataset.restante = restante;
             tr.innerHTML = `
                 <td><input type="checkbox" class="form-check-input m-0 sel-boleta"></td>
                 <td class="fw-bold">
-                    ${("0000" + b.numero).slice(-4)}
-                    <input type="hidden" name="boleta[]" value="${("0000" + b.numero).slice(-4)}" class="boleta-id">
+                    ${escHtml(("0000" + b.numero).slice(-4))}
+                    <input type="hidden" name="boleta[]" value="${escAttr(("0000" + b.numero).slice(-4))}" class="boleta-id">
                 </td>
                 <td class="text-end">${money.format(b.total_ingresado)}</td>
                 <td class="text-end">
                     ${money.format(b.total_egresado)}
                     ${b.tiene_egresos_previos ? '<div class="text-danger small fw-normal">Ya registra egresos</div>' : ""}
                 </td>
-                <td><span class="badge rounded-pill ${badgeClass(b.estado)} text-uppercase">${b.estado}</span></td>
+                <td><span class="badge rounded-pill ${badgeClass(b.estado)} text-uppercase">${escHtml(b.estado)}</span></td>
                 <td>
                     <div class="input-group input-group-sm">
                         <span class="input-group-text">$</span>
                         <input type="text" class="form-control valor-egreso" name="valor[]" inputmode="numeric"
-                               value="${restante > 0 ? restante.toLocaleString("es-CO") : ""}" placeholder="0"
+                               value="${restante > 0 ? restante.toLocaleString("es-CO") : ""}" placeholder="Valor"
                                data-money-input autocomplete="off">
                     </div>
+                    <div class="egreso-warnings text-danger small mt-1 d-none"></div>
                 </td>
                 <td>
                     <select class="form-select form-select-sm" name="metodo[]">
@@ -265,7 +272,7 @@
                     </select>
                 </td>
                 <td class="ref-cell" style="display:none;">
-                    <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="TX-000"
+                    <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="Referencia"
                            data-validation="referencia" autocomplete="off">
                 </td>
                 <td class="banco-cell" style="display:none;">
@@ -281,6 +288,21 @@
             const n = cbs.filter(function(c) { return c.checked; }).length;
             seleccionarTodo.checked = n === cbs.length;
             seleccionarTodo.indeterminate = n > 0 && n < cbs.length;
+        };
+
+        const validarFilaEgreso = (tr) => {
+            const warn = tr.querySelector(".egreso-warnings");
+            if (!warn) return;
+            const cb = tr.querySelector(".sel-boleta");
+            const restante = parseInt(tr.dataset.restante || "0");
+            const val = parseInt((tr.querySelector(".valor-egreso").value || "").replace(/[^0-9]/g, "")) || 0;
+            if (cb && cb.checked && val > restante) {
+                warn.innerHTML = '<i class="bi bi-x-circle me-1"></i>Supera lo abonado (disponible $' + restante.toLocaleString("es-CO") + ')';
+                warn.classList.remove("d-none");
+            } else {
+                warn.innerHTML = "";
+                warn.classList.add("d-none");
+            }
         };
 
         const actualizarResumen = () => {
@@ -328,6 +350,7 @@
                 const banco = tr.querySelector("input[name='banco[]']");
                 if (r.banco) banco.value = r.banco;
                 alternarReferencia(tr);
+                validarFilaEgreso(tr);
             });
             actualizarResumen();
         };
@@ -378,6 +401,7 @@
             if (e.target.classList.contains("sel-boleta")) {
                 const tr = e.target.closest("tr");
                 setFilaDisabled(tr, !e.target.checked);
+                validarFilaEgreso(tr);
                 actualizarResumen();
             } else if (e.target.matches("select[name='metodo[]']")) {
                 alternarReferencia(e.target.closest("tr"));
@@ -387,6 +411,7 @@
 
         tbody.addEventListener("input", function(e) {
             if (e.target.classList.contains("valor-egreso")) {
+                validarFilaEgreso(e.target.closest("tr"));
                 actualizarResumen();
             }
         });
@@ -395,6 +420,7 @@
             tbody.querySelectorAll(".sel-boleta").forEach(function(cb) {
                 cb.checked = seleccionarTodo.checked;
                 setFilaDisabled(cb.closest("tr"), !cb.checked);
+                validarFilaEgreso(cb.closest("tr"));
             });
             actualizarResumen();
         });
@@ -419,6 +445,13 @@
                 if (val <= 0) {
                     e.preventDefault();
                     alert("El valor del egreso debe ser mayor que cero en la boleta " + tr.dataset.numero + ".");
+                    return;
+                }
+                const restante = parseInt(tr.dataset.restante || "0");
+                if (val > restante) {
+                    e.preventDefault();
+                    alert("El egreso supera lo abonado a la boleta " + tr.dataset.numero +
+                        " (disponible $" + restante.toLocaleString("es-CO") + ").");
                     return;
                 }
                 if (esTransferencia(tr)) {

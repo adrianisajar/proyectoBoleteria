@@ -13,6 +13,7 @@
 
 <form id="formFacturaVendedor" method="post" class="row g-3" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="confirmar_pagadas" id="confirmarPagadas" value="">
     <div class="col-lg-4">
         <div class="office-card bg-body p-3 p-md-4">
             <h2 class="section-title mb-3">Datos del vendedor</h2>
@@ -35,7 +36,8 @@
                 </div>
                 <div class="col-12">
                     <label for="fecha" class="form-label fw-semibold">Fecha del abono</label>
-                    <input type="date" class="form-control" id="fecha" name="fecha" value="{{ form_data.fecha or today }}" max="{{ today }}">
+                    <input type="date" class="form-control" id="fecha" name="fecha" value="{{ form_data.fecha or '' }}" max="{{ today }}">
+                    <div class="invalid-feedback">Seleccione una fecha para el abono.</div>
                 </div>
                 <div class="col-12">
                     <div class="panel-muted rounded p-3">
@@ -78,7 +80,7 @@
                     <tbody id="abonosBody">
                         <tr class="fila-abono">
                             <td>
-                                <input type="text" class="form-control form-control-sm ticket-number boleta-input" name="boleta[]" placeholder="0001, 0002, 0003" inputmode="numeric" required disabled autocomplete="off" data-validation="tickets">
+                                <input type="text" class="form-control form-control-sm ticket-number boleta-input" name="boleta[]" placeholder="Boletas" inputmode="numeric" required autocomplete="off" data-validation="tickets">
                                 <div class="boleta-warnings text-danger small mt-1"></div>
                                 <div class="boleta-info text-secondary small mt-1" style="font-size:.65rem;"></div>
                             </td>
@@ -88,7 +90,7 @@
                             <td>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text">$</span>
-                                    <input type="text" class="form-control monto-input" name="monto[]" placeholder="0" inputmode="numeric" required autocomplete="off">
+                                    <input type="text" class="form-control monto-input" name="monto[]" placeholder="Valor" inputmode="numeric" required autocomplete="off">
                                 </div>
                             </td>
                             <td>
@@ -98,7 +100,7 @@
                                 </select>
                             </td>
                             <td class="ref-cell">
-                                <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="TX-000" autocomplete="off" data-validation="referencia">
+                                <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="Referencia" autocomplete="off" data-validation="referencia">
                                 <div class="ref-errors text-danger small mt-1"></div>
                             </td>
                             <td class="banco-cell">
@@ -184,6 +186,7 @@
 
         const plantilla = abonosBody.querySelector(".fila-abono").cloneNode(true);
         const previewBtn = document.getElementById("btnPreview");
+        let previewTienePagadas = false;
         const vendedorSearch = document.getElementById("vendedorSearch");
         const vendedorSelect = document.getElementById("vendedor_id");
         const sugerencias = document.getElementById("vendedorSugerencias");
@@ -199,6 +202,7 @@
         vendedorSelect.value = {{ form_data.vendedor_id | tojson }};
         {% endif %}
 
+        const esc = (s) => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
         const mostrarSugerencias = (filtro) => {
             const q = filtro.toLowerCase();
             const opts = vendedores.filter(function(v) {
@@ -207,7 +211,7 @@
             if (!q || !opts.length) { sugerencias.style.display = "none"; return; }
             sugerencias.innerHTML = opts.map(function(v) {
                 var active = selectedVendedor && selectedVendedor.id === v.id ? " active" : "";
-                return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + v.id + '" data-nombre="' + v.nombre + '">' + v.nombre + ' <small class="text-secondary">(' + v.id + ')</small></button>';
+                return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + esc(v.id) + '" data-nombre="' + esc(v.nombre) + '">' + esc(v.nombre) + ' <small class="text-secondary">(' + esc(v.id) + ')</small></button>';
             }).join("");
             sugerencias.style.display = "";
         };
@@ -245,6 +249,7 @@
 
         const getVendedorId = () => vendedorSelect.value;
         const getVendedorNombre = () => selectedVendedor ? selectedVendedor.nombre : "";
+        function escHtml(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 
         const verificarBoleta = async (numero) => {
             if (boletaCache[numero] !== undefined) return boletaCache[numero];
@@ -261,12 +266,42 @@
                     boletaCache[numero] = { ok: false };
                 }
             } catch (_e) {
-                boletaCache[numero] = { ok: false };
+                /* Network error: do NOT cache — let next validation retry */
             }
-            return boletaCache[numero];
+            return boletaCache[numero] || { ok: false };
+        };
+
+        const verificarBoletasBatch = async (numeros) => {
+            const uncached = numeros.filter(n => boletaCache[n] === undefined);
+            if (uncached.length) {
+                try {
+                    const res = await fetch("/api/boletas/validar", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({ boletas: uncached }),
+                    });
+                    const data = await res.json();
+                    if (data.ok && data.resultados) {
+                        Object.entries(data.resultados).forEach(([key, val]) => {
+                            const num = parseInt(key);
+                            if (val.ok) {
+                                boletaCache[num] = { ok: true, estado: val.estado || "", vendedor_id: val.vendedor_id || "", vendedor_nombre: val.vendedor_nombre || "", total_abonado: val.total_abonado || 0 };
+                            } else {
+                                boletaCache[num] = { ok: false };
+                            }
+                        });
+                    }
+                } catch (_e) {
+                    /* Network error: do NOT poison cache — leave uncached entries undefined for retry */
+                }
+            }
+            const result = {};
+            numeros.forEach(n => { result[n] = boletaCache[n] || { ok: false }; });
+            return result;
         };
 
         const validarFilas = async () => {
+            const myGen = ++validarGeneration;
             const vId = getVendedorId();
             if (!vId) {
                 previewBtn.disabled = true;
@@ -275,31 +310,57 @@
 
             const filas = abonosBody.querySelectorAll(".fila-abono");
             let hasErrors = false;
+            let hasValidRow = false;
 
             const conteoBoletas = {};
-            const colectarDuplicados = function(num) {
-                conteoBoletas[num] = (conteoBoletas[num] || 0) + 1;
-            };
             filas.forEach(function(f) {
                 const raw = f.querySelector(".boleta-input").value;
+                const metodo = f.querySelector("select[name='metodo[]']").value;
                 const parts = raw.split(/[\s,;]+/).filter(function(p) { return /^\d{4}$/.test(p.trim()); });
-                parts.forEach(function(p) { colectarDuplicados(parseInt(p)); });
+                parts.forEach(function(p) {
+                    const key = parseInt(p) + "|" + metodo;
+                    conteoBoletas[key] = (conteoBoletas[key] || 0) + 1;
+                });
             });
-            const numerosDuplicados = Object.keys(conteoBoletas).filter(function(k) { return conteoBoletas[k] > 1; });
+            const numerosDuplicados = Object.keys(conteoBoletas)
+                .filter(function(k) { return conteoBoletas[k] > 1; })
+                .map(function(k) { return k.split("|")[0]; });
+
+            const allNums = [];
+            filas.forEach(function(f) {
+                const raw = f.querySelector(".boleta-input").value;
+                const tokens = raw.split(/[\s,;]+/).filter(function(p) { return p.trim() !== ""; });
+                tokens.filter(function(p) { return /^\d{4}$/.test(p.trim()); }).forEach(function(p) { allNums.push(parseInt(p)); });
+            });
+            const uniqueNums = [...new Set(allNums)];
+            if (uniqueNums.length) await verificarBoletasBatch(uniqueNums);
 
             for (const f of filas) {
                 const raw = f.querySelector(".boleta-input").value;
-                const parts = raw.split(/[\s,;]+/).filter(function(p) { return /^\d{4}$/.test(p.trim()); });
+                const tokens = raw.split(/[\s,;]+/).filter(function(p) { return p.trim() !== ""; });
+                const parts = tokens.filter(function(p) { return /^\d{4}$/.test(p.trim()); });
+                const invalidos = tokens.filter(function(p) { return !/^\d{4}$/.test(p.trim()); });
                 const warningsEl = f.querySelector(".boleta-warnings");
                 const infoEl = f.querySelector(".boleta-info");
                 warningsEl.innerHTML = "";
                 infoEl.textContent = "";
 
-                if (!parts.length) continue;
+                if (!tokens.length) {
+                    warningsEl.innerHTML = '<i class="bi bi-x-circle me-1"></i>Ingrese la(s) boleta(s) o elimine la fila.';
+                    hasErrors = true;
+                    continue;
+                }
 
                 var errors = [];
                 var warnings = [];
                 var validCount = 0;
+
+                var montoInput = f.querySelector(".monto-input");
+                var montoVal = montoInput ? (parseInt(montoInput.value.replace(/[^0-9]/g, "")) || 0) : 0;
+
+                if (invalidos.length) {
+                    errors.push('Formato inválido: ' + escHtml(invalidos.join(", ")));
+                }
 
                 for (const p of parts) {
                     const num = parseInt(p);
@@ -311,23 +372,24 @@
                     if (!result.ok) {
                         errors.push('#' + ("0000" + num).slice(-4) + ' <span class="text-danger">No existe</span>');
                     } else if (result.estado === "pagada") {
-                        errors.push('#' + ("0000" + num).slice(-4) + ' <span class="text-danger">Pagada</span>');
+                        warnings.push('#' + ("0000" + num).slice(-4) + ' <span class="text-warning">Pagada ($' + result.total_abonado.toLocaleString("es-CO") + ' — se pedirá confirmación)</span>');
+                        validCount++;
                     } else if (result.vendedor_id !== vId) {
                         var who = result.vendedor_nombre || result.vendedor_id || "sin asignar";
-                        warnings.push('#' + ("0000" + num).slice(-4) + ' → ' + who);
+                        errors.push('#' + ("0000" + num).slice(-4) + ' pertenece a ' + escHtml(who) + ' <span class="text-danger">— no es de este vendedor</span>');
                     } else {
                         validCount++;
+                        if (montoVal > 0 && result.total_abonado + montoVal > VALOR_BOLETA) {
+                            warnings.push('#' + ("0000" + num).slice(-4) + ' <span class="text-warning">Acumulado ($' + (result.total_abonado + montoVal).toLocaleString("es-CO") + ') excedería el valor de la boleta ($' + VALOR_BOLETA.toLocaleString("es-CO") + ')</span>');
+                        }
                     }
                 }
 
-                var montoInput = f.querySelector(".monto-input");
-                if (montoInput) {
-                    var montoVal = parseInt(montoInput.value.replace(/[^0-9]/g, "")) || 0;
-                    if (montoVal > 0 && parts.length > 0) {
-                        var perTicket = montoVal / parts.length;
-                        if (perTicket > VALOR_BOLETA) {
-                            warnings.push('Monto por boleta ($' + Math.round(perTicket).toLocaleString("es-CO") + ') excede el valor de la boleta ($' + VALOR_BOLETA.toLocaleString("es-CO") + ')');
-                        }
+                if (parts.length > 0) {
+                    if (montoVal <= 0) {
+                        errors.push('Ingrese el valor del abono.');
+                    } else if (montoVal > VALOR_BOLETA) {
+                        errors.push('El abono ($' + montoVal.toLocaleString("es-CO") + ') supera el valor de la boleta ($' + VALOR_BOLETA.toLocaleString("es-CO") + '). El abono se aplica a cada boleta escrita.');
                     }
                 }
 
@@ -335,17 +397,24 @@
                     warningsEl.innerHTML = '<i class="bi bi-x-circle me-1"></i>' + errors.join("<br>");
                     hasErrors = true;
                 } else if (warnings.length) {
-                    warningsEl.innerHTML = '<i class="bi bi-exclamation-triangle text-warning me-1"></i>' + warnings.join("<br>") + '<br><span class="text-secondary small">Puede continuar, se validar\u00e1 en el servidor.</span>';
+                    warningsEl.innerHTML = '<i class="bi bi-exclamation-triangle text-warning me-1"></i>' + warnings.join("<br>") + '<br><span class="text-secondary small">Puede continuar, se validará en el servidor.</span>';
                 }
 
                 if (validCount > 0 && !errors.length) {
                     infoEl.textContent = validCount + " boleta(s) verificada(s)";
                 }
+
+                if (!errors.length && parts.length > 0 && montoVal > 0) {
+                    hasValidRow = true;
+                }
             }
 
+            if (!hasValidRow) hasErrors = true;
+            if (myGen !== validarGeneration) return;
             previewBtn.disabled = hasErrors;
 
             const txHasErrors = await validarTransferencias();
+            if (myGen !== validarGeneration) return;
             if (txHasErrors) previewBtn.disabled = true;
         };
 
@@ -370,16 +439,6 @@
 
             let hasErrors = false;
 
-            const bancosValidos = transferRows.filter(function(r) { return r.banco; });
-            const bancosUnicos = [...new Set(bancosValidos.map(function(r) { return r.banco; }))];
-            if (bancosUnicos.length > 1) {
-                hasErrors = true;
-                transferRows.forEach(function(r) {
-                    var el = r.element.querySelector(".banco-errors");
-                    if (el) el.innerHTML = '<i class="bi bi-x-circle me-1"></i>Todas las transferencias deben usar el mismo banco.';
-                });
-            }
-
             var apiRows = transferRows.map(function(r) {
                 return { metodo: "transferencia", referencia: r.referencia, banco: r.banco };
             });
@@ -400,7 +459,7 @@
                         if (tRow) {
                             var el = tRow.element.querySelector(".ref-errors");
                             if (el) {
-                                var msg = '<i class="bi bi-x-circle me-1"></i>' + r.error;
+                                var msg = '<i class="bi bi-x-circle me-1"></i>' + escHtml(r.error);
                                 if (el.innerHTML) el.innerHTML += "<br>" + msg;
                                 else el.innerHTML = msg;
                             }
@@ -413,6 +472,7 @@
         };
 
         let validarTimeout = null;
+        let validarGeneration = 0;
         const programarValidacion = () => {
             if (validarTimeout) clearTimeout(validarTimeout);
             validarTimeout = setTimeout(validarFilas, 300);
@@ -468,11 +528,15 @@
             return { grupos, totalTickets };
         };
 
-        const renderGrupos = (grupos, totalTickets) => {
+        const renderGrupos = (grupos, totalTickets, pagadas) => {
+            pagadas = pagadas || new Set();
             var h = "";
+            if (pagadas.size) {
+                h += '<div class="alert alert-warning mb-3"><i class="bi bi-exclamation-triangle me-2"></i>Esta factura incluye boletas <strong>ya pagadas</strong> (' + [...pagadas].map(function(n) { return "#" + ("0000" + n).slice(-4); }).join(" ") + '): al confirmar acepta registrar los pagos como excedente (seguirán mostrando estado pagada).</div>';
+            }
             h += '<div class="mb-3 pb-3 border-bottom">';
             h += '  <div class="text-secondary small fw-semibold">Vendedor</div>';
-            h += '  <div class="fw-bold fs-5">' + (getVendedorNombre() || getVendedorId()) + '</div>';
+            h += '  <div class="fw-bold fs-5">' + esc(getVendedorNombre() || getVendedorId()) + '</div>';
             h += '  <div class="small text-secondary">' + (document.getElementById("fecha").value || "") + '</div>';
             h += '</div>';
 
@@ -503,7 +567,7 @@
                     h += '    <div class="fw-bold text-success small">EFECTIVO</div>';
                     h += '    <div class="boletas-grid">';
                     grupo.efectivo.forEach(function(p) {
-                        h += '<span>' + ("0000" + p).slice(-4) + '</span>';
+                        h += '<span>' + ("0000" + p).slice(-4) + (pagadas.has(parseInt(p)) ? ' <span class="badge text-bg-success">PAGADA</span>' : '') + '</span>';
                     });
                     h += '    </div>';
                     h += '    <div class="fw-bold text-success small mt-1">Subtotal: $' + (m * countEfectivo).toLocaleString("es-CO") + '</div>';
@@ -516,12 +580,12 @@
                     const subT = m * countT;
                     h += '  <div class="panel-transferencia ms-3 mb-2 p-2" style="border-radius:4px;">';
                     h += '    <div class="fw-bold text-primary small">TRANSFERENCIA';
-                    if (t.banco) h += ' <span class="text-muted">(' + t.banco + ')</span>';
-                    if (t.referencia) h += ' <span class="text-muted">Ref: ' + t.referencia + '</span>';
+                    if (t.banco) h += ' <span class="text-muted">(' + esc(t.banco) + ')</span>';
+                    if (t.referencia) h += ' <span class="text-muted">Ref: ' + esc(t.referencia) + '</span>';
                     h += '    </div>';
                     h += '    <div class="boletas-grid">';
                     t.boletas.forEach(function(p) {
-                        h += '<span>' + ("0000" + p).slice(-4) + '</span>';
+                        h += '<span>' + ("0000" + p).slice(-4) + (pagadas.has(parseInt(p)) ? ' <span class="badge text-bg-success">PAGADA</span>' : '') + '</span>';
                     });
                     h += '    </div>';
                     h += '    <div class="fw-bold text-primary small mt-1">Subtotal: $' + subT.toLocaleString("es-CO") + '</div>';
@@ -560,7 +624,7 @@
             previewPlaceholder.style.display = "none";
             previewContent.style.display = "";
 
-            previewReceipt.innerHTML = renderGrupos(grupos, totalTickets);
+            previewReceipt.innerHTML = renderGrupos(grupos, totalTickets, new Set());
         };
 
         const actualizarResumen = () => {
@@ -639,16 +703,16 @@
             if (refInput) refInput.addEventListener("input", function() { programarValidacion(); });
             if (bancoInput) bancoInput.addEventListener("input", function() { programarValidacion(); });
             fila.querySelector(".eliminar-fila").addEventListener("click", function() {
-                if (abonosBody.querySelectorAll(".fila-abono").length > 1) {
-                    fila.remove();
-                    actualizarResumen();
-                }
+                fila.remove();
+                actualizarResumen();
+                programarValidacion();
             });
             alternarReferencia(fila);
         };
 
         abonosBody.querySelectorAll(".fila-abono").forEach(initFila);
         actualizarEstadoBoletaInputs();
+        programarValidacion();
 
         {% if form_data and form_data.form_rows %}
         (function() {
@@ -697,7 +761,7 @@
             actualizarResumen();
         });
 
-        const armarPreview = function() {
+        const armarPreview = function(pagadas) {
             const vIdValue = getVendedorId();
             const vNombre = getVendedorNombre();
             if (!vIdValue) { alert("Seleccione un vendedor."); return null; }
@@ -713,12 +777,21 @@
                 return s + (parseInt(m) * (countEfectivo + countTransferencia));
             }, 0);
 
-            var html = renderGrupos(grupos, totalTickets);
+            previewTienePagadas = !!(pagadas && pagadas.size);
+            var html = renderGrupos(grupos, totalTickets, pagadas);
 
             return html;
         };
 
-        document.getElementById("btnPreview").addEventListener("click", function() {
+        document.getElementById("btnPreview").addEventListener("click", async function() {
+            var fechaInput = document.getElementById("fecha");
+            if (!fechaInput.value) {
+                fechaInput.classList.add("is-invalid");
+                fechaInput.focus();
+                return;
+            } else {
+                fechaInput.classList.remove("is-invalid");
+            }
             var txErrors = [];
             abonosBody.querySelectorAll(".fila-abono").forEach(function(f) {
                 if (f.querySelector("select[name='metodo[]']").value !== "transferencia") return;
@@ -729,7 +802,7 @@
                 if (!ref) parts.push("referencia");
                 if (!banco) parts.push("banco");
                 if (parts.length) {
-                    txErrors.push("Transferencia en <strong>" + raw + "</strong>: falta " + parts.join(" y "));
+                    txErrors.push("Transferencia en <strong>" + esc(raw) + "</strong>: falta " + parts.join(" y "));
                 }
             });
             if (txErrors.length) {
@@ -739,8 +812,24 @@
                 modal.show();
                 return;
             }
-            var html = armarPreview();
+            var nums = [];
+            abonosBody.querySelectorAll(".fila-abono").forEach(function(f) {
+                f.querySelector(".boleta-input").value.split(/[\s,;]+/).forEach(function(p) {
+                    if (/^\d{4}$/.test(p.trim())) nums.push(parseInt(p));
+                });
+            });
+            if (nums.length) await verificarBoletasBatch([...new Set(nums)]);
+            var pagadas = new Set();
+            nums.forEach(function(n) {
+                var cached = boletaCache[n];
+                if (cached && cached.estado === "pagada") pagadas.add(n);
+            });
+            document.getElementById("confirmarPagadas").value = "";
+            var html = armarPreview(pagadas);
             if (html !== null) {
+                if (previewTienePagadas) {
+                    document.getElementById("confirmarPagadas").value = "1";
+                }
                 document.getElementById("previewBody").innerHTML = html;
                 document.getElementById("btnConfirmar").disabled = false;
                 var modal = new bootstrap.Modal(document.getElementById("previewModal"));
@@ -749,17 +838,34 @@
         });
 
         document.getElementById("btnConfirmar").addEventListener("click", function() {
+            if (previewTienePagadas && document.getElementById("confirmarPagadas").value !== "1") {
+                var modal = new bootstrap.Modal(document.getElementById("confirmPagadasModal"));
+                modal.show();
+                return;
+            }
             this.disabled = true;
             this.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Enviando...';
             bootstrap.Modal.getInstance(document.getElementById("previewModal")).hide();
             document.getElementById("formFacturaVendedor").submit();
         });
 
+        document.getElementById("fecha").addEventListener("input", function() {
+            this.classList.remove("is-invalid");
+        });
         document.getElementById("formFacturaVendedor").addEventListener("submit", function(e) {
             if (!getVendedorId()) {
                 e.preventDefault();
                 alert("Seleccione un vendedor.");
                 return;
+            }
+            const fechaInput = document.getElementById("fecha");
+            if (!fechaInput.value) {
+                e.preventDefault();
+                fechaInput.classList.add("is-invalid");
+                fechaInput.focus();
+                return;
+            } else {
+                fechaInput.classList.remove("is-invalid");
             }
             if (previewBtn.disabled) {
                 e.preventDefault();
@@ -767,18 +873,19 @@
                 return;
             }
             const filas = abonosBody.querySelectorAll(".fila-abono");
-            const boletaSet = new Set();
+            const boletaMethodSet = new Set();
             let dupFound = false;
             let totalTickets = 0;
             filas.forEach(function(f) {
                 const raw = f.querySelector(".boleta-input").value;
+                const metodo = f.querySelector("select[name='metodo[]']").value;
                 const parts = raw.split(/[\s,;]+/).filter(function(p) { return p.trim() !== "" && /^\d{4}$/.test(p.trim()); });
                 const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
                 totalTickets += parts.length;
                 parts.forEach(function(p) {
-                    const num = parseInt(p);
-                    if (boletaSet.has(num)) dupFound = true;
-                    boletaSet.add(num);
+                    const key = parseInt(p) + "|" + metodo;
+                    if (boletaMethodSet.has(key)) dupFound = true;
+                    boletaMethodSet.add(key);
                 });
             });
             if (dupFound) {
@@ -793,4 +900,40 @@
         });
     })();
 </script>
+{% if confirm_pagadas %}
+<div class="modal fade" id="confirmPagadasModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Boletas ya pagadas</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning mb-3">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Las siguientes boletas <strong>ya están pagadas</strong>. Si continúa, los pagos se registrarán como <strong>excedente</strong> y seguirán mostrando estado pagada:
+                </div>
+                <ul class="mb-0">
+                    {% for item in confirm_pagadas %}
+                    <li class="ticket-number">#{{ "%04d" % item.boleta }} (${{ "{:,}".format(item.total) }} abonado)</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-warning" id="btnConfirmarPagadas">Sí, registrar excedente</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+(function() {
+    var modal = new bootstrap.Modal(document.getElementById("confirmPagadasModal"));
+    modal.show();
+    document.getElementById("btnConfirmarPagadas").addEventListener("click", function() {
+        document.getElementById("confirmarPagadas").value = "1";
+        document.getElementById("formFacturaVendedor").submit();
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

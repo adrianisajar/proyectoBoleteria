@@ -2,13 +2,14 @@ import re
 from collections import Counter
 from datetime import datetime
 
-from flask import Flask, Response
+from flask import Flask, Response, current_app
 from pymongo import UpdateOne
-from pymongo.errors import BulkWriteError
+from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from motores.constants import (
     COMISION_DEFAULT_TIERS,
     METODO_EFECTIVO,
+    METODO_PAGO_DELIO,
     METODO_TRANSFERENCIA,
     MOV_PAGO,
     MOVIMIENTOS_FIELD,
@@ -21,6 +22,7 @@ from motores.fechas import now_local
 from motores.shared import (
     boletas,
     build_factura_detalle,
+    buscar_transferencia_duplicada,
     calc_comision_por_boleta,
     current_user,
     estado_pipeline_expr,
@@ -39,7 +41,7 @@ from motores.shared import (
     vendedores,
     vendedores_con_local,
 )
-from motores.validacion import es_boleta_completa, parse_money
+from motores.validacion import es_boleta_completa, parse_money, safe_error_message
 
 
 def _build_form_data(
@@ -75,14 +77,21 @@ def _build_form_data(
     }
 
 
-def _render_vendedor_form(form_data: dict, vendedores_list: list | None = None) -> str:
+def _render_vendedor_form(form_data: dict, vendedores_list: list | None = None, confirm_pagadas: list[dict] | None = None) -> str:
     """Render the vendor invoice form with the given values for a re-render."""
     if vendedores_list is None:
         vendedores_list = vendedores_con_local()
     today = now_local().strftime("%Y-%m-%d")
     _cfg = get_config()
     _vb = int(_cfg.get("valor_boleta", 10000) or 10000)
-    return render_template("nueva_factura_vendedor.html", vendedores=vendedores_list, today=today, form_data=form_data, valor_boleta=_vb)
+    return render_template(
+        "nueva_factura_vendedor.html",
+        vendedores=vendedores_list,
+        today=today,
+        form_data=form_data,
+        valor_boleta=_vb,
+        confirm_pagadas=confirm_pagadas or [],
+    )
 
 
 def register_routes(app: Flask) -> None:
@@ -101,6 +110,7 @@ def register_routes(app: Flask) -> None:
             metodos = request.form.getlist("metodo[]")
             referencias = request.form.getlist("referencia[]")
             bancos = request.form.getlist("banco[]")
+            confirmar_pagadas = request.form.get("confirmar_pagadas", "") == "1"
 
             form_data = _build_form_data(vendedor_id, fecha, boletas_raw, montos_raw, metodos, referencias, bancos)
             _vendedores_list = vendedores_con_local()
@@ -136,11 +146,13 @@ def register_routes(app: Flask) -> None:
                     continue
                 m = parse_money(montos_raw[i]) if i < len(montos_raw) else 0
                 if m <= 0:
+                    raw_boleta = boletas_raw[i].strip() if i < len(boletas_raw) else "-"
+                    errors.append(f"El monto para la boleta {raw_boleta} debe ser mayor que cero.")
                     continue
-                if m > _vb * len(parts):
-                    errors.append(f"El monto ${m:,} para {len(parts)} boleta(s) supera el m\u00e1ximo de ${_vb * len(parts):,}.")
+                if m > _vb:
+                    errors.append(f"El monto ${m:,} supera el valor de la boleta (${_vb:,}). El abono se aplica a cada boleta escrita.")
                     continue
-                meta = metodos[i] if i < len(metodos) else METODO_EFECTIVO
+                meta = metodos[i].strip().lower() if i < len(metodos) else METODO_EFECTIVO
                 ref = referencias[i].strip() if i < len(referencias) else ""
                 banco_val = bancos[i].strip() if i < len(bancos) else ""
                 for p in parts:
@@ -165,8 +177,8 @@ def register_routes(app: Flask) -> None:
                 flash("Debe incluir al menos una boleta con un abono v\u00e1lido.", "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
-            contador = Counter(r["boleta"] for r in rows)
-            duplicadas = [b for b, cnt in contador.items() if cnt > 1]
+            contador = Counter((r["boleta"], r["metodo"]) for r in rows)
+            duplicadas = [b for (b, _), cnt in contador.items() if cnt > 1]
             if duplicadas:
                 flash(f"Boletas duplicadas en el abono: {', '.join(f'{b:04d}' for b in sorted(duplicadas))}. Elimine las repeticiones.", "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
@@ -181,34 +193,47 @@ def register_routes(app: Flask) -> None:
 
             ajenas = [b for b in boleta_ids if docs_map[b].get("vendedor_id", "") != vendedor_id]
             if ajenas:
+                unique_vids = {docs_map[b].get("vendedor_id", "") for b in ajenas if docs_map[b].get("vendedor_id", "") not in ("", VENDEDOR_LOCAL)}
+                vid_names: dict[str, str] = {}
+                if unique_vids:
+                    for vd in vendedores.find({"_id": {"$in": list(unique_vids)}}, {"_id": 1, "nombre": 1}):
+                        vid_names[vd["_id"]] = vd.get("nombre", vd["_id"])
                 detalles = []
                 for b in ajenas:
                     d = docs_map[b]
                     actual = d.get("vendedor_id", "")
-                    actual_nombre = actual
-                    if actual and actual not in ("", VENDEDOR_LOCAL):
-                        vd = vendedores.find_one({"_id": actual}, {"nombre": 1})
-                        if vd:
-                            actual_nombre = vd.get("nombre", actual)
+                    actual_nombre = vid_names.get(actual, actual) if actual and actual not in ("", VENDEDOR_LOCAL) else actual
                     detalles.append(f"#{b:04d} ({actual_nombre})")
                 flash(f"Boletas que no pertenecen a este vendedor: {', '.join(detalles)}", "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
             pagadas = [b for b in boleta_ids if docs_map[b].get("estado") == "pagada"]
-            if pagadas:
-                flash(f"Boletas ya pagadas: {', '.join(f'{b:04d}' for b in pagadas)}", "danger")
-                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
+            if pagadas and not confirmar_pagadas:
+                detalle_pagadas = [{"boleta": b, "total": int(docs_map[b].get("total_abonado") or 0)} for b in sorted(pagadas)]
+                flash(
+                    "Hay boletas ya pagadas en el abono. Confirme para registrar los pagos como excedente (seguirán mostrando estado pagada).",
+                    "warning",
+                )
+                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list, confirm_pagadas=detalle_pagadas)
 
-            monto_por_boleta = {r["boleta"]: r["monto"] for r in rows}
-            sobrepasan = [b for b in boleta_ids if (docs_map[b].get("total_abonado", 0) or 0) + monto_por_boleta.get(b, 0) > _vb]
-            if sobrepasan:
-                flash(f"El abono excede el saldo pendiente en {len(sobrepasan)} boleta(s): {', '.join(f'#{b:04d}' for b in sobrepasan)}.", "danger")
-                return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
+            excedentes = []
+            for r in rows:
+                doc = docs_map.get(r["boleta"])
+                if doc is None:
+                    continue
+                total_actual = int(doc.get("total_abonado") or 0)
+                if total_actual + r["monto"] > _vb:
+                    excedentes.append((r["boleta"], total_actual, r["monto"]))
+            if excedentes:
+                det = ", ".join(f"#{b:04d} (${t:,} + ${m:,} = ${t + m:,})" for b, t, m in excedentes[:8])
+                flash(
+                    f"El acumulado de las siguientes boletas excedería el valor de la boleta (${_vb:,}): {det}.",
+                    "warning",
+                )
 
             factura_id = None
-            valor_boleta = None
+            valor_boleta = _vb
             try:
-                factura_id = next_factura_id()
                 config = get_config()
                 valor_boleta = int(config["valor_boleta"])
 
@@ -220,24 +245,37 @@ def register_routes(app: Flask) -> None:
                     v_nombre = v.get("nombre", vendedor_id) if v else vendedor_id
                     v_telefono = v.get("telefono", "") if v else ""
 
-                # ── 1. Crear factura "pendiente" antes de tocar las boletas ──
+                # ── 1. Reservar id + crear factura "pendiente" antes de tocar
+                # las boletas (fail-fast; reintenta si el contador está desfasado
+                # y otro proceso tomó el mismo id).
                 user = current_user() or {}
-                facturas.insert_one(
-                    {
-                        "_id": factura_id,
-                        "tipo": "vendedor",
-                        "estado": "pendiente",
-                        "fecha": now_local() if fecha_dt.date() == now_local().date() else fecha_dt,
-                        "boletas": sorted(boleta_ids),
-                        "detalle": [],
-                        "valor_total": 0,
-                        "vendedor_id": vendedor_id,
-                        "vendedor_nombre": v_nombre,
-                        "vendedor_telefono": v_telefono,
-                        "usuario_id": user.get("usuario_id"),
-                        "usuario_nombre": user.get("nombre") or user.get("username"),
-                    }
-                )
+                for _intento in range(5):
+                    factura_id = next_factura_id()
+                    try:
+                        facturas.insert_one(
+                            {
+                                "_id": factura_id,
+                                "tipo": "vendedor",
+                                "estado": "pendiente",
+                                "creada_en": now_local(),
+                                "fecha": now_local() if fecha_dt.date() == now_local().date() else fecha_dt,
+                                "boletas": sorted(boleta_ids),
+                                "detalle": [],
+                                "valor_total": 0,
+                                "vendedor_id": vendedor_id,
+                                "vendedor_nombre": v_nombre,
+                                "vendedor_telefono": v_telefono,
+                                "usuario_id": user.get("usuario_id"),
+                                "usuario_nombre": user.get("nombre") or user.get("username"),
+                            }
+                        )
+                        break
+                    except DuplicateKeyError:
+                        factura_id = None
+                        continue
+                if factura_id is None:
+                    flash("No se pudo reservar el número de factura. Intente de nuevo.", "danger")
+                    return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
                 # ── 2. Un solo bulk_write con todos los pagos ──
                 ops = []
@@ -256,10 +294,20 @@ def register_routes(app: Flask) -> None:
                         pago["referencia"] = r.get("referencia", "")
                         if r.get("banco"):
                             pago["banco"] = r["banco"]
+                    elif r["metodo"] == METODO_PAGO_DELIO:
+                        pago["referencia"] = "SIN REGISTRO"
 
                     ops.append(
                         UpdateOne(
-                            {"_id": r["boleta"], "estado": {"$ne": "pagada"}},
+                            {
+                                "_id": r["boleta"],
+                                # Con confirmación expresa, las boletas ya pagadas también
+                                # reciben el pago (excedente); si no, se excluyen aquí.
+                                **({} if confirmar_pagadas else {"estado": {"$ne": "pagada"}}),
+                                # El acumulado de abonos sí puede superar el valor de
+                                # la boleta; el tope es por pago individual (validado
+                                # arriba: ningún monto supera el valor de la boleta).
+                            },
                             [
                                 {
                                     "$set": {
@@ -283,15 +331,56 @@ def register_routes(app: Flask) -> None:
                     )
 
                 try:
-                    boletas.bulk_write(ops, ordered=False)
+                    bulk_result = boletas.bulk_write(ops, ordered=False)
                 except BulkWriteError:
-                    rollback_pagos_por_factura(factura_id, valor_boleta)
+                    try:
+                        rollback_pagos_por_factura(factura_id, valor_boleta)
+                    except Exception as rollback_exc:
+                        current_app.logger.warning("Rollback falló tras BulkWriteError en factura %s: %s", factura_id, rollback_exc)
                     facturas.delete_one({"_id": factura_id, "estado": {"$ne": "completa"}})
                     flash(
                         f"Error al registrar los pagos. Se eliminó la factura #{factura_id:05d} y se revirtieron los pagos. Intente de nuevo.",
                         "danger",
                     )
                     return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
+
+                if bulk_result.matched_count < len(ops):
+                    omitidas = len(ops) - bulk_result.matched_count
+                    try:
+                        rollback_pagos_por_factura(factura_id, valor_boleta)
+                    except Exception as rollback_exc:
+                        current_app.logger.warning("Rollback falló tras matched_count en factura %s: %s", factura_id, rollback_exc)
+                    facturas.delete_one({"_id": factura_id, "estado": {"$ne": "completa"}})
+                    flash(
+                        f"{omitidas} boleta(s) cambiaron de estado mientras se registraba (ya pagadas). "
+                        f"Se eliminó la factura #{factura_id:05d} y se revirtieron los pagos. Intente de nuevo.",
+                        "danger",
+                    )
+                    return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
+
+                # Verificación post-escritura de referencias: si otra factura usó la
+                # misma referencia+banco entre la validación y el bulk_write,
+                # se revierte todo (exactly-once).
+                refs_vistas = set()
+                for r in rows:
+                    if r["metodo"] != METODO_TRANSFERENCIA:
+                        continue
+                    clave = (r.get("referencia", ""), r.get("banco", ""))
+                    if clave in refs_vistas:
+                        continue
+                    refs_vistas.add(clave)
+                    if buscar_transferencia_duplicada(clave[0], clave[1], exclude_factura_id=factura_id):
+                        try:
+                            rollback_pagos_por_factura(factura_id, valor_boleta)
+                        except Exception as rollback_exc:
+                            current_app.logger.warning("Rollback falló tras ref duplicada en factura %s: %s", factura_id, rollback_exc)
+                        facturas.delete_one({"_id": factura_id, "estado": {"$ne": "completa"}})
+                        flash(
+                            f"La referencia {clave[0]} fue registrada por otra factura mientras se procesaba. "
+                            f"Se eliminó la factura #{factura_id:05d} y se revirtieron los pagos. Intente de nuevo.",
+                            "danger",
+                        )
+                        return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
                 invalidate_dashboard_cache()
 
@@ -337,13 +426,19 @@ def register_routes(app: Flask) -> None:
                 )
 
                 flash(f"Factura de vendedor N\u00b0 {factura_id:05d} generada.", "success")
-                return redirect(url_for("ver_factura", factura_id=factura_id, imprimir=1))
+                return redirect(url_for("ver_factura", factura_id=factura_id))
 
             except Exception as exc:
                 if factura_id is not None:
-                    rollback_pagos_por_factura(factura_id, valor_boleta)
-                    facturas.delete_one({"_id": factura_id, "estado": {"$ne": "completa"}})
-                flash(f"Error al generar la factura: {exc}", "danger")
+                    try:
+                        rollback_pagos_por_factura(factura_id, valor_boleta)
+                    except Exception as rollback_exc:
+                        current_app.logger.warning("Rollback de pagos falló para factura %s: %s", factura_id, rollback_exc)
+                    try:
+                        facturas.delete_one({"_id": factura_id, "estado": {"$ne": "completa"}})
+                    except Exception as del_exc:
+                        current_app.logger.warning("Eliminación de factura pendiente %s falló: %s", factura_id, del_exc)
+                flash(safe_error_message(exc), "danger")
                 return _render_vendedor_form(form_data, vendedores_list=_vendedores_list)
 
         vendedores_list = vendedores_con_local()

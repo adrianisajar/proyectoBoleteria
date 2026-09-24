@@ -34,7 +34,7 @@ from motores.cache import (
     invalidate_dashboard_cache,
     invalidate_config_cache,
 )
-from motores.ticket_service import estado_para_total, sync_ticket_statuses, estado_pipeline_expr, movimiento_neto_expr
+from motores.ticket_service import EstadoBoletaInvalido, estado_para_total, sync_ticket_statuses, estado_pipeline_expr, movimiento_neto_expr
 from motores.config_service import get_config, require_collections
 from motores.payment_service import (
     buscar_transferencia_duplicada,
@@ -56,7 +56,7 @@ from flask import (
     request,
     url_for,
 )
-from database import boletas, configuracion, facturas, rifas, traslados, vendedores, usuarios
+from database import boletas, configuracion, facturas, rifas, traslados, vendedores, usuarios, reservas
 from motores.constants import (
     BOLETA_MIN,
     BOLETA_MAX,
@@ -73,6 +73,7 @@ from motores.constants import (
     VENDEDOR_SIN_ASIGNAR,
     METODO_EFECTIVO,
     METODO_TRANSFERENCIA,
+    METODO_PAGO_DELIO,
     REFERENCIA_N_A,
     USUARIO_SISTEMA,
     MODELO_RIFA_HEADERS,
@@ -92,8 +93,6 @@ from motores.excel_service import (  # re-export
     is_assignable_vendor_cell,
     read_xlsx_first_sheet_rows,
     row_value,
-    parse_asignaciones_vendedores_xlsx,
-    importar_modelo_rifa,
 )
 from motores.rifa_lifecycle import (  # re-export
     crear_indices_boletas,
@@ -102,5 +101,14 @@ from motores.rifa_lifecycle import (  # re-export
 from motores.flask_integration import (  # re-export
     register_template_filters,
     register_before_request,
+    register_request_logging,
     register_context_processor,
+)
+from motores.impresora import (  # re-export
+    is_configured as printer_configured,
+    build_cliente_receipt,
+    build_vendedor_receipt,
+    build_egreso_receipt,
+    build_traslado_receipt,
+    imprimir,
 )

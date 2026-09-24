@@ -2,6 +2,7 @@ import io
 import zipfile
 
 from bson import json_util
+from conftest import ADMIN_PASSWORD
 
 from database import boletas, vendedores
 from motores.shared import configuracion, facturas, rifas, traslados, usuarios
@@ -27,7 +28,7 @@ def _zip_backup(data: dict) -> bytes:
 def _restaurar(client, data: dict, follow: bool = False):
     return client.post(
         "/backup",
-        data={"accion": "importar", "archivo": (io.BytesIO(_zip_backup(data)), "backup.zip")},
+        data={"accion": "importar", "archivo": (io.BytesIO(_zip_backup(data)), "backup.zip"), "clave_admin": ADMIN_PASSWORD},
         follow_redirects=follow,
     )
 

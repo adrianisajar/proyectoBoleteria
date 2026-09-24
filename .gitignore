@@ -20,4 +20,11 @@ build/
 .eggs/
 .coverage
 htmlcov/
+$null
 .agents/*.txt
+migrar_pagos.py
+pagos.xlsx
+scripts/*.cmd
+scripts/*.ps1
+*.pdf
+*.docx

@@ -61,6 +61,32 @@ def test_registrar_abono_lote(client):
     assert b["estado"] == "abonando"
 
 
+def test_registrar_abono_lote_acumulado_puede_exceder_valor(client):
+    boletas.update_one(
+        {"_id": 1},
+        {
+            "$set": {
+                "estado": "abonando",
+                "total_abonado": 60000,
+                "historial_movimientos": [{"fecha": "2026-07-01", "valor": 60000, "metodo": "efectivo"}],
+            }
+        },
+    )
+    form = {"fecha": "2026-07-30", "metodo": "efectivo"}
+    result = registrar_abono_lote([1], form, 20000)
+    assert result.modified_count == 1
+    b = boletas.find_one({"_id": 1})
+    assert b["total_abonado"] == 80000
+    assert b["estado"] == "pagada"
+
+
+def test_registrar_abono_lote_pago_individual_supera_valor(client):
+    form = {"fecha": "2026-07-30", "metodo": "efectivo"}
+    with pytest.raises(ValueError):
+        registrar_abono_lote([1], form, 80000)
+    assert boletas.find_one({"_id": 1})["total_abonado"] == 0
+
+
 def test_registrar_abono_lote_transferencia_duplicada(client):
     boletas.update_one(
         {"_id": 5},
@@ -82,6 +108,22 @@ def test_deduplicar_filas_boleta():
     deduped, removed = deduplicar_filas_boleta(rows)
     assert removed == 1
     assert [r["boleta"] for r in deduped] == [1, 2]
+
+
+def test_deduplicar_filas_boleta_distinto_metodo():
+    rows = [
+        {"boleta": 1, "metodo": "efectivo"},
+        {"boleta": 1, "metodo": "transferencia"},
+        {"boleta": 1, "metodo": "efectivo"},
+        {"boleta": 2, "metodo": "efectivo"},
+    ]
+    deduped, removed = deduplicar_filas_boleta(rows)
+    assert removed == 1
+    assert [(r["boleta"], r["metodo"]) for r in deduped] == [
+        (1, "efectivo"),
+        (1, "transferencia"),
+        (2, "efectivo"),
+    ]
 
 
 def test_verificar_boletas_existen(client):

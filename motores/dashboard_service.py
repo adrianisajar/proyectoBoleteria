@@ -1,16 +1,21 @@
+import contextlib
+import copy
 import time
 
 from pymongo.collection import Collection
 
-from database import boletas, vendedores
+from database import boletas, facturas, vendedores
 from motores.cache import (
     DASHBOARD_CACHE,
     DASHBOARD_CACHE_SECONDS,
+    DASHBOARD_LOCK,
     GLOBAL_COUNTS_CACHE,
+    GLOBAL_COUNTS_LOCK,
 )
 from motores.config_service import get_config, migrar_boletas_existentes, require_collections
 from motores.constants import (
     METODO_EFECTIVO,
+    METODO_PAGO_DELIO,
     METODO_TRANSFERENCIA,
     MOV_EGRESO,
     MOV_PAGO,
@@ -34,9 +39,10 @@ def get_dashboard_counts(rifa_id: str | None = None, valor_boleta: int | None = 
     """
     require_collections()
     if rifa_id is None:
-        cached = GLOBAL_COUNTS_CACHE
-        if cached["data"] and cached["valor"] == valor_boleta and time.monotonic() - cached["loaded_at"] < DASHBOARD_CACHE_SECONDS:
-            return cached["data"].copy()
+        with GLOBAL_COUNTS_LOCK:
+            cached = GLOBAL_COUNTS_CACHE
+            if cached["data"] and cached["valor"] == valor_boleta and time.monotonic() - cached["loaded_at"] < DASHBOARD_CACHE_SECONDS:
+                return copy.deepcopy(cached["data"])
     match = {}
     if rifa_id:
         match["rifa_id"] = rifa_id
@@ -83,7 +89,8 @@ def get_dashboard_counts(rifa_id: str | None = None, valor_boleta: int | None = 
                                 {
                                     "$and": [
                                         {"$eq": [{"$ifNull": ["$total_abonado", 0]}, 0]},
-                                        {"$eq": [{"$ifNull": ["$vendedor_id", ""]}, VENDEDOR_LOCAL]},
+                                        {"$ne": [{"$ifNull": ["$cliente.nombre", ""]}, ""]},
+                                        {"$in": [{"$ifNull": ["$vendedor_id", ""]}, ["", VENDEDOR_LOCAL]]},
                                     ]
                                 },
                                 1,
@@ -97,6 +104,7 @@ def get_dashboard_counts(rifa_id: str | None = None, valor_boleta: int | None = 
                                 {
                                     "$and": [
                                         {"$eq": [{"$ifNull": ["$total_abonado", 0]}, 0]},
+                                        {"$eq": [{"$ifNull": ["$cliente.nombre", ""]}, ""]},
                                         {"$not": {"$in": [{"$ifNull": ["$vendedor_id", ""]}, ["", None, VENDEDOR_LOCAL]]}},
                                     ]
                                 },
@@ -128,9 +136,10 @@ def get_dashboard_counts(rifa_id: str | None = None, valor_boleta: int | None = 
         "asignadas": asignadas,
     }
     if rifa_id is None:
-        GLOBAL_COUNTS_CACHE["data"] = result
-        GLOBAL_COUNTS_CACHE["loaded_at"] = time.monotonic()
-        GLOBAL_COUNTS_CACHE["valor"] = valor_boleta
+        with GLOBAL_COUNTS_LOCK:
+            GLOBAL_COUNTS_CACHE["data"] = copy.deepcopy(result)
+            GLOBAL_COUNTS_CACHE["loaded_at"] = time.monotonic()
+            GLOBAL_COUNTS_CACHE["valor"] = valor_boleta
     return result
 
 
@@ -141,8 +150,10 @@ def first_aggregate(collection: Collection, pipeline: list, default: dict | None
 
 def get_dashboard_stats(force: bool = False) -> dict:
     """Compute dashboard stats (recaudos, states, ranking) with 30s cache."""
-    if not force and DASHBOARD_CACHE["data"] and time.monotonic() - DASHBOARD_CACHE["loaded_at"] < DASHBOARD_CACHE_SECONDS:
-        return DASHBOARD_CACHE["data"].copy()
+    if not force:
+        with DASHBOARD_LOCK:
+            if DASHBOARD_CACHE["data"] and time.monotonic() - DASHBOARD_CACHE["loaded_at"] < DASHBOARD_CACHE_SECONDS:
+                return copy.deepcopy(DASHBOARD_CACHE["data"])
     require_collections()
     config = get_config()
     valor_boleta = int(config["valor_boleta"])
@@ -157,38 +168,48 @@ def get_dashboard_stats(force: bool = False) -> dict:
 
     match_rifa = [{"$match": {"rifa_id": rifa_id}}] if rifa_id else []
 
-    today_totals = first_aggregate(
+    combined = first_aggregate(
         boletas,
         [
             *match_rifa,
-            {"$match": {MOVIMIENTOS_FIELD + ".tipo": {"$in": [None, MOV_PAGO]}}},
             {"$unwind": {"path": "$" + MOVIMIENTOS_FIELD, "preserveNullAndEmptyArrays": False}},
-            {"$match": {MOVIMIENTOS_FIELD + ".tipo": {"$in": [None, MOV_PAGO]}, MOVIMIENTOS_FIELD + ".fecha": today}},
-            {"$group": {"_id": None, "recaudo_hoy": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}, "pagos_hoy": {"$sum": 1}}},
+            {
+                "$facet": {
+                    "today_totals": [
+                        {"$match": {MOVIMIENTOS_FIELD + ".tipo": {"$in": [None, MOV_PAGO]}, MOVIMIENTOS_FIELD + ".fecha": today}},
+                        {"$group": {"_id": None, "recaudo_hoy": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}, "pagos_hoy": {"$sum": 1}}},
+                    ],
+                    "pagos_por_metodo": [
+                        {"$match": {MOVIMIENTOS_FIELD + ".tipo": {"$in": [None, MOV_PAGO]}}},
+                        {"$group": {"_id": "$" + MOVIMIENTOS_FIELD + ".metodo", "total": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}}},
+                    ],
+                    "egresos_totales": [
+                        {"$match": {MOVIMIENTOS_FIELD + ".tipo": MOV_EGRESO}},
+                        {"$group": {"_id": None, "total": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}}},
+                        {"$project": {"_id": 0, "total": 1}},
+                    ],
+                    "pagos_delio": [
+                        {"$match": {MOVIMIENTOS_FIELD + ".tipo": {"$in": [None, MOV_PAGO]}, MOVIMIENTOS_FIELD + ".metodo": METODO_PAGO_DELIO}},
+                        {"$group": {"_id": None, "total": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}}},
+                    ],
+                }
+            },
         ],
-        {"recaudo_hoy": 0, "pagos_hoy": 0},
+        {},
     )
 
-    pagos_por_metodo = list(
-        boletas.aggregate(
-            [
-                *match_rifa,
-                {"$unwind": {"path": "$" + MOVIMIENTOS_FIELD, "preserveNullAndEmptyArrays": False}},
-                {"$match": {MOVIMIENTOS_FIELD + ".tipo": {"$in": [None, MOV_PAGO]}}},
-                {"$group": {"_id": "$" + MOVIMIENTOS_FIELD + ".metodo", "total": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}}},
-            ],
-        )
-    )
+    today_data = (combined.get("today_totals") or [{}])[0] if combined else {}
+    pagos_por_metodo = combined.get("pagos_por_metodo", []) if combined else []
+    egresos_data = (combined.get("egresos_totales") or [{}])[0] if combined else {}
+    delio_data = (combined.get("pagos_delio") or [{}])[0] if combined else {}
+
     pagos_efectivo = 0
     pagos_transferencia = 0
-    pagos_otros = 0
     for item in pagos_por_metodo:
         if item["_id"] == METODO_EFECTIVO:
             pagos_efectivo = int(item.get("total", 0) or 0)
         elif item["_id"] == METODO_TRANSFERENCIA:
             pagos_transferencia = int(item.get("total", 0) or 0)
-        else:
-            pagos_otros += int(item.get("total", 0) or 0)
 
     ranking_query = {"total_abonado": {"$gt": 0}}
     if rifa_id:
@@ -201,7 +222,7 @@ def get_dashboard_stats(force: bool = False) -> dict:
                     "$group": {
                         "_id": "$vendedor_id",
                         "recaudo": {"$sum": "$total_abonado"},
-                        "vendidas": {"$sum": 1},
+                        "con_abono": {"$sum": 1},
                         "pagadas": {"$sum": {"$cond": [{"$eq": ["$estado", "pagada"]}, 1, 0]}},
                     }
                 },
@@ -222,23 +243,26 @@ def get_dashboard_stats(force: bool = False) -> dict:
             )
 
     recaudo_potencial = total_boletas * valor_boleta
-
-    egresos_totales = first_aggregate(
-        boletas,
-        [
-            *match_rifa,
-            {"$unwind": {"path": "$" + MOVIMIENTOS_FIELD, "preserveNullAndEmptyArrays": False}},
-            {"$match": {MOVIMIENTOS_FIELD + ".tipo": MOV_EGRESO}},
-            {"$group": {"_id": None, "total": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}, "n": {"$sum": 1}}},
-        ],
-        {"total": 0, "n": 0},
-    )
-    total_egresos = int(egresos_totales.get("total", 0) or 0)
+    total_egresos = int(egresos_data.get("total", 0) or 0)
+    total_pagos_delio = int(delio_data.get("total", 0) or 0)
+    egresos_generales = 0
+    with contextlib.suppress(Exception):
+        doc_gen = next(
+            facturas.aggregate(
+                [
+                    {"$match": {"tipo": "egreso", "es_general": True, "anulada": {"$ne": True}}},
+                    {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$valor_total", 0]}}}},
+                ]
+            ),
+            None,
+        )
+        egresos_generales = int((doc_gen or {}).get("total", 0) or 0)
+    total_egresos += egresos_generales
 
     result = {
         **counts,
-        "recaudo_hoy": today_totals.get("recaudo_hoy", 0),
-        "pagos_hoy": today_totals.get("pagos_hoy", 0),
+        "recaudo_hoy": today_data.get("recaudo_hoy", 0),
+        "pagos_hoy": today_data.get("pagos_hoy", 0),
         "ranking": ranking,
         "valor_boleta": valor_boleta,
         "recaudo_potencial": recaudo_potencial,
@@ -246,10 +270,12 @@ def get_dashboard_stats(force: bool = False) -> dict:
         "progreso_recaudo_pct": min(round((counts["recaudo_total"] / recaudo_potencial) * 100, 1), 100.0) if recaudo_potencial else 0,
         "pagos_efectivo": pagos_efectivo,
         "pagos_transferencia": pagos_transferencia,
-        "pagos_otros": pagos_otros,
         "total_egresos": total_egresos,
-        "recaudo_neto": max(counts["recaudo_total"] - total_egresos, 0),
+        "egresos_generales": egresos_generales,
+        "total_pagos_delio": total_pagos_delio,
+        "recaudo_neto": max(counts["recaudo_total"] - total_egresos - total_pagos_delio, 0),
     }
-    DASHBOARD_CACHE["data"] = result
-    DASHBOARD_CACHE["loaded_at"] = time.monotonic()
+    with DASHBOARD_LOCK:
+        DASHBOARD_CACHE["data"] = copy.deepcopy(result)
+        DASHBOARD_CACHE["loaded_at"] = time.monotonic()
     return result

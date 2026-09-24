@@ -1,52 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Egreso E-{{ "%05d" % factura._id }} — {{ super() }}{% endblock %}
 {% block head %}
-<style>
-@media print {
-  @page { margin: 2mm; }
-  html, body { min-height: auto !important; height: auto !important; }
-  nav, .navbar, .navbar *, .no-print, .modal, .modal-backdrop, .flash-stack,
-  .btn, button:not(.no-print), a:not(.no-print),
-  [class*="modal"], [id*="modal"] {
-    display: none !important;
-  }
-  body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-  .app-main, .container { padding: 0 !important; margin: 0 !important; max-width: none !important; }
-  .recibo {
-    max-width: none !important; width: 100% !important; margin: 0 !important; padding: 0 !important;
-    font-size: 1.3rem !important; line-height: 1.8 !important;
-  }
-  .recibo-empresa { font-size: 1.75rem !important; font-weight: 800 !important; }
-  .recibo-titulo { font-size: 1.55rem !important; font-weight: 700 !important; }
-  .recibo-label { font-size: 1.4rem !important; }
-  .firmas { font-size: 1.3rem !important; }
-}
-.recibo {
-  max-width: 340px; margin: 0 auto;
-  padding: 1rem 1rem;
-  font-family: "Courier New", Courier, monospace;
-  font-size: 0.78rem;
-  line-height: 1.6;
-  background: #fff;
-  color: #111;
-}
-.recibo-header { text-align: center; margin-bottom: 0.8rem; }
-.recibo-empresa { font-size: 1.1rem; font-weight: 800; letter-spacing: 0.05em; }
-.recibo-titulo { font-size: 0.9rem; font-weight: 700; margin-top: 0.25rem; }
-.recibo-dir { font-size: 0.7rem; color: #555; }
-.recibo-linea { border: 0; border-top: 1px dashed #999; margin: 0.6rem 0; }
-.recibo-linea-doble { border: 0; border-top: 3px double #000; margin: 0.6rem 0; }
-.recibo-campo { display: flex; justify-content: space-between; }
-.recibo-label { color: #555; font-weight: 600; }
-.egreso-item { margin: 0.4rem 0; padding: 0.3rem 0; border-bottom: 1px dotted #ccc; }
-.egreso-valor { font-weight: 700; }
-.resumen { border-top: 3px double #000; margin-top: 0.6rem; padding-top: 0.4rem; }
-.total-row { font-size: 0.9rem; font-weight: 800; border-top: 2px solid #000; padding-top: 0.35rem; margin-top: 0.2rem; }
-.obs { margin-top: 0.6rem; padding-top: 0.4rem; border-top: 1px dashed #999; font-size: 0.7rem; color: #555; }
-.firmas { margin-top: 1.8rem; display: flex; justify-content: center; text-align: center; font-size: 0.7rem; }
-.firma-linea { width: 8rem; border-top: 1px solid #000; padding-top: 0.25rem; margin-top: 0.3rem; }
-.recibo-footer { text-align: center; margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px dashed #999; font-size: 0.7rem; color: #555; }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/thermal.css') }}">
 {% endblock %}
 {% block content %}
 <div class="recibo">
@@ -55,7 +10,7 @@
   {% endif %}
 
   <div class="text-end mb-1 no-print">
-    <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir</button>
+    {% if printer_configured %}<form method="post" action="{{ url_for('imprimir_factura', factura_id=factura._id) }}" class="d-inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn btn-success btn-sm" onclick="return confirm('¿Desea imprimir esta factura?');"><i class="bi bi-printer-fill"></i> Imprimir directo</button></form>{% endif %}
     <a href="{{ url_for('egresos_list') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
     {% if not factura.get("anulada") and current_user and current_user.role == "admin" %}
     <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#anularModal"><i class="bi bi-x-circle"></i> Anular</button>
@@ -75,18 +30,28 @@
 
   <div class="recibo-campo"><span class="recibo-label">DOCUMENTO</span><span>E-{{ "%05d" % factura._id }}</span></div>
   <div class="recibo-campo"><span class="recibo-label">FECHA</span><span>{{ factura.get("fecha_display", factura.fecha.strftime("%d/%m/%Y %I:%M %p")) }}</span></div>
+  {% if factura.get("es_general") %}
+  <div class="recibo-campo"><span class="recibo-label">TIPO</span><span>EGRESO GENERAL</span></div>
+  {% else %}
   <div class="recibo-campo"><span class="recibo-label">TIPO</span><span>{{ factura.egreso_tipo }}</span></div>
+  {% endif %}
 
   <hr class="recibo-linea">
 
+  {% if factura.get("es_general") %}
+  <div class="recibo-label">DESCRIPCIÓN</div>
+  <div style="font-size:0.8rem">{{ factura.descripcion }}</div>
+  {% else %}
   <div class="recibo-label">VENDEDOR</div>
   <div style="font-size:0.8rem">{{ factura.vendedor_nombre or factura.vendedor_id }}</div>
   {% if factura.get("vendedor_telefono") %}
   <div><span class="recibo-label">TEL</span> {{ factura.vendedor_telefono }}</div>
   {% endif %}
+  {% endif %}
 
   <hr class="recibo-linea">
 
+  {% if not factura.get("es_general") %}
   <div class="recibo-label">DETALLE</div>
   {% for d in factura.detalle %}
   <div class="egreso-item">
@@ -102,6 +67,7 @@
     </div>
   </div>
   {% endfor %}
+  {% endif %}
 
   <div class="resumen">
     <div class="total-row recibo-campo"><span>TOTAL EGRESO</span><span>${{ "{:,}".format(factura.valor_total) }}</span></div>
@@ -123,7 +89,6 @@
 
   <div class="recibo-footer">
     <div style="font-size:0.75rem">E-{{ "%05d" % factura._id }}</div>
-    <div>{{ config.get("footer_texto") or "Documento interno, no tiene validez fiscal." }}</div>
   </div>
 </div>
 
@@ -140,7 +105,11 @@
         <div class="modal-body">
           <div class="alert alert-warning mb-3">
             <i class="bi bi-exclamation-triangle"></i>
+            {% if factura.get("es_general") %}
+            Esta acci&oacute;n marcar&aacute; el egreso como anulado y devolver&aacute; el monto al disponible. No se puede deshacer.
+            {% else %}
             Esta acci&oacute;n retirar&aacute; los egresos asociados a esta factura de las boletas y no se puede deshacer.
+            {% endif %}
           </div>
           <div class="mb-3">
             <label for="motivo" class="form-label fw-semibold">Motivo de anulaci&oacute;n</label>

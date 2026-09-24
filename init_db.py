@@ -1,32 +1,26 @@
 import os
 
-from database import boletas, configuracion, facturas, rifas, traslados, usuarios, vendedores
+from database import boletas, configuracion, facturas, login_intentos, reservas, rifas, traslados, usuarios, vendedores
 from motores.constants import COMISION_DEFAULT_TIERS, DEFAULT_RIFA
 from motores.fechas import now_local
+from optimizar_db import REQUIRED_INDEXES
 
 CONFIG_ID = "rifa"
 
 
 def crear_indices():
-    boletas.create_index([("rifa_id", 1), ("_id", 1)])
-    boletas.create_index([("vendedor_id", 1), ("_id", 1)])
-    boletas.create_index([("estado", 1), ("_id", 1)])
-    boletas.create_index([("total_abonado", 1), ("_id", 1)])
-    boletas.create_index([("vendedor_id", 1), ("estado", 1)])
-    boletas.create_index([("historial_movimientos.fecha", 1)])
-    boletas.create_index("cliente.telefono")
-    boletas.create_index("cliente.nombre")
-    boletas.create_index("historial_movimientos.metodo")
-    boletas.create_index("historial_movimientos.referencia")
-    boletas.create_index("historial_movimientos.tipo")
-    vendedores.create_index("telefono")
-    facturas.create_index([("fecha", -1)])
-    facturas.create_index("tipo")
-    rifas.create_index("estado")
-    usuarios.create_index("usuario", unique=True)
-    traslados.create_index([("fecha", -1)])
-    traslados.create_index("boleta_origen")
-    traslados.create_index("boleta_destino")
+    for nombre_col, specs in REQUIRED_INDEXES.items():
+        collection = {"boletas": boletas, "vendedores": vendedores, "facturas": facturas, "rifas": rifas, "traslados": traslados, "usuarios": usuarios}.get(nombre_col)
+        if collection is None:
+            continue
+        for key_spec, name in specs:
+            kwargs = {"name": name}
+            if nombre_col == "usuarios":
+                kwargs["unique"] = True
+            if isinstance(key_spec, dict):
+                collection.create_index(list(key_spec.items()), **kwargs)
+            else:
+                collection.create_index(key_spec, **kwargs)
 
 
 def crear_rifa():
@@ -74,12 +68,18 @@ def inicializar_rifa():
         raise RuntimeError("No hay conexión activa a MongoDB.")
 
     print("Preparando la colección boletas...")
+    respuesta = input("Esto ELIMINARÁ todos los datos. Continuar? (s/n): ").strip().lower()
+    if respuesta != "s":
+        print("Operación cancelada.")
+        return
     boletas.delete_many({})
     vendedores.delete_many({})
     facturas.delete_many({})
     rifas.delete_many({})
     configuracion.delete_many({})
     traslados.delete_many({})
+    reservas.delete_many({})
+    login_intentos.delete_many({})
 
     rifa = crear_rifa()
     rifa_id = rifa["_id"]

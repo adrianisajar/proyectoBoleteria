@@ -32,19 +32,19 @@
         </div>
         <div class="col-md-3">
             <label for="origen" class="form-label fw-semibold">Boleta de origen</label>
-            <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="origen" name="origen" value="{{ form.origen }}" placeholder="0001" data-validation="numbers" required>
+            <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="origen" name="origen" value="{{ form.origen }}" placeholder="Boleta de origen" data-validation="numbers" required>
             <div class="ticket-helper text-secondary small mt-1">Boleta que entrega el saldo</div>
         </div>
         <div class="col-md-3">
             <label for="destino" class="form-label fw-semibold">Boleta de destino</label>
-            <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="destino" name="destino" value="{{ form.destino }}" placeholder="0002" data-validation="numbers" required>
+            <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="destino" name="destino" value="{{ form.destino }}" placeholder="Boleta de destino" data-validation="numbers" required>
             <div class="ticket-helper text-secondary small mt-1">Boleta que recibe el saldo</div>
         </div>
         <div class="col-md-2">
             <label for="valor" class="form-label fw-semibold">Valor a trasladar</label>
             <div class="input-group">
                 <span class="input-group-text">$</span>
-                <input type="text" inputmode="numeric" class="form-control" id="valor" name="valor" value="{{ form.valor }}" placeholder="0" data-money-input required>
+                <input type="text" inputmode="numeric" class="form-control" id="valor" name="valor" value="{{ form.valor }}" placeholder="Valor" data-money-input required>
             </div>
         </div>
         <div class="col-md-2">
@@ -57,6 +57,12 @@
         <i class="bi bi-info-circle me-1"></i>
         El valor trasladado se descuenta del saldo de la boleta de origen y se suma al de la boleta de destino.
         No afecta los pagos ya registrados ni las facturas emitidas.
+        Los traslados solo son válidos entre boletas de un mismo vendedor.
+    </div>
+
+    <div class="mb-4">
+        <label for="observaciones" class="form-label fw-semibold">Observaciones</label>
+        <textarea class="form-control" id="observaciones" name="observaciones" rows="2" placeholder="Opcional — se mostrarán al final del comprobante">{{ form.observaciones or "" }}</textarea>
     </div>
 
     <div class="d-flex flex-wrap gap-2 justify-content-end">
@@ -87,6 +93,7 @@
         vendedorSearch.value = {{ form.vendedor_nombre | tojson }};
         {% endif %}
 
+        const esc = (s) => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
         const mostrarSugerencias = (filtro) => {
             const q = filtro.toLowerCase();
             const opts = vendedores.filter(function(v) {
@@ -95,7 +102,7 @@
             if (!q || !opts.length) { sugerencias.style.display = "none"; return; }
             sugerencias.innerHTML = opts.map(function(v) {
                 var active = selectedVendedor && selectedVendedor.id === v.id ? " active" : "";
-                return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + v.id + '" data-nombre="' + v.nombre + '">' + v.nombre + ' <small class="text-secondary">(' + v.id + ')</small></button>';
+                return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + esc(v.id) + '" data-nombre="' + esc(v.nombre) + '">' + esc(v.nombre) + ' <small class="text-secondary">(' + esc(v.id) + ')</small></button>';
             }).join("");
             sugerencias.style.display = "";
         };

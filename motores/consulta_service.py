@@ -77,10 +77,10 @@ def build_consulta_context(args: dict) -> dict:
             query["_id"] = range_query
 
     if filters["cliente"]:
-        query["cliente.nombre"] = {"$regex": re.escape(filters["cliente"]), "$options": "i"}
+        query["cliente.nombre"] = {"$regex": f"^{re.escape(filters['cliente'])}", "$options": "i"}
 
     if filters["telefono"]:
-        query["cliente.telefono"] = {"$regex": re.escape(filters["telefono"])}
+        query["cliente.telefono"] = {"$regex": f"^{re.escape(filters['telefono'])}"}
 
     if filters["pago_metodo"]:
         if filters["pago_metodo"] in METODOS_PAGO:
@@ -144,7 +144,11 @@ def build_consulta_context(args: dict) -> dict:
         else:
             abonado_valor = parse_money(abonado_valor_raw)
             if abonado_valor is not None and abonado_valor >= 0:
-                query["total_abonado"] = {ABONADO_OP_MAP[abonado_op]: abonado_valor}
+                abonado_expr = {ABONADO_OP_MAP[abonado_op]: abonado_valor}
+                if "total_abonado" in query:
+                    query.setdefault("$and", []).append({"total_abonado": abonado_expr})
+                else:
+                    query["total_abonado"] = abonado_expr
             else:
                 errors.append("Valor de abonado inválido.")
 
@@ -157,7 +161,7 @@ def build_consulta_context(args: dict) -> dict:
             try:
                 datetime.strptime(fecha_adq_raw, "%Y-%m-%d")
             except ValueError:
-                errors.append("La fecha de adquisición debe tener formato AAAA-MM-DD.")
+                errors.append("La fecha de adquisición debe tener formato aaaa-mm-dd.")
             else:
                 query["fecha_adquisicion"] = {FECHA_ADQ_OP_MAP[fecha_adq_op]: fecha_adq_raw}
 
@@ -171,11 +175,9 @@ def build_consulta_context(args: dict) -> dict:
                 errors.append("Estado 'Disponible' es incompatible con vendedor asignado.")
         elif filters["estado"] == "separada":
             if filters["abono_estado"] == "con_abono":
-                errors.append("Estado 'Separada' es incompatible con 'Con abono' (separada = compra local sin pago).")
+                errors.append("Estado 'Separada' es incompatible con 'Con abono' (separada = con comprador sin pago).")
             if filters["saldo_estado"] == "pendiente":
                 errors.append("Estado 'Separada' no puede tener saldo pendiente (sin pagos).")
-            if filters["vendedor_id"] and filters["vendedor_id"] not in ("", VENDEDOR_LOCAL):
-                errors.append("Estado 'Separada' solo es compatible con vendedor LOCAL.")
         elif filters["estado"] == "asignada":
             if filters["abono_estado"] == "con_abono":
                 errors.append("Estado 'Asignada' es incompatible con 'Con abono' (asignada = boletas sin pagar).")
@@ -202,8 +204,12 @@ def build_consulta_context(args: dict) -> dict:
     return filters, query, errors, page, limite, offset, has_filters, numero_exacto
 
 
-def build_page_url(endpoint: str, filters: dict, page: int) -> str:
-    """Build paginated url_for with current filters."""
+def build_page_url(endpoint: str, filters: dict, page: int, sort: dict | None = None) -> str:
+    """Build paginated url_for with current filters (and optional sort params)."""
     params = {key: value for key, value in filters.items() if value is not None and value != ""}
+    if sort:
+        for key in ("sort_by", "sort_dir"):
+            if sort.get(key):
+                params[key] = sort[key]
     params["page"] = page
     return url_for(endpoint, **params)

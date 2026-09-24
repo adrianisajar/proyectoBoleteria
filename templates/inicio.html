@@ -66,7 +66,7 @@
     <form action="{{ url_for('consultas') }}" method="get" class="row g-3 align-items-end" autocomplete="off">
         <div class="col-sm-6 col-lg-2">
             <label for="numero" class="form-label fw-semibold">Número o parte</label>
-            <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="numero" name="numero" value="{{ filters.numero }}" placeholder="0001" data-validation="numbers">
+            <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="numero" name="numero" value="{{ filters.numero }}" placeholder="Boleta" data-validation="numbers">
         </div>
         <div class="col-sm-6 col-lg-3">
             <label for="vendedorSearch" class="form-label fw-semibold">Vendedor</label>
@@ -124,7 +124,7 @@
                     <option value="lte" {% if filters.abonado_op == "lte" %}selected{% endif %}>&le;</option>
                 </select>
                 <span class="input-group-text">$</span>
-                <input type="text" inputmode="numeric" class="form-control" id="abonado_valor" name="abonado_valor" value="{{ filters.abonado_valor }}" placeholder="0" data-money-input>
+                <input type="text" inputmode="numeric" class="form-control" id="abonado_valor" name="abonado_valor" value="{{ filters.abonado_valor }}" placeholder="Valor" data-money-input>
             </div>
         </div>
 
@@ -147,7 +147,7 @@
         </div>
         <div class="col-sm-6 col-lg-2">
             <label for="telefono" class="form-label fw-semibold">Teléfono</label>
-            <input type="text" class="form-control" id="telefono" name="telefono" value="{{ filters.telefono }}" placeholder="300" data-validation="numbers">
+            <input type="text" class="form-control" id="telefono" name="telefono" value="{{ filters.telefono }}" placeholder="Teléfono" data-validation="numbers">
         </div>
         <div class="col-sm-6 col-lg-3">
             <label for="pago_metodo" class="form-label fw-semibold">Método pago</label>
@@ -155,12 +155,13 @@
                 <option value="">Todos</option>
                 <option value="efectivo" {% if filters.pago_metodo == "efectivo" %}selected{% endif %}>Efectivo</option>
                 <option value="transferencia" {% if filters.pago_metodo == "transferencia" %}selected{% endif %}>Transferencia</option>
+                <option value="pago_a_delio" {% if filters.pago_metodo == "pago_a_delio" %}selected{% endif %}>Pago a Delio</option>
             </select>
         </div>
 
         <div class="col-sm-6 col-lg-3">
             <label for="referencia" class="form-label fw-semibold">Referencia</label>
-            <input type="text" class="form-control" id="referencia" name="referencia" value="{{ filters.referencia }}" placeholder="TX-9981" data-validation="referencia">
+            <input type="text" class="form-control" id="referencia" name="referencia" value="{{ filters.referencia }}" placeholder="Referencia" data-validation="referencia">
         </div>
         <div class="col-sm-6 col-lg-2">
             <label for="limite" class="form-label fw-semibold">Límite</label>
@@ -223,7 +224,7 @@
                     {% for item in resultados %}
                         <tr>
                             <td class="fw-bold ticket-number">#{{ "%04d"|format(item._id) }}</td>
-                            <td class="small">{% if item.fecha_adquisicion %}{{ item.fecha_adquisicion }}{% else %}<span class="text-secondary">Sin registrar</span>{% endif %}</td>
+                            <td class="small">{% if item.fecha_adquisicion %}{{ item.fecha_adquisicion|fecha }}{% else %}<span class="text-secondary">Sin registrar</span>{% endif %}</td>
                             <td class="text-end fw-bold">{{ item.total_abonado|cop }}</td>
                             <td>
                                 <span class="badge rounded-pill {% if item.estado == 'pagada' %}text-bg-success{% elif item.estado == 'abonando' %}text-bg-warning{% elif item.estado == 'asignada' %}text-bg-primary{% elif item.estado == 'separada' %}text-bg-info{% else %}text-bg-secondary{% endif %} text-uppercase">
@@ -295,6 +296,9 @@
     </div>
 
     <div class="p-3 p-md-4">
+        {% if boleta.reserva %}
+        <div class="alert alert-info py-2 mb-3"><i class="bi bi-bookmark-fill me-1"></i>Reservada para <strong class="text-uppercase">{{ boleta.reserva.cliente.nombre }}</strong> (número fijo del local).</div>
+        {% endif %}
         <div class="row g-3 mb-4">
             <div class="col-md-3">
                 <div class="text-secondary small fw-semibold">Vendedor asignado</div>
@@ -306,11 +310,11 @@
             </div>
             <div class="col-md-3">
                 <div class="text-secondary small fw-semibold">Cliente</div>
-                <div class="fw-bold">{{ boleta.cliente.nombre or "Sin registrar" }}</div>
+                <div class="fw-bold">{{ (boleta.cliente.nombre if boleta.cliente else None) or "Sin registrar" }}</div>
             </div>
             <div class="col-md-3">
                 <div class="text-secondary small fw-semibold">Fecha de adquisición</div>
-                <div class="fw-bold">{{ boleta.fecha_adquisicion or "Sin registrar" }}</div>
+                <div class="fw-bold">{{ (boleta.fecha_adquisicion|fecha) if boleta.fecha_adquisicion else "Sin registrar" }}</div>
             </div>
         </div>
 
@@ -322,7 +326,7 @@
             </div>
             <div class="col-lg-2">
                 <label for="detalleTelefono" class="form-label fw-semibold">Teléfono</label>
-                <input type="tel" class="form-control" id="detalleTelefono" name="telefono" value="{{ boleta.cliente.telefono }}" placeholder="3001234567" data-validation="numbers">
+                <input type="tel" class="form-control" id="detalleTelefono" name="telefono" value="{{ boleta.cliente.telefono }}" placeholder="Teléfono" data-validation="numbers">
             </div>
             <div class="col-lg-2">
                 <label for="detalleDireccion" class="form-label fw-semibold">Dirección</label>
@@ -373,14 +377,13 @@
                             <th>Referencia</th>
                             <th class="text-end">Valor</th>
                             <th>Factura</th>
-                            <th style="width:1px;"></th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for pago in boleta.movimientos.pagos %}
                         <tr>
                             <td class="small text-secondary">{{ loop.index }}</td>
-                            <td>{{ pago.fecha }}</td>
+                            <td>{{ pago.fecha|fecha }}</td>
                             <td class="text-uppercase"><small>{{ pago.metodo }}</small></td>
                             <td><code>{{ pago.referencia or "—" }}</code></td>
                             <td class="text-end fw-bold text-success">{{ pago.valor|cop }}</td>
@@ -391,25 +394,10 @@
                                 <span class="text-secondary small">—</span>
                                 {% endif %}
                             </td>
-                            <td>
-                                <button type="button" class="btn btn-sm btn-outline-danger eliminar-pago-boleta"
-                                        data-boleta="{{ boleta._id }}" data-idx="{{ loop.index0 }}"
-                                        data-valor="{{ pago.valor|cop }}" title="Eliminar pago">
-                                    <i class="bi bi-x-lg"></i>
-                                </button>
-                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
-            </div>
-            <div class="d-flex justify-content-end mt-2">
-                <form method="post" action="{{ url_for('recalcular_boleta', boleta_id=boleta._id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-sm btn-outline-warning d-inline-flex align-items-center gap-1">
-                        <i class="bi bi-arrow-clockwise"></i> Recalcular estado
-                    </button>
-                </form>
             </div>
         {% else %}
             <div class="alert alert-secondary mb-0">Esta boleta no registra abonos.</div>
@@ -434,7 +422,7 @@
                     <tbody>
                         {% for egreso in boleta.movimientos.egresos %}
                         <tr>
-                            <td>{{ egreso.fecha }}</td>
+                            <td>{{ egreso.fecha|fecha }}</td>
                             <td class="text-uppercase"><small>{{ egreso.egreso_tipo or "egreso" }}</small></td>
                             <td class="text-end fw-bold text-danger">{{ egreso.valor|cop }}</td>
                             <td>
@@ -471,7 +459,7 @@
                     <tbody>
                         {% for mov in boleta.movimientos.traslados %}
                         <tr>
-                            <td>{{ mov.fecha }}</td>
+                            <td>{{ mov.fecha|fecha }}</td>
                             <td>
                                 {% if mov.tipo == 'traslado_entrada' %}
                                 <span class="badge text-bg-success">Entrada</span>
@@ -523,31 +511,6 @@
     </div>
 </div>
 
-<div class="modal fade" id="pagoModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Eliminar pago</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-            </div>
-            <div class="modal-body">
-                <p>Se eliminar&aacute; el pago de <strong id="pagoValor">$0</strong>
-                    de la boleta <strong id="pagoBoleta">#0000</strong>.</p>
-                <p class="text-danger small mb-0"><i class="bi bi-exclamation-triangle"></i> Esta acci&oacute;n no se puede deshacer.
-                    El total abonado y el estado se recalcular&aacute;n autom&aacute;ticamente.</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <form method="post" action="" id="formPago">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-danger">
-                        <i class="bi bi-trash3"></i> Eliminar pago
-                    </button>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
@@ -577,11 +540,16 @@
                     return;
                 }
                 timer = window.setTimeout(async () => {
-                    const response = await fetch(`/api/clientes?q=${encodeURIComponent(query)}`);
-                    const items = await response.json();
-                    clienteList.innerHTML = items.map((item) =>
-                        `<option value="${item.nombre}" data-telefono="${item.telefono}">${item.label}</option>`
-                    ).join("");
+                    try {
+                        const response = await fetch(`/api/clientes?q=${encodeURIComponent(query)}`);
+                        const items = await response.json();
+                        const esc = (s) => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
+                        clienteList.innerHTML = items.map((item) =>
+                            `<option value="${esc(item.nombre)}" data-telefono="${esc(item.telefono)}">${esc(item.label)}</option>`
+                        ).join("");
+                    } catch (_e) {
+                        clienteList.innerHTML = "";
+                    }
                 }, 180);
             });
             clienteInput.addEventListener("change", function() {
@@ -593,6 +561,7 @@
         }
 
         /* ── Vendedor autocomplete ── */
+        function escHtml(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
         const vSearch = document.getElementById("vendedorSearch");
         const vSelect = document.getElementById("vendedor_id");
         const vSug = document.getElementById("vendedorSugerencias");
@@ -620,9 +589,9 @@
                 if (!q || !opts.length) { vSug.style.display = "none"; return; }
                 vSug.innerHTML = opts.map(function(v) {
                     var active = selectedV && selectedV.id === v.id ? " active" : "";
-                    var label = v.nombre;
-                    if (v.id && v.id !== v.nombre) label += ' <small class="text-secondary">(' + v.id + ')</small>';
-                    return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + v.id + '" data-nombre="' + v.nombre + '">' + label + '</button>';
+                    var label = escHtml(v.nombre);
+                    if (v.id && v.id !== v.nombre) label += ' <small class="text-secondary">(' + escHtml(v.id) + ')</small>';
+                    return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + escHtml(v.id) + '" data-nombre="' + escHtml(v.nombre) + '">' + label + '</button>';
                 }).join("");
                 vSug.style.display = "";
             };
@@ -743,7 +712,7 @@
                 if (!q || !opts.length) { dvSug.style.display = "none"; return; }
                 dvSug.innerHTML = opts.map(function(v) {
                     var active = selectedDV && selectedDV.id === v.id ? " active" : "";
-                    return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + v.id + '" data-nombre="' + v.nombre + '">' + v.nombre + ' <small class="text-secondary">(' + v.id + ')</small></button>';
+                    return '<button type="button" class="list-group-item list-group-item-action' + active + '" data-id="' + escHtml(v.id) + '" data-nombre="' + escHtml(v.nombre) + '">' + escHtml(v.nombre) + ' <small class="text-secondary">(' + escHtml(v.id) + ')</small></button>';
                 }).join("");
                 dvSug.style.display = "";
             };
@@ -787,27 +756,6 @@
                 const boleta = btn.dataset.boleta;
                 limpiarBoleta.textContent = "#" + String(boleta).padStart(4, "0");
                 formLimpiar.action = "{{ url_for('limpiar_boleta', boleta_id=0) }}".replace("0", boleta);
-            });
-        }
-
-        /* ── Eliminar pago modal ── */
-        const pagoModal = document.getElementById("pagoModal");
-        const pagoValor = document.getElementById("pagoValor");
-        const pagoBoleta = document.getElementById("pagoBoleta");
-        const formPago = document.getElementById("formPago");
-        if (pagoModal) {
-            document.querySelectorAll(".eliminar-pago-boleta").forEach(function(btn) {
-                btn.addEventListener("click", function() {
-                    const boleta = btn.dataset.boleta;
-                    const idx = btn.dataset.idx;
-                    const valor = btn.dataset.valor;
-                    pagoValor.textContent = valor;
-                    pagoBoleta.textContent = "#" + String(boleta).padStart(4, "0");
-                    formPago.action = "{{ url_for('eliminar_pago_boleta', boleta_id=0, idx=0) }}"
-                        .replace("boleta_id=0", "boleta_id=" + boleta)
-                        .replace("idx=0", "idx=" + idx);
-                    bootstrap.Modal.getOrCreateInstance(pagoModal).show();
-                });
             });
         }
     })();

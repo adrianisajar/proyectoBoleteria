@@ -6,8 +6,12 @@ unified ledger of BOTH boletas: ``traslado_salida`` on the origin and
 ``traslado_entrada`` on the destination. Egresos are never involved.
 """
 
-from pymongo import UpdateOne
+import contextlib
 
+from pymongo import UpdateOne
+from pymongo.errors import DuplicateKeyError
+
+import database
 from database import boletas, configuracion, traslados
 from motores.cache import invalidate_dashboard_cache
 from motores.config_service import get_config
@@ -18,21 +22,32 @@ from motores.ticket_service import estado_pipeline_expr, movimiento_neto_expr
 
 def next_traslado_id() -> int:
     """Return the next traslado consecutive, skipping ids already in use."""
-    while True:
+    for _retry in range(50):
         result = configuracion.find_one_and_update(
             {"_id": CONFIG_ID},
             {"$inc": {"traslado_counter": 1}},
             upsert=True,
             return_document=True,
         )
-        candidate = int(result["traslado_counter"] if result else 1)
+        candidate = int(result["traslado_counter"])
         if traslados.count_documents({"_id": candidate}) == 0:
             return candidate
+    raise RuntimeError("No se pudo obtener un id de traslado libre tras 50 intentos.")
 
 
-def _append_movimiento(boleta_id: int, mov: dict, valor_boleta: int) -> UpdateOne:
+def _append_movimiento(boleta_id: int, mov: dict, valor_boleta: int, *, min_total: int = 0, max_total: int | None = None) -> UpdateOne:
+    filtro: dict = {"_id": boleta_id}
+    exprs = []
+    if min_total:
+        exprs.append({"$gte": [{"$ifNull": ["$total_abonado", 0]}, min_total]})
+    if max_total is not None:
+        exprs.append({"$lte": [{"$ifNull": ["$total_abonado", 0]}, max_total]})
+    if len(exprs) == 1:
+        filtro["$expr"] = exprs[0]
+    elif len(exprs) > 1:
+        filtro["$expr"] = {"$and": exprs}
     return UpdateOne(
-        {"_id": boleta_id},
+        filtro,
         [
             {"$set": {MOVIMIENTOS_FIELD: {"$concatArrays": [{"$ifNull": ["$" + MOVIMIENTOS_FIELD, []]}, {"$literal": [mov]}]}}},
             {"$set": {"total_abonado": movimiento_neto_expr()}},
@@ -51,8 +66,9 @@ def registrar_traslado(
     vendedor_nombre: str,
     usuario: str,
     usuario_nombre: str,
+    observaciones: str = "",
 ) -> None:
-    """Apply a traslado atomically on both tickets and store its comprobante."""
+    """Move saldo and its receipt in one MongoDB transaction."""
     mov_origen = {
         "tipo": MOV_TRASLADO_SALIDA,
         "fecha": fecha,
@@ -72,27 +88,42 @@ def registrar_traslado(
         "contraparte": origen,
     }
 
-    boletas.bulk_write(
-        [
-            _append_movimiento(origen, mov_origen, _valor_boleta()),
-            _append_movimiento(destino, mov_destino, _valor_boleta()),
-        ],
-        ordered=False,
-    )
-    traslados.insert_one(
-        {
-            "_id": traslado_id,
-            "fecha": fecha,
-            "boleta_origen": origen,
-            "boleta_destino": destino,
-            "valor": valor,
-            "vendedor_id": vendedor_id,
-            "vendedor_nombre": vendedor_nombre,
-            "usuario_id": usuario,
-            "usuario_nombre": usuario_nombre,
-            "registrado_en": now_local(),
-        }
-    )
+    client = getattr(database, "_client", None)
+    if client is None:
+        raise RuntimeError("MongoDB no está disponible para registrar el traslado.")
+    valor_boleta = _valor_boleta()
+
+    def aplicar(session) -> None:
+        resultado = boletas.bulk_write(
+            [
+                _append_movimiento(origen, mov_origen, valor_boleta, min_total=valor),
+                _append_movimiento(destino, mov_destino, valor_boleta, max_total=valor_boleta - valor),
+            ],
+            ordered=True,
+            session=session,
+        )
+        if resultado.matched_count != 2:
+            raise ValueError("El saldo cambió mientras se registraba el traslado. Verifique e intente de nuevo.")
+        with contextlib.suppress(DuplicateKeyError):
+            traslados.insert_one(
+                {
+                    "_id": traslado_id,
+                    "fecha": fecha,
+                    "boleta_origen": origen,
+                    "boleta_destino": destino,
+                    "valor": valor,
+                    "vendedor_id": vendedor_id,
+                    "vendedor_nombre": vendedor_nombre,
+                    "usuario_id": usuario,
+                    "usuario_nombre": usuario_nombre,
+                    "registrado_en": now_local(),
+                    "observaciones": observaciones,
+                },
+                session=session,
+            )
+
+    with client.start_session() as session:
+        session.with_transaction(aplicar)
     invalidate_dashboard_cache()
 
 

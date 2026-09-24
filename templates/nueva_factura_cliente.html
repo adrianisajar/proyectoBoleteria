@@ -13,6 +13,7 @@
 
 <form id="formFacturaCliente" method="post" class="row g-3" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="confirmar_pagadas" id="confirmarPagadas" value="">
     <div class="col-lg-4">
         <div class="office-card bg-body p-3 p-md-4">
             <h2 class="section-title mb-3">Datos del cliente</h2>
@@ -23,7 +24,7 @@
                 </div>
                 <div class="col-12">
                     <label for="telefono" class="form-label fw-semibold">Tel&eacute;fono</label>
-                    <input type="tel" class="form-control" id="telefono" name="telefono" value="{{ form.telefono }}" placeholder="3001234567" data-validation="numbers">
+                    <input type="tel" class="form-control" id="telefono" name="telefono" value="{{ form.telefono }}" placeholder="Teléfono" data-validation="numbers">
                 </div>
                 <div class="col-12">
                     <label for="direccion" class="form-label fw-semibold">Direcci&oacute;n</label>
@@ -73,14 +74,14 @@
                     <tbody id="abonosBody">
                         <tr class="fila-abono">
                             <td>
-                                <input type="text" class="form-control form-control-sm ticket-number boleta-input" name="boleta[]" placeholder="0001" inputmode="numeric" maxlength="4" required autocomplete="off" data-validation="numbers">
+                                <input type="text" class="form-control form-control-sm ticket-number boleta-input" name="boleta[]" placeholder="Boleta" inputmode="numeric" maxlength="4" required autocomplete="off" data-validation="numbers">
                                 <div class="boleta-warnings text-danger small mt-1"></div>
                                 <div class="boleta-info text-secondary small mt-1" style="font-size:.65rem;"></div>
                             </td>
                             <td>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text">$</span>
-                                    <input type="text" class="form-control monto-input" name="monto[]" placeholder="0" inputmode="numeric" autocomplete="off">
+                                    <input type="text" class="form-control monto-input" name="monto[]" placeholder="Valor" inputmode="numeric" autocomplete="off">
                                 </div>
 
                             </td>
@@ -88,10 +89,11 @@
                                 <select class="form-select form-select-sm" name="metodo[]">
                                     <option value="efectivo">Efectivo</option>
                                     <option value="transferencia">Transferencia</option>
+                                    <option value="pago_a_delio">Pago a Delio</option>
                                 </select>
                             </td>
                             <td class="ref-cell">
-                                <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="TX-000" autocomplete="off" data-validation="referencia">
+                                <input type="text" class="form-control form-control-sm" name="referencia[]" placeholder="Referencia" autocomplete="off" data-validation="referencia">
                             </td>
                             <td class="banco-cell">
                                 <input type="text" class="form-control form-control-sm" name="banco[]" placeholder="Banco" list="listaBancos" autocomplete="off" data-validation="name">
@@ -174,6 +176,7 @@
     const VALOR_BOLETA = {{ valor_boleta | tojson }};
 
     const plantilla = abonosBody.querySelector(".fila-abono").cloneNode(true);
+    const esc = (s) => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
 
     const previewPlaceholder = document.getElementById("previewPlaceholder");
     const previewContent = document.getElementById("previewContent");
@@ -212,7 +215,7 @@
         var h = "";
         h += '<div class="mb-3 pb-3 border-bottom">';
         h += '  <div class="text-secondary small fw-semibold">Cliente</div>';
-        h += '  <div class="fw-bold fs-5">' + nombre + '</div>';
+        h += '  <div class="fw-bold fs-5">' + esc(nombre) + '</div>';
         h += '</div>';
 
         h += '<h6 class="fw-bold mb-2">Boletas</h6>';
@@ -266,12 +269,19 @@
         const metodo = fila.querySelector("select[name='metodo[]']").value;
         const refCell = fila.querySelector(".ref-cell");
         const bancoCell = fila.querySelector(".banco-cell");
-        const mostrar = metodo === "transferencia";
-        refCell.style.display = mostrar ? "" : "none";
-        bancoCell.style.display = mostrar ? "" : "none";
-        if (!mostrar) {
-            fila.querySelector("input[name='referencia[]']").value = "";
-            fila.querySelector("input[name='banco[]']").value = "";
+        const refInput = fila.querySelector("input[name='referencia[]']");
+        if (metodo === "pago_a_delio") {
+            refCell.style.display = "none";
+            bancoCell.style.display = "none";
+            refInput.value = "SIN REGISTRO";
+        } else if (metodo === "transferencia") {
+            refCell.style.display = "";
+            bancoCell.style.display = "";
+            refInput.value = "";
+        } else {
+            refCell.style.display = "none";
+            bancoCell.style.display = "none";
+            refInput.value = "";
         }
     };
 
@@ -296,24 +306,75 @@
     let autoFillTimeout = null;
     let boletaCache = {};
     const previewBtn = document.getElementById("btnPreview");
+    let previewTienePagadas = false;
+    function escHtml(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 
     const verificarBoleta = async (numero) => {
         if (boletaCache[numero] !== undefined) return boletaCache[numero];
         try {
             const res = await fetch("/api/boletas/" + numero);
             const data = await res.json();
-            boletaCache[numero] = data.ok
-                ? { ok: true, estado: data.estado || "", total_abonado: data.total_abonado || 0, vendedor_nombre: data.vendedor_nombre || "" }
-                : { ok: false };
+            if (data.ok) {
+                boletaCache[numero] = { ok: true, estado: data.estado || "", total_abonado: data.total_abonado || 0, vendedor_nombre: data.vendedor_nombre || "", cliente_nombre: (data.cliente || {}).nombre || "" };
+            } else {
+                boletaCache[numero] = { ok: false };
+            }
         } catch (_e) {
-            boletaCache[numero] = { ok: false };
+            /* Network error: do NOT cache — let next validation retry */
         }
-        return boletaCache[numero];
+        return boletaCache[numero] || { ok: false };
+    };
+
+    const verificarBoletasBatch = async (numeros) => {
+        const uncached = numeros.filter(n => boletaCache[n] === undefined);
+        if (uncached.length) {
+            try {
+                const res = await fetch("/api/boletas/validar", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json", "X-CSRF-Token": getCsrfToken()},
+                    body: JSON.stringify({ boletas: uncached }),
+                });
+                const data = await res.json();
+                if (data.ok && data.resultados) {
+                    Object.entries(data.resultados).forEach(([key, val]) => {
+                        const num = parseInt(key);
+                        if (val.ok) {
+                            boletaCache[num] = { ok: true, estado: val.estado || "", total_abonado: val.total_abonado || 0, vendedor_id: val.vendedor_id || "", vendedor_nombre: val.vendedor_nombre || "", cliente_nombre: val.cliente_nombre || "" };
+                        } else {
+                            boletaCache[num] = { ok: false };
+                        }
+                    });
+                }
+            } catch (_e) {
+                /* Network error: do NOT poison cache — leave uncached entries undefined for retry */
+            }
+        }
+        const result = {};
+        numeros.forEach(n => { result[n] = boletaCache[n] || { ok: false }; });
+        return result;
     };
 
     const validarFilas = async () => {
+        const myGen = ++validarGeneration;
         const filas = abonosBody.querySelectorAll(".fila-abono");
         let hasErrors = false;
+
+        const conteoBoletas = {};
+        filas.forEach(function(f) {
+            const raw = f.querySelector(".boleta-input").value.trim();
+            if (/^\d{4}$/.test(raw)) {
+                const num = parseInt(raw);
+                conteoBoletas[num] = (conteoBoletas[num] || 0) + 1;
+            }
+        });
+        const numerosDuplicados = Object.keys(conteoBoletas).filter(function(k) { return conteoBoletas[k] > 1; });
+
+        const allNums = [];
+        filas.forEach(function(f) {
+            const raw = f.querySelector(".boleta-input").value.trim();
+            if (/^\d{4}$/.test(raw)) allNums.push(parseInt(raw));
+        });
+        if (allNums.length) await verificarBoletasBatch([...new Set(allNums)]);
 
         for (const f of filas) {
             const raw = f.querySelector(".boleta-input").value.trim();
@@ -325,32 +386,49 @@
             if (!/^\d{4}$/.test(raw)) continue;
 
             const num = parseInt(raw);
+            if (numerosDuplicados.indexOf(String(num)) !== -1) {
+                warningsEl.innerHTML = '<i class="bi bi-x-circle me-1"></i>Boleta duplicada';
+                hasErrors = true;
+                continue;
+            }
             const result = await verificarBoleta(num);
 
             if (!result.ok) {
                 warningsEl.innerHTML = '<i class="bi bi-x-circle me-1"></i>No existe';
                 hasErrors = true;
             } else if (result.estado === "pagada") {
-                warningsEl.innerHTML = '<i class="bi bi-x-circle me-1"></i>Ya est\u00e1 pagada';
-                hasErrors = true;
+                warningsEl.innerHTML = '<i class="bi bi-exclamation-triangle text-warning me-1"></i>Ya está pagada ($' + result.total_abonado.toLocaleString("es-CO") + ' abonado) — se pedirá confirmación al generar';
             } else {
                 var infoParts = [];
                 var estadoLabel = result.estado || "disponible";
-                infoParts.push(estadoLabel.charAt(0).toUpperCase() + estadoLabel.slice(1));
+                if (estadoLabel === "abonando" && result.total_abonado > 0) {
+                    infoParts.push("Abonado: $" + result.total_abonado.toLocaleString("es-CO"));
+                } else {
+                    infoParts.push(estadoLabel.charAt(0).toUpperCase() + estadoLabel.slice(1));
+                    if (result.total_abonado > 0) infoParts.push("Abonado: $" + result.total_abonado.toLocaleString("es-CO"));
+                }
+                if (result.cliente_nombre) infoParts.push(result.cliente_nombre);
                 infoParts.push("Vend: " + (result.vendedor_nombre || "LOCAL"));
-                if (result.total_abonado > 0) infoParts.push("Abonado: $" + result.total_abonado.toLocaleString("es-CO"));
                 infoEl.textContent = infoParts.join(" | ");
                 var montoVal = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
-                if (montoVal > VALOR_BOLETA) {
-                    warningsEl.innerHTML = '<i class="bi bi-exclamation-triangle text-warning me-1"></i>Monto excede el valor de la boleta ($' + VALOR_BOLETA.toLocaleString("es-CO") + ')';
+                if (montoVal <= 0) {
+                    warningsEl.innerHTML = '<i class="bi bi-x-circle me-1"></i>Ingrese el valor del pago';
+                    hasErrors = true;
+                } else if (montoVal > VALOR_BOLETA) {
+                    warningsEl.innerHTML = '<i class="bi bi-x-circle me-1"></i>Monto excede el valor de la boleta ($' + VALOR_BOLETA.toLocaleString("es-CO") + ')';
+                    hasErrors = true;
+                } else if (montoVal > 0 && result.total_abonado + montoVal > VALOR_BOLETA) {
+                    warningsEl.innerHTML = '<i class="bi bi-exclamation-triangle text-warning me-1"></i>Abonado ($' + (result.total_abonado + montoVal).toLocaleString("es-CO") + ') excedería el valor de la boleta ($' + VALOR_BOLETA.toLocaleString("es-CO") + '). El pago se registrará.';
                 }
             }
         }
 
+        if (myGen !== validarGeneration) return;
         previewBtn.disabled = hasErrors;
     };
 
     let validarTimeout = null;
+    let validarGeneration = 0;
     const programarValidacion = () => {
         if (validarTimeout) clearTimeout(validarTimeout);
         validarTimeout = setTimeout(validarFilas, 300);
@@ -448,27 +526,40 @@
 
         const filas = abonosBody.querySelectorAll(".fila-abono");
         const items = [];
+        previewTienePagadas = false;
         filas.forEach(function(f) {
             const raw = f.querySelector(".boleta-input").value.trim();
             if (!/^\d{4}$/.test(raw)) return;
             const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
-            items.push({ boleta: parseInt(raw), monto: monto });
+            const num = parseInt(raw);
+            const cached = boletaCache[num];
+            const esPagada = !!(cached && cached.estado === "pagada");
+            if (esPagada) previewTienePagadas = true;
+            items.push({ boleta: num, monto: monto, pagada: esPagada });
         });
 
         if (!items.length) { alert("Ingrese al menos una boleta v\u00e1lida."); return null; }
 
+        if (items.some(function(it) { return it.monto <= 0; })) { alert("Ingrese el valor del pago para todas las boletas."); return null; }
+
         const totalGeneral = items.reduce(function(s, it) { return s + it.monto; }, 0);
 
         var html = "";
+        if (previewTienePagadas) {
+            html += '<div class="alert alert-warning mb-3"><i class="bi bi-exclamation-triangle me-2"></i>Esta factura incluye boletas <strong>ya pagadas</strong>: al confirmar acepta registrar los pagos como excedente (seguirán mostrando estado pagada).</div>';
+        }
         html += '<div class="mb-3 pb-3 border-bottom">';
         html += '  <div class="text-secondary small fw-semibold">Cliente</div>';
-        html += '  <div class="fw-bold fs-5">' + nombre + '</div>';
+        html += '  <div class="fw-bold fs-5">' + esc(nombre) + '</div>';
         html += '</div>';
 
         html += '<h6 class="fw-bold mb-2">Boletas</h6>';
         items.forEach(function(it) {
             html += '<div class="panel-muted d-flex justify-content-between align-items-center p-2 mb-1 rounded">';
             html += '  <div><span class="fw-bold ticket-number">#' + ("0000" + it.boleta).slice(-4) + '</span>';
+            if (it.pagada) {
+                html += '    <span class="badge text-bg-success ms-2">PAGADA</span>';
+            }
             if (it.monto > 0) {
                 html += '    <span class="text-success ms-2">$' + it.monto.toLocaleString("es-CO") + '</span>';
             } else {
@@ -488,7 +579,7 @@
         return html;
     };
 
-    document.getElementById("btnPreview").addEventListener("click", function() {
+    document.getElementById("btnPreview").addEventListener("click", async function() {
         var txErrors = [];
         abonosBody.querySelectorAll(".fila-abono").forEach(function(f) {
             if (f.querySelector("select[name='metodo[]']").value !== "transferencia") return;
@@ -499,7 +590,7 @@
             if (!ref) missing.push("referencia");
             if (!banco) missing.push("banco");
             if (missing.length) {
-                txErrors.push("Transferencia en <strong>" + raw + "</strong>: falta " + missing.join(" y "));
+                txErrors.push("Transferencia en <strong>" + escHtml(raw) + "</strong>: falta " + missing.join(" y "));
             }
         });
         if (txErrors.length) {
@@ -509,8 +600,18 @@
             modal.show();
             return;
         }
+        var nums = [];
+        abonosBody.querySelectorAll(".fila-abono").forEach(function(f) {
+            var raw = f.querySelector(".boleta-input").value.trim();
+            if (/^\d{4}$/.test(raw)) nums.push(parseInt(raw));
+        });
+        if (nums.length) await verificarBoletasBatch([...new Set(nums)]);
+        document.getElementById("confirmarPagadas").value = "";
         var html = armarPreview();
         if (html !== null) {
+            if (previewTienePagadas) {
+                document.getElementById("confirmarPagadas").value = "1";
+            }
             document.getElementById("previewBody").innerHTML = html;
             document.getElementById("btnConfirmar").disabled = false;
             var modal = new bootstrap.Modal(document.getElementById("previewModal"));
@@ -519,6 +620,8 @@
     });
 
     document.getElementById("btnConfirmar").addEventListener("click", function() {
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Enviando...';
         bootstrap.Modal.getInstance(document.getElementById("previewModal")).hide();
         document.getElementById("formFacturaCliente").submit();
     });
@@ -533,14 +636,70 @@
         }
         const filas = abonosBody.querySelectorAll(".fila-abono");
         let hasTicket = false;
+        let missingMonto = false;
+        const boletaSet = new Set();
+        let dupFound = false;
         filas.forEach(function(f) {
-            if (/^\d{4}$/.test(f.querySelector(".boleta-input").value.trim())) hasTicket = true;
+            const raw = f.querySelector(".boleta-input").value.trim();
+            if (!/^\d{4}$/.test(raw)) return;
+            hasTicket = true;
+            const monto = parseInt(f.querySelector(".monto-input").value.replace(/[^0-9]/g, "")) || 0;
+            if (monto <= 0) missingMonto = true;
+            const num = parseInt(raw);
+            if (boletaSet.has(num)) dupFound = true;
+            boletaSet.add(num);
         });
         if (!hasTicket) {
             e.preventDefault();
             alert("Ingrese al menos una boleta v\u00e1lida.");
+            return;
+        }
+        if (missingMonto) {
+            e.preventDefault();
+            alert("Ingrese el valor del pago para todas las boletas.");
+            return;
+        }
+        if (dupFound) {
+            e.preventDefault();
+            alert("Hay boletas duplicadas en la factura. Elimine las repeticiones antes de generar la factura.");
         }
     });
 })();
 </script>
+{% if confirm_pagadas %}
+<div class="modal fade" id="confirmPagadasModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Boletas ya pagadas</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning mb-3">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Las siguientes boletas <strong>ya están pagadas</strong>. Si continúa, los pagos se registrarán como <strong>excedente</strong> y seguirán mostrando estado pagada:
+                </div>
+                <ul class="mb-0">
+                    {% for item in confirm_pagadas %}
+                    <li class="ticket-number">#{{ "%04d" % item.boleta }} (${{ "{:,}".format(item.total) }} abonado)</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-warning" id="btnConfirmarPagadas">Sí, registrar excedente</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+(function() {
+    var modal = new bootstrap.Modal(document.getElementById("confirmPagadasModal"));
+    modal.show();
+    document.getElementById("btnConfirmarPagadas").addEventListener("click", function() {
+        document.getElementById("confirmarPagadas").value = "1";
+        document.getElementById("formFacturaCliente").submit();
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

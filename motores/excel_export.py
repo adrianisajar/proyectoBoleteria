@@ -1,4 +1,5 @@
 import io
+import re
 import zipfile
 from html import escape
 
@@ -23,7 +24,9 @@ def make_xlsx_response(filename: str, headers: list, rows: list) -> Response:
         for c_idx, value in enumerate(row, start=1):
             cell_ref = f"{column_letter(c_idx)}{r_idx}"
             style = ' s="1"' if r_idx == 1 else ""
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if isinstance(value, bool):
+                cells.append(f'<c r="{cell_ref}"{style} t="inlineStr"><is><t>{escape(str(value))}</t></is></c>')
+            elif isinstance(value, (int, float)):
                 cells.append(f'<c r="{cell_ref}"{style}><v>{value}</v></c>')
             else:
                 cells.append(f'<c r="{cell_ref}"{style} t="inlineStr"><is><t>{escape(str(value or ""))}</t></is></c>')
@@ -86,8 +89,9 @@ def make_xlsx_response(filename: str, headers: list, rows: list) -> Response:
         zf.writestr("xl/styles.xml", styles)
         zf.writestr("xl/worksheets/sheet1.xml", worksheet)
     memory.seek(0)
+    safe_name = re.sub(r'[\r\n"]', "", filename)
     return Response(
         memory.getvalue(),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}.xlsx"},
+        headers={"Content-Disposition": f"attachment; filename={safe_name}.xlsx"},
     )

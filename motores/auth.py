@@ -57,15 +57,15 @@ def role_required(*roles: str) -> Callable[[Callable[..., Any]], Callable[..., A
             user = current_user()
             if user is None:
                 current_app.logger.warning(
-                    "Redirigiendo a login (role_required): ruta=%s cookie=%s session_keys=%s",
+                    "Redirigiendo a login (role_required): ruta=%s cookie=%s tiene_session=%s",
                     request.path,
                     bool(request.cookies.get(current_app.config.get("SESSION_COOKIE_NAME", "session"))),
-                    sorted(session.keys()),
+                    bool(session),
                 )
                 if _es_solicitud_api():
                     return jsonify({"ok": False, "error": "Sesi\u00f3n no activa."}), 401
                 flash("Debes iniciar sesi\u00f3n para acceder.", "warning")
-                return redirect(url_for("login", next=request.full_path))
+                return redirect(url_for("login", next=request.path))
             if roles and user.get("rol") not in roles:
                 if _es_solicitud_api():
                     return jsonify({"ok": False, "error": "No tienes permisos para esta acci\u00f3n."}), 403

@@ -1,8 +1,10 @@
 import hashlib
+import hmac
 
 from app import app as flask_app
 from database import boletas, facturas, vendedores
 from motores.constants import MOV_EGRESO, MOV_PAGO
+from motores.dashboard_service import get_dashboard_stats
 
 
 def _post_egreso(
@@ -34,6 +36,20 @@ def _post_egreso(
             "metodo[]": metodos,
             "referencia[]": referencias,
             "banco[]": bancos,
+        },
+    )
+
+
+def _cargar_ingreso(boleta_id, valor, vendedor_id="VEND01"):
+    boletas.update_one(
+        {"_id": boleta_id},
+        {
+            "$set": {
+                "vendedor_id": vendedor_id,
+                "estado": "pagada" if valor >= 70000 else "abonando",
+                "total_abonado": valor,
+                "historial_movimientos": [{"tipo": MOV_PAGO, "fecha": "2026-07-01", "valor": valor, "metodo": "efectivo", "factura_id": 1}],
+            }
         },
     )
 
@@ -72,6 +88,8 @@ def test_egreso_crea_factura_y_movimiento_sin_tocar_saldo(client):
 
 
 def test_egreso_multiples_boletas_una_fila(client):
+    _cargar_ingreso(1, 30000)
+    _cargar_ingreso(2, 30000)
     resp = _post_egreso(client, boletas_=("0001, 0002",), valores=("14000",))
     assert resp.status_code == 302
     f = facturas.find_one({"tipo": "egreso"})
@@ -82,6 +100,43 @@ def test_egreso_multiples_boletas_una_fila(client):
         assert tipos.count(MOV_EGRESO) == 1
 
 
+def test_egreso_supera_abonado_rechazado(client):
+    _cargar_ingreso(1, 10000)
+    resp = _post_egreso(client, boletas_=("0001",), valores=("20000",))
+    assert resp.status_code == 200
+    assert "supera lo abonado" in resp.get_data(as_text=True)
+    assert facturas.count_documents({"tipo": "egreso"}) == 0
+    assert boletas.find_one({"_id": 1})["total_abonado"] == 10000
+
+
+def test_egreso_acumulado_supera_abonado_rechazado(client):
+    boletas.update_one(
+        {"_id": 1},
+        {
+            "$set": {
+                "vendedor_id": "VEND01",
+                "estado": "pagada",
+                "total_abonado": 30000,
+                "historial_movimientos": [
+                    {"tipo": MOV_PAGO, "fecha": "2026-07-01", "valor": 30000, "metodo": "efectivo", "factura_id": 1},
+                    {"tipo": MOV_EGRESO, "fecha": "2026-07-02", "valor": 20000, "metodo": "efectivo", "factura_id": 2},
+                ],
+            }
+        },
+    )
+    resp = _post_egreso(client, boletas_=("0001",), valores=("20000",))
+    assert resp.status_code == 200
+    assert "supera lo abonado" in resp.get_data(as_text=True)
+    assert facturas.count_documents({"tipo": "egreso"}) == 0
+
+
+def test_egreso_igual_a_abonado_ok(client):
+    _cargar_ingreso(1, 20000)
+    resp = _post_egreso(client, boletas_=("0001",), valores=("20000",))
+    assert resp.status_code == 302
+    assert facturas.count_documents({"tipo": "egreso"}) == 1
+
+
 def test_egreso_caja_permitido(client_caja):
     resp = client_caja.get("/facturas/egreso")
     assert resp.status_code == 200
@@ -90,6 +145,7 @@ def test_egreso_caja_permitido(client_caja):
 
 
 def test_egreso_caja_registra_operacion(client_caja):
+    _cargar_ingreso(1, 30000)
     resp = _post_egreso(client_caja, boletas_=("0001",), valores=("10000",))
     assert resp.status_code == 302
     assert facturas.count_documents({"tipo": "egreso"}) == 1
@@ -205,6 +261,7 @@ def test_egreso_sin_filas(client):
 
 
 def test_egreso_list_renders(client):
+    _cargar_ingreso(1, 30000)
     _post_egreso(client, boletas_=("0001",), valores=("10000",))
     resp = client.get("/facturas/egreso")
     assert resp.status_code == 200
@@ -229,6 +286,7 @@ def test_egreso_form_incluye_boleta_hidden(client):
 
 
 def test_ver_factura_egreso_renders(client):
+    _cargar_ingreso(1, 30000)
     _post_egreso(client, boletas_=("0001",), valores=("10000",))
     f = facturas.find_one({"tipo": "egreso"})
     resp = client.get(f"/facturas/{f['_id']}")
@@ -239,15 +297,109 @@ def test_ver_factura_egreso_renders(client):
 
 
 def test_anular_egreso_retira_movimientos(client):
+    _cargar_ingreso(1, 70000)
     _post_egreso(client, boletas_=("0001",), valores=("20000",))
     f = facturas.find_one({"tipo": "egreso"})
     fid = f["_id"]
-    h = hashlib.sha256(f"{fid}:False:{flask_app.secret_key}".encode()).hexdigest()[:16]
+    h = hmac.new(flask_app.secret_key.encode(), f"{fid}:False".encode(), hashlib.sha256).hexdigest()[:16]
     resp = client.post(f"/facturas/{fid}/anular", data={"motivo": "Comision mal calculada", "anulacion_hash": h})
     assert resp.status_code == 302
 
     b = boletas.find_one({"_id": 1})
     assert all(m["tipo"] != MOV_EGRESO for m in b["historial_movimientos"])
-    assert b["total_abonado"] == 0
+    assert b["total_abonado"] == 70000
     f = facturas.find_one({"_id": fid})
     assert f["anulada"] is True
+
+
+def _post_egreso_general(client, descripcion="Arriendo del local", monto="50000", fecha=None):
+    data = {"descripcion": descripcion, "monto": monto}
+    if fecha is not None:
+        data["fecha"] = fecha
+    return client.post("/facturas/egreso/general/nueva", data=data)
+
+
+def test_egreso_general_crea_factura_sin_boletas(client):
+    _cargar_ingreso(1, 70000)
+    resp = _post_egreso_general(client)
+    assert resp.status_code == 302
+    f = facturas.find_one({"tipo": "egreso", "es_general": True})
+    assert f is not None
+    assert f["valor_total"] == 50000
+    assert f["descripcion"] == "Arriendo del local"
+    assert f["detalle"] == []
+    assert f["boletas"] == []
+    assert f["estado"] == "completa"
+    b = boletas.find_one({"_id": 1})
+    assert b["total_abonado"] == 70000
+    assert b["historial_movimientos"] == [{"tipo": MOV_PAGO, "fecha": "2026-07-01", "valor": 70000, "metodo": "efectivo", "factura_id": 1}]
+
+
+def test_egreso_general_valida_entrada(client):
+    _cargar_ingreso(1, 70000)
+    resp = _post_egreso_general(client, descripcion="", monto="50000")
+    assert resp.status_code == 200
+    resp = _post_egreso_general(client, descripcion="X", monto="0")
+    assert resp.status_code == 200
+    assert facturas.count_documents({"es_general": True}) == 0
+
+
+def test_egreso_general_bloquea_sobre_disponible(client):
+    _cargar_ingreso(1, 70000)
+    resp = _post_egreso_general(client, descripcion="Exceso", monto="80000")
+    assert resp.status_code == 200
+    assert facturas.count_documents({"es_general": True}) == 0
+    resp = _post_egreso_general(client, descripcion="Justo", monto="70000")
+    assert resp.status_code == 302
+
+
+def test_egreso_general_resta_del_neto_y_anulacion_devuelve(client):
+    _cargar_ingreso(1, 70000)
+    _post_egreso_general(client, monto="20000")
+    stats = get_dashboard_stats(force=True)
+    assert stats["total_egresos"] == 20000
+    assert stats["recaudo_neto"] == 50000
+    f = facturas.find_one({"es_general": True})
+    h = hmac.new(flask_app.secret_key.encode(), f"{f['_id']}:False".encode(), hashlib.sha256).hexdigest()[:16]
+    resp = client.post(f"/facturas/{f['_id']}/anular", data={"motivo": "Error", "anulacion_hash": h})
+    assert resp.status_code == 302
+    stats = get_dashboard_stats(force=True)
+    assert stats["total_egresos"] == 0
+    assert stats["recaudo_neto"] == 70000
+
+
+def test_egresos_list_muestra_anulada(client):
+    _cargar_ingreso(1, 70000)
+    _post_egreso(client, boletas_=("0001",), valores=("20000",))
+    f = facturas.find_one({"tipo": "egreso"})
+    h = hmac.new(flask_app.secret_key.encode(), f"{f['_id']}:False".encode(), hashlib.sha256).hexdigest()[:16]
+    client.post(f"/facturas/{f['_id']}/anular", data={"motivo": "Prueba", "anulacion_hash": h})
+    resp = client.get("/facturas/egreso")
+    assert resp.status_code == 200
+    assert "Anulada" in resp.get_data(as_text=True)
+
+
+def test_egreso_general_visible_en_detalle(client):
+    _cargar_ingreso(1, 70000)
+    _post_egreso_general(client, descripcion="Servicios públicos", monto="15000")
+    f = facturas.find_one({"es_general": True})
+    resp = client.get(f"/facturas/{f['_id']}")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "EGRESO GENERAL" in html
+    assert "Servicios públicos" in html
+
+
+def test_egreso_general_con_fecha(client):
+    _cargar_ingreso(1, 70000)
+    resp = _post_egreso_general(client, descripcion="Atrasado", monto="10000", fecha="2026-07-15")
+    assert resp.status_code == 302
+    f = facturas.find_one({"es_general": True})
+    assert f["fecha"].strftime("%Y-%m-%d") == "2026-07-15"
+
+
+def test_egreso_general_fecha_futura_rechazada(client):
+    _cargar_ingreso(1, 70000)
+    resp = _post_egreso_general(client, descripcion="Futuro", monto="10000", fecha="2099-01-01")
+    assert resp.status_code == 200
+    assert facturas.count_documents({"es_general": True}) == 0

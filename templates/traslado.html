@@ -1,54 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Traslado T-{{ "%05d" % traslado._id }} — {{ super() }}{% endblock %}
 {% block head %}
-<style>
-@media print {
-  @page { margin: 2mm; }
-  html, body { min-height: auto !important; height: auto !important; }
-  nav, .navbar, .navbar *, .no-print, .modal, .modal-backdrop, .flash-stack,
-  .btn, button:not(.no-print), a:not(.no-print),
-  [class*="modal"], [id*="modal"] {
-    display: none !important;
-  }
-  body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
-  .app-main, .container { padding: 0 !important; margin: 0 !important; max-width: none !important; }
-  .recibo {
-    max-width: none !important; width: 100% !important; margin: 0 !important; padding: 0 !important;
-    font-size: 1.3rem !important; line-height: 1.8 !important;
-  }
-  .recibo-empresa { font-size: 1.75rem !important; font-weight: 800 !important; }
-  .recibo-titulo { font-size: 1.55rem !important; font-weight: 700 !important; }
-  .recibo-label { font-size: 1.4rem !important; }
-  .firmas { font-size: 1.3rem !important; }
-}
-.recibo {
-  max-width: 340px; margin: 0 auto;
-  padding: 1rem 1rem;
-  font-family: "Courier New", Courier, monospace;
-  font-size: 0.78rem;
-  line-height: 1.6;
-  background: #fff;
-  color: #111;
-}
-.recibo-header { text-align: center; margin-bottom: 0.8rem; }
-.recibo-empresa { font-size: 1.1rem; font-weight: 800; letter-spacing: 0.05em; }
-.recibo-titulo { font-size: 0.9rem; font-weight: 700; margin-top: 0.25rem; }
-.recibo-dir { font-size: 0.7rem; color: #555; }
-.recibo-linea { border: 0; border-top: 1px dashed #999; margin: 0.6rem 0; }
-.recibo-linea-doble { border: 0; border-top: 3px double #000; margin: 0.6rem 0; }
-.recibo-campo { display: flex; justify-content: space-between; }
-.recibo-label { color: #555; font-weight: 600; }
-.movimiento { margin: 0.6rem 0; padding: 0.4rem; border: 1px dashed #999; }
-.mov-valor { font-weight: 800; font-size: 0.9rem; }
-.firmas { margin-top: 1.8rem; display: flex; justify-content: center; text-align: center; font-size: 0.7rem; }
-.firma-linea { width: 8rem; border-top: 1px solid #000; padding-top: 0.25rem; margin-top: 0.3rem; }
-.recibo-footer { text-align: center; margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px dashed #999; font-size: 0.7rem; color: #555; }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/thermal.css') }}">
 {% endblock %}
 {% block content %}
 <div class="recibo">
   <div class="text-end mb-1 no-print">
-    <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir</button>
+    {% if printer_configured %}<form method="post" action="{{ url_for('imprimir_traslado', traslado_id=traslado._id) }}" class="d-inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn btn-success btn-sm" onclick="return confirm('¿Desea imprimir este traslado?');"><i class="bi bi-printer-fill"></i> Imprimir directo</button></form>{% endif %}
     <a href="{{ url_for('traslados_list') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
   </div>
 
@@ -64,7 +22,7 @@
   <hr class="recibo-linea">
 
   <div class="recibo-campo"><span class="recibo-label">DOCUMENTO</span><span>T-{{ "%05d" % traslado._id }}</span></div>
-  <div class="recibo-campo"><span class="recibo-label">FECHA</span><span>{{ traslado.fecha }}</span></div>
+  <div class="recibo-campo"><span class="recibo-label">FECHA</span><span>{{ traslado.fecha|fecha }}</span></div>
   <div><span class="recibo-label">RIFA</span></div>
   <div style="font-weight:600">{{ app_config.nombre_rifa or "Rifa" }}</div>
 
@@ -86,6 +44,13 @@
   <div class="recibo-campo"><span class="recibo-label">Saldo origen tras operación</span><span class="ticket-number">${{ "{:,}".format(origen.get("total_abonado", 0) or 0) }}</span></div>
   <div class="recibo-campo"><span class="recibo-label">Saldo destino tras operación</span><span class="ticket-number">${{ "{:,}".format(destino.get("total_abonado", 0) or 0) }}</span></div>
 
+  {% if traslado.get("observaciones") %}
+  <div class="obs">
+    <strong>Observaciones</strong><br>
+    <span style="white-space:pre-line;">{{ traslado.observaciones }}</span>
+  </div>
+  {% endif %}
+
   <div class="firmas">
     <div>
       <div style="margin-bottom: 0.3rem; font-size: 0.8rem;">{{ traslado.get("usuario_nombre") or "No registrado" }}</div>
@@ -95,7 +60,6 @@
 
   <div class="recibo-footer">
     <div style="font-size:0.75rem">T-{{ "%05d" % traslado._id }}</div>
-    <div>{{ app_config.get("footer_texto") or "Documento interno, no tiene validez fiscal." }}</div>
   </div>
 </div>
 {% endblock %}

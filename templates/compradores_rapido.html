@@ -17,7 +17,7 @@
       <button type="button" class="btn btn-outline-secondary btn-sm" onclick="agregarFilas(5)">+5 filas</button>
     </div>
     <div class="col-auto">
-      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copiarHaciaAbajo()"><i class="bi bi-arrow-down me-1"></i>Copiar hacia abajo</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="copiarUltimaFila()"><i class="bi bi-arrow-down me-1"></i>Copiar última fila</button>
     </div>
     <div class="col-auto">
       <button type="button" class="btn btn-outline-info btn-sm" id="btnValidar" onclick="validarTodo()"><i class="bi bi-check-circle me-1"></i>Validar todo</button>
@@ -31,15 +31,17 @@
   </div>
 
   <div class="table-responsive" style="max-height:70vh;overflow-y:auto;">
-    <table class="table table-bordered table-sm mb-0" id="tablaCompradores" style="font-size:0.85rem;">
+    <table class="table table-bordered table-sm mb-0" id="tablaCompradores" style="font-size:0.85rem;" data-sort-dir="asc">
       <thead class="table-light" style="position:sticky;top:0;z-index:2;">
         <tr>
-          <th style="width:50px;">#</th>
-          <th style="width:100px;">Boleta</th>
-          <th style="width:220px;">Comprador</th>
-          <th style="width:160px;">Tel&eacute;fono</th>
-          <th style="width:220px;">Direcci&oacute;n</th>
-          <th style="width:90px;">Estado</th>
+          <th style="width:50px;" class="sortable" onclick="sortTableFrontend('tablaCompradores', 0, true)">#</th>
+          <th style="width:100px;" class="sortable" onclick="sortTableFrontend('tablaCompradores', 1, true)">Boleta</th>
+          <th style="width:150px;" class="sortable" onclick="sortTableFrontend('tablaCompradores', 2, false)">Fecha adquisici&oacute;n</th>
+          <th style="width:220px;" class="sortable" onclick="sortTableFrontend('tablaCompradores', 3, false)">Comprador</th>
+          <th style="width:220px;" class="sortable" onclick="sortTableFrontend('tablaCompradores', 4, false)">Direcci&oacute;n</th>
+          <th style="width:160px;" class="sortable" onclick="sortTableFrontend('tablaCompradores', 5, false)">Tel&eacute;fono</th>
+          <th style="width:220px;" class="sortable" onclick="sortTableFrontend('tablaCompradores', 6, true)">Pagos</th>
+          <th style="width:90px;" class="sortable" onclick="sortTableFrontend('tablaCompradores', 7, false)">Estado</th>
           <th style="width:50px;"></th>
         </tr>
       </thead>
@@ -98,10 +100,18 @@ function rowHTML(idx) {
   const n = idx + 1;
   return `<tr>
     <td class="text-center text-muted small">${n}</td>
-    <td><input type="text" class="form-control form-control-sm boleta-input" inputmode="numeric" maxlength="4" autocomplete="off" data-validation="numbers"></td>
+    <td><input type="text" class="form-control form-control-sm boleta-input" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" data-validation="numbers"></td>
+    <td><input type="date" class="form-control form-control-sm fecha-input"></td>
     <td><input type="text" class="form-control form-control-sm nombre-input" autocomplete="off" data-validation="name"></td>
-    <td><input type="text" class="form-control form-control-sm telefono-input" inputmode="numeric" autocomplete="off" data-validation="numbers"></td>
     <td><input type="text" class="form-control form-control-sm direccion-input" autocomplete="off" data-validation="address"></td>
+    <td><input type="text" class="form-control form-control-sm telefono-input" inputmode="numeric" autocomplete="off" data-validation="numbers"></td>
+    <td><div class="d-flex gap-1">
+      <input type="text" class="form-control form-control-sm pago-input" inputmode="numeric" placeholder="0" autocomplete="off" data-money-input>
+      <select class="form-select form-select-sm metodo-select" style="max-width:112px">
+        <option value="efectivo">Efectivo</option>
+        <option value="transferencia">Transf.</option>
+      </select>
+    </div></td>
     <td class="text-center estado-cell"><span class="text-muted small">--</span></td>
     <td class="text-center"><button type="button" class="btn btn-outline-danger btn-sm py-0 px-1 btn-eliminar-fila">&times;</button></td>
   </tr>`;
@@ -144,10 +154,15 @@ function obtenerFilas() {
       nombre: (tr.querySelector(".nombre-input").value || "").trim(),
       telefono: (tr.querySelector(".telefono-input").value || "").trim(),
       direccion: (tr.querySelector(".direccion-input").value || "").trim(),
+      fecha_adquisicion: (tr.querySelector(".fecha-input").value || "").trim(),
+      pago: (tr.querySelector(".pago-input").value || "").trim(),
+      pago_metodo: (tr.querySelector(".metodo-select").value || "efectivo"),
     });
   }
   return filas;
 }
+
+function escHtml(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 
 function setEstado(tr, html) {
   tr.querySelector(".estado-cell").innerHTML = html;
@@ -188,7 +203,7 @@ function onBoletaInput(tr, immediate) {
         const c = data.cliente || {};
         if (c.nombre && c.nombre.trim()) {
           const nom = c.nombre.trim();
-          setEstado(tr, `<span class="text-warning small"><i class="bi bi-exclamation-triangle"></i> ${nom.substring(0, 20)}</span>`);
+          setEstado(tr, `<span class="text-warning small"><i class="bi bi-exclamation-triangle"></i> ${escHtml(nom.substring(0, 20))}</span>`);
           if (!tr.querySelector(".nombre-input").value.trim()) {
             tr.querySelector(".nombre-input").value = nom;
             tr.querySelector(".telefono-input").value = c.telefono || "";
@@ -287,7 +302,7 @@ function onKeyNav(e) {
 
   if ((e.ctrlKey || e.metaKey) && e.key === "d") {
     e.preventDefault();
-    copiarHaciaAbajo(tr);
+    copiarUltimaFila();
     return;
   }
 
@@ -309,24 +324,39 @@ function onKeyNav(e) {
   }
 }
 
-function copiarHaciaAbajo(origen) {
+function copiarUltimaFila() {
   const tbody = document.getElementById("tbodyCompradores");
   const rows = Array.from(tbody.children);
-  const startIdx = origen ? rows.indexOf(origen) : 0;
-  if (startIdx >= rows.length - 1) return;
 
-  const src = rows[startIdx];
-  const nombre = src.querySelector(".nombre-input").value;
-  const telefono = src.querySelector(".telefono-input").value;
-  const direccion = src.querySelector(".direccion-input").value;
-  if (!nombre && !telefono && !direccion) return;
-
-  for (let i = startIdx + 1; i < rows.length; i++) {
-    const t = rows[i];
-    if (nombre) t.querySelector(".nombre-input").value = nombre;
-    if (telefono) t.querySelector(".telefono-input").value = telefono;
-    if (direccion) t.querySelector(".direccion-input").value = direccion;
+  // 1. Encontrar la última fila con datos (empezar desde el final)
+  let srcIdx = -1;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const boleta = rows[i].querySelector(".boleta-input").value.trim();
+    if (boleta) { srcIdx = i; break; }
   }
+  if (srcIdx < 0) return; // ninguna fila con datos
+
+  // 2. Tomar la fila fuente
+  const src = rows[srcIdx];
+
+  // 3. Crear UNA nueva fila justo después de la fuente
+  const newRowHTML = rowHTML(srcIdx + 1);
+  tbody.insertAdjacentHTML("beforeend", newRowHTML);
+  const newRow = tbody.lastElementChild;
+  const srcInputs = src.querySelectorAll("input");
+  const newInputs = newRow.querySelectorAll("input");
+
+  // 4. Copiar todos los campos de texto de la última fila a la nueva
+  if (srcInputs[1]) newInputs[1].value = srcInputs[1].value;   // nombre
+  if (srcInputs[2]) newInputs[2].value = srcInputs[2].value;   // fecha adquisición
+  if (srcInputs[3]) newInputs[3].value = srcInputs[3].value;   // comprador
+  if (srcInputs[4]) newInputs[4].value = srcInputs[4].value;   // dirección
+  if (srcInputs[5]) newInputs[5].value = srcInputs[5].value;   // teléfono
+
+  // Copiar método de pago del select (fuera de los inputs)
+  const srcMetodo = src.querySelector(".metodo-select").value;
+  newRow.querySelector(".metodo-select").value = srcMetodo;
+  actualizarCuenta();
 }
 
 /* ── validación por lotes ────────────────────────────── */
@@ -367,7 +397,7 @@ function validarTodo() {
           setEstado(tr, '<span class="text-danger small"><i class="bi bi-x-circle"></i> No existe</span>');
         } else if (info.tiene_cliente) {
           const nom = (info.cliente && info.cliente.nombre || "").trim();
-          setEstado(tr, `<span class="text-warning small"><i class="bi bi-exclamation-triangle"></i> ${nom.substring(0, 20)}</span>`);
+          setEstado(tr, `<span class="text-warning small"><i class="bi bi-exclamation-triangle"></i> ${escHtml(nom.substring(0, 20))}</span>`);
         } else {
           setEstado(tr, '<span class="text-success small"><i class="bi bi-check-circle"></i> OK</span>');
         }
@@ -378,9 +408,19 @@ function validarTodo() {
     .finally(() => setBtnLoading(btn, false));
 }
 
+function resumenPagos(filas) {
+  let n = 0, total = 0;
+  for (const f of filas) {
+    const v = parseInt(String(f.pago || "").replace(/\D/g, "")) || 0;
+    if (v > 0) { n++; total += v; }
+  }
+  return {n, total};
+}
+
 function mostrarResumen(filas, resultados) {
   let validas = 0, conCliente = 0, inexistentes = 0, sinDatos = 0;
   const detInex = [], detCliente = [];
+  const rp = resumenPagos(filas);
 
   for (const f of filas) {
     const info = resultados ? resultados[String(f.boleta)] : null;
@@ -399,7 +439,8 @@ function mostrarResumen(filas, resultados) {
 
   const parts = [];
   if (validas) parts.push(`<p class="text-success mb-1"><i class="bi bi-check-circle me-1"></i>${validas} boleta(s) v&aacute;lida(s) sin cliente</p>`);
-  if (conCliente) parts.push(`<p class="text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>${conCliente} boleta(s) se sobrescribir&aacute;n: ${detCliente.map(d => `${d.boleta} (${d.nom.substring(0, 15)})`).join(", ")}</p>`);
+  if (rp.n) parts.push(`<p class="text-success mb-1"><i class="bi bi-cash-coin me-1"></i>${rp.n} pago(s) por $${rp.total.toLocaleString("es-CO")}</p>`);
+  if (conCliente) parts.push(`<p class="text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>${conCliente} boleta(s) se sobrescribir&aacute;n: ${detCliente.map(d => `${d.boleta} (${escHtml(d.nom.substring(0, 15))})`).join(", ")}</p>`);
   if (sinDatos) parts.push(`<p class="text-info mb-1"><i class="bi bi-info-circle me-1"></i>${sinDatos} boleta(s) sin datos de comprador (se ignorar&aacute;n)</p>`);
   if (inexistentes) parts.push(`<p class="text-danger mb-1"><i class="bi bi-x-circle me-1"></i>${inexistentes} inexistente(s): ${detInex.join(", ")}</p>`);
 
@@ -468,6 +509,7 @@ function guardarCambios() {
       const html = `<p class="text-success mb-1"><i class="bi bi-check-circle me-1"></i>${validas} boleta(s) v&aacute;lida(s)</p>`
         + (conCliente ? `<p class="text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>${conCliente} se sobrescribir&aacute;n</p>` : "")
         + (inexistentes ? `<p class="text-danger mb-1"><i class="bi bi-x-circle me-1"></i>${inexistentes} inexistente(s): ${detInex.join(", ")}</p>` : "")
+        + (resumenPagos(filas).n ? `<p class="text-success mb-1"><i class="bi bi-cash-coin me-1"></i>${resumenPagos(filas).n} pago(s) por $${resumenPagos(filas).total.toLocaleString("es-CO")}</p>` : "")
         + '<p class="mt-2 mb-0">¿Desea continuar?</p>';
 
       document.getElementById("modalResumenBody").innerHTML = html;
@@ -487,7 +529,7 @@ function guardarCambios() {
     });
 }
 
-function ejecutarGuardado(filas, btn) {
+function ejecutarGuardado(filas, btn, confirmarPagadas) {
   const confirmBtn = document.getElementById("btnConfirmarGuardar");
   confirmBtn.disabled = true;
   confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Guardando...';
@@ -495,28 +537,21 @@ function ejecutarGuardado(filas, btn) {
   fetch(apiGuardar, {
     method: "POST",
     headers: {"Content-Type": "application/json", "X-CSRF-Token": getCsrfToken()},
-    body: JSON.stringify({rows: filas}),
+    body: JSON.stringify({rows: filas, confirmar_pagadas: !!confirmarPagadas}),
   })
     .then(r => r.json().then(data => ({ok: r.ok, data: data})))
     .then(({ok, data}) => {
       if (!ok || !data.ok) {
         throw new Error(data.error || "Error al guardar.");
       }
-      let html = `<p class="text-success mb-1"><i class="bi bi-check-circle me-1"></i>${data.updated} boleta(s) actualizada(s)</p>`;
-      if (data.sin_datos && data.sin_datos.length) {
-        html += `<p class="text-info mb-1"><i class="bi bi-info-circle me-1"></i>${data.sin_datos.length} boleta(s) ignoradas (sin datos): ${data.sin_datos.join(", ")}</p>`;
+      if (!confirmarPagadas && data.requiere_confirmacion_pagadas && data.requiere_confirmacion_pagadas.length) {
+        const lista = data.requiere_confirmacion_pagadas.join(", ");
+        if (confirm("Las boletas " + lista + " ya están pagadas (seguirán mostrando estado pagada). ¿Registrar los pagos como excedente?")) {
+          ejecutarGuardado(filas, btn, true);
+          return;
+        }
       }
-      if (data.not_found && data.not_found.length) {
-        html += `<p class="text-danger mb-1"><i class="bi bi-x-circle me-1"></i>${data.not_found.length} no encontrada(s): ${data.not_found.join(", ")}</p>`;
-      }
-      document.getElementById("modalResultadoBody").innerHTML = html;
-      const rm = bootstrap.Modal.getInstance(document.getElementById("modalResumen"));
-      if (rm) rm.hide();
-      new bootstrap.Modal(document.getElementById("modalResultado")).show();
-
-      document.getElementById("tbodyCompradores").innerHTML = "";
-      agregarFilas(5);
-      guardando = false;
+      mostrarResultadoGuardado(data);
     })
     .catch((err) => {
       alert(err.message || "Error al guardar.");
@@ -526,6 +561,36 @@ function ejecutarGuardado(filas, btn) {
       confirmBtn.innerHTML = "Guardar de todas formas";
       confirmBtn.disabled = false;
     });
+}
+
+function mostrarResultadoGuardado(data) {
+      let html = `<p class="text-success mb-1"><i class="bi bi-check-circle me-1"></i>${escHtml(String(data.updated))} boleta(s) actualizada(s)</p>`;
+      if (data.pagos_registrados) {
+        html += `<p class="text-success mb-1"><i class="bi bi-cash-coin me-1"></i>${escHtml(String(data.pagos_registrados))} pago(s) por $${Number(data.pagos_total || 0).toLocaleString("es-CO")}</p>`;
+      }
+      if (data.pagos_rechazados && data.pagos_rechazados.length) {
+        html += `<p class="text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>Pagos rechazados: ${escHtml(data.pagos_rechazados.join("; "))}</p>`;
+      }
+      if (data.errores && data.errores.length) {
+        html += `<p class="text-danger mb-1"><i class="bi bi-x-circle me-1"></i>${escHtml(data.errores.join("; "))}</p>`;
+      }
+      if (data.pagos_omitidos) {
+        html += `<p class="text-warning mb-1"><i class="bi bi-exclamation-triangle me-1"></i>${escHtml(String(data.pagos_omitidos))} pago(s) no aplicados por cambio concurrente. Verifique.</p>`;
+      }
+      if (data.sin_datos && data.sin_datos.length) {
+        html += `<p class="text-info mb-1"><i class="bi bi-info-circle me-1"></i>${escHtml(String(data.sin_datos.length))} boleta(s) ignoradas (sin datos): ${escHtml(data.sin_datos.join(", "))}</p>`;
+      }
+      if (data.not_found && data.not_found.length) {
+        html += `<p class="text-danger mb-1"><i class="bi bi-x-circle me-1"></i>${escHtml(String(data.not_found.length))} no encontrada(s): ${escHtml(data.not_found.join(", "))}</p>`;
+      }
+      document.getElementById("modalResultadoBody").innerHTML = html;
+      const rm = bootstrap.Modal.getInstance(document.getElementById("modalResumen"));
+      if (rm) rm.hide();
+      new bootstrap.Modal(document.getElementById("modalResultado")).show();
+
+      document.getElementById("tbodyCompradores").innerHTML = "";
+      agregarFilas(5);
+      guardando = false;
 }
 
 /* ── pegado ───────────────────────────────────────────── */
@@ -538,33 +603,58 @@ document.addEventListener("paste", function(e) {
   const text = (e.clipboardData || window.clipboardData).getData("text");
   if (!text) return;
 
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) return;
+  // Detectar separador: tabulación o múltiples espacios (2+)
+  const hasTabs = text.includes("\t");
+  const separator = hasTabs ? "\t" : /\s{2,}/;
+  const rawLines = text.split(/\r?\n/).filter(l => l.trim());
+  if (rawLines.length < 1) return;
 
   e.preventDefault();
   const tr0 = target.closest("tr");
-  const colIdx = Array.from(tr0.querySelectorAll("input")).indexOf(e.target);
 
-  const existingCount = tbody.children.length;
-  const newRowsNeeded = lines.length - 1;
-  if (newRowsNeeded > 0) {
-    const start = existingCount;
-    const html = Array.from({length: newRowsNeeded}, (_, i) => rowHTML(start + i)).join("");
+  // Función para procesar una línea de datos y asignar a campos
+  const processLine = (line, row) => {
+    const cells = line.split(separator).map(c => c.trim()).filter(c => c.length > 0);
+    if (cells.length === 0) return;
+    // Índices de inputs: 0=boleta, 1=nombre, 2=fecha, 3=comprador, 4=dirección, 5=teléfono, 6=pago
+    const dataFields = [0, 1, 2, 3, 4, 5];
+    for (let k = 0; k < cells.length && k < dataFields.length; k++) {
+      const inp = row.querySelectorAll("input")[dataFields[k]];
+      if (inp) {
+        // Limpiar caracteres no numéricos en boleta (índice 0)
+        if (dataFields[k] === 0) {
+          inp.value = cells[k].replace(/\D/g, "").slice(0, 4);
+        } else {
+          inp.value = cells[k];
+        }
+      }
+    }
+    // Copiar método de pago del select
+    const metodoSelect = row.querySelector(".metodo-select");
+    if (metodoSelect && cells.length > 6) {
+      metodoSelect.value = cells[6] || "efectivo";
+    }
+  };
+
+  // Primera línea -> fila destino (la donde se hizo clic)
+  processLine(rawLines[0], tr0);
+
+  // Si hay más líneas, crear nuevas filas para el resto
+  if (rawLines.length > 1) {
+    const existingCount = tbody.children.length;
+    const newRowsNeeded = rawLines.length - 1;
+    const html = Array.from({length: newRowsNeeded}, (_, i) => rowHTML(existingCount + i)).join("");
     tbody.insertAdjacentHTML("beforeend", html);
+    const allRows = Array.from(tbody.children);
+    for (let i = 1; i < rawLines.length; i++) {
+      processLine(rawLines[i], allRows[existingCount + i - 1]);
+    }
   }
 
-  const allRows = Array.from(tbody.children);
-  for (let i = 0; i < lines.length; i++) {
-    const tr = (i === 0) ? tr0 : allRows[existingCount + i - 1];
-    const cells = lines[i].split(/\t/);
-    const inputs = tr.querySelectorAll("input");
-    for (let j = colIdx; j < inputs.length && (j - colIdx) < cells.length; j++) {
-      inputs[j].value = cells[j - colIdx].trim();
-    }
-    if (i > 0) {
-      const bi = tr.querySelector(".boleta-input");
-      if (bi.value.trim()) onBoletaInput(tr);
-    }
+  // Actualizar boletas
+  for (const tr of tbody.children) {
+    const bi = tr.querySelector(".boleta-input");
+    if (bi && bi.value.trim()) onBoletaInput(tr);
   }
   actualizarCuenta();
 });
@@ -614,5 +704,6 @@ document.getElementById("modalResumen").addEventListener("hidden.bs.modal", func
 /* ── arranque ─────────────────────────────────────────── */
 
 agregarFilas(5);
+initSortableTables();
 </script>
 {% endblock %}

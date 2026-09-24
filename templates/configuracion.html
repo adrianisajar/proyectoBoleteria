@@ -22,6 +22,9 @@
                 </div>
                 <span class="badge text-bg-{{ 'success' if rifa.estado == 'activa' else 'secondary' }} fs-6">{{ rifa.estado }}</span>
             </div>
+            {% else %}
+            <div class="text-secondary small">No hay rifa activa.</div>
+            {% endif %}
         </div>
 
         <div class="office-card bg-body p-3 p-md-4">
@@ -46,7 +49,7 @@
                         <input type="number" class="form-control" id="cantidad_boletas" name="cantidad_boletas" value="{{ rifa.cantidad_boletas }}" min="1" data-validation="numbers">
                     </div>
                     <div class="col-12 d-grid">
-                        <button type="submit" class="btn btn-primary">Guardar par&aacute;metros</button>
+                        <button type="submit" class="btn btn-primary" data-confirmar-clave data-confirmar-texto="Guardar los par&aacute;metros de la rifa (nombre, valor y cantidad de boletas).">Guardar par&aacute;metros</button>
                     </div>
                 </div>
             </form>
@@ -60,30 +63,22 @@
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label for="nombre_empresa" class="form-label fw-semibold">Nombre comercial</label>
-                        <input type="text" class="form-control" id="nombre_empresa" name="nombre_empresa" value="{{ config.get('nombre_empresa', '') }}" placeholder="BOLETERÍA LA FORTUNA" data-validation="titulo">
+                        <input type="text" class="form-control" id="nombre_empresa" name="nombre_empresa" value="{{ config.get('nombre_empresa', '') }}" placeholder="Nombre de la empresa" data-validation="titulo">
                     </div>
                     <div class="col-md-6">
                         <label for="telefono" class="form-label fw-semibold">Teléfono</label>
-                        <input type="text" class="form-control" id="telefono" name="telefono" value="{{ config.get('telefono', '') }}" placeholder="312 456 7890" data-validation="numbers">
+                        <input type="text" class="form-control" id="telefono" name="telefono" value="{{ config.get('telefono', '') }}" placeholder="Teléfono" data-validation="numbers">
                     </div>
                     <div class="col-md-6">
                         <label for="ciudad" class="form-label fw-semibold">Ciudad</label>
-                        <input type="text" class="form-control" id="ciudad" name="ciudad" value="{{ config.get('ciudad', '') }}" placeholder="BOGOTÁ" data-validation="titulo">
+                        <input type="text" class="form-control" id="ciudad" name="ciudad" value="{{ config.get('ciudad', '') }}" placeholder="Ciudad" data-validation="titulo">
                     </div>
                     <div class="col-md-6">
                         <label for="direccion" class="form-label fw-semibold">Dirección</label>
-                        <input type="text" class="form-control" id="direccion" name="direccion" value="{{ config.get('direccion', '') }}" placeholder="Cra 10 #15-20" data-validation="address">
+                        <input type="text" class="form-control" id="direccion" name="direccion" value="{{ config.get('direccion', '') }}" placeholder="Dirección" data-validation="address">
                     </div>
-                    <div class="col-12">
-                        <label for="footer_texto" class="form-label fw-semibold">Texto pie de factura</label>
-                        <textarea class="form-control" id="footer_texto" name="footer_texto" rows="2">{{ config.get('footer_texto', 'Documento interno, no tiene validez fiscal.') }}</textarea>
-                    </div>
-                    <div class="col-12">
-                        <label for="observaciones_recaudo" class="form-label fw-semibold">Observaciones (factura vendedor)</label>
-                        <textarea class="form-control" id="observaciones_recaudo" name="observaciones_recaudo" rows="3">{{ config.get('observaciones_recaudo', 'Todos los pagos fueron registrados correctamente.\nLas boletas actualizan automáticamente su saldo en el sistema.') }}</textarea>
-                    </div>
-                    <div class="col-12 d-grid">
-                        <button type="submit" class="btn btn-primary">Guardar datos empresa</button>
+                     <div class="col-12 d-grid">
+                        <button type="submit" class="btn btn-primary" data-confirmar-clave data-confirmar-texto="Guardar los datos de la empresa que aparecen en las facturas.">Guardar datos empresa</button>
                     </div>
                 </div>
             </form>
@@ -133,66 +128,28 @@
                     </button>
                 </div>
                 <div class="d-grid">
-                    <button type="submit" class="btn btn-primary">Guardar comisiones</button>
+                    <button type="submit" class="btn btn-primary" data-confirmar-clave data-confirmar-texto="Guardar las comisiones por boleta de cada vendedor.">Guardar comisiones</button>
                 </div>
             </form>
         </div>
-
-        {% endif %}
     </div>
 
     <div class="col-lg-6 d-flex flex-column gap-3">
-        <div class="office-card bg-body p-3 p-md-4">
-            <h2 class="section-title mb-3">
-                <i class="bi bi-file-earmark-spreadsheet me-2"></i>Importar / Exportar asignaciones
-            </h2>
-            <p class="text-secondary small mb-3">
-                Descarga el modelo Excel, asigna los vendedores a cada boleta y vuelve a importarlo para actualizar la base de datos.
-            </p>
-            <div class="d-flex flex-wrap gap-2 mb-3">
-                <a href="{{ url_for('exportar_modelo_rifa') }}" class="btn btn-outline-primary">
-                    <i class="bi bi-download me-1"></i>Descargar modelo
-                </a>
-                <form method="post" action="{{ url_for('sincronizar_estados') }}" class="d-inline">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-outline-warning d-inline-flex align-items-center gap-1">
-                        <i class="bi bi-arrow-clockwise"></i> Sincronizar estados
-                    </button>
-                </form>
-            </div>
-            <form method="post" action="{{ url_for('importar_rifa_excel') }}" enctype="multipart/form-data" class="border-top pt-3" autocomplete="off">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="mb-3">
-                    <label for="archivo_rifa" class="form-label fw-semibold">Seleccionar archivo Excel (.xlsx)</label>
-                    <input type="file" class="form-control" id="archivo_rifa" name="archivo_rifa" accept=".xlsx" required>
-                </div>
-                <div class="mb-3">
-                    <label for="confirmacion_importacion" class="form-label fw-semibold">Confirmación</label>
-                    <input type="text" class="form-control" id="confirmacion_importacion" name="confirmacion_importacion" placeholder="Escribe IMPORTAR para confirmar" required>
-                </div>
-                <div class="d-grid">
-                    <button type="submit" class="btn btn-warning">
-                        <i class="bi bi-upload me-1"></i>Importar asignaciones
-                    </button>
-                </div>
-            </form>
-        </div>
-
         <div class="office-card bg-body p-3 p-md-4 border border-primary">
             <h2 class="section-title mb-3">Crear nueva rifa</h2>
             <form method="post" action="{{ url_for('nueva_rifa') }}" class="row g-3" autocomplete="off">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="col-md-6">
                     <label for="nombre" class="form-label fw-semibold">Nombre de la rifa</label>
-                    <input type="text" class="form-control" id="nombre" name="nombre_rifa_nueva" placeholder="Rifa 2026" required data-validation="titulo">
+                    <input type="text" class="form-control" id="nombre" name="nombre_rifa_nueva" placeholder="Nombre de la rifa" required data-validation="titulo">
                 </div>
                 <div class="col-md-3">
                     <label for="valor_boleta_nueva" class="form-label fw-semibold">Valor boleta</label>
                     <input type="text" inputmode="numeric" class="form-control" id="valor_boleta_nueva" name="valor_boleta_nueva" value="{{ config.valor_boleta }}" data-money-input>
                 </div>
                 <div class="col-md-3">
-                    <label for="cantidad_boletas" class="form-label fw-semibold">Cantidad</label>
-                    <input type="number" class="form-control" id="cantidad_boletas" name="cantidad_boletas" value="10000" min="1" max="10000" data-validation="numbers">
+                    <label for="cantidad_boletas_nueva" class="form-label fw-semibold">Cantidad</label>
+                    <input type="number" class="form-control" id="cantidad_boletas_nueva" name="cantidad_boletas" value="10000" min="1" max="10000" data-validation="numbers">
                 </div>
                 <div class="col-md-6">
                     <label for="conservar_vendedores" class="form-label fw-semibold">Conservar asignaciones de vendedores actuales</label>
@@ -202,12 +159,16 @@
                     </div>
                     <div class="form-text">Se mantienen las boletas asignadas a cada vendedor. Las boletas se reinician a estado "disponible" sin abonos ni clientes.</div>
                 </div>
-                <div class="col-12">
-                    <label for="confirmacion_nueva" class="form-label fw-semibold">Escribe <code>NUEVA RIFA</code> para confirmar</label>
-                    <input type="text" class="form-control" id="confirmacion_nueva" name="confirmacion" placeholder="NUEVA RIFA" required>
+                <div class="col-md-6">
+                    <label for="conservar_reservas" class="form-label fw-semibold">Conservar reservas fijas del local</label>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="conservar_reservas" name="conservar_reservas" checked>
+                        <label class="form-check-label fw-semibold" for="conservar_reservas">Conservar reservas</label>
+                    </div>
+                    <div class="form-text">Las boletas reservadas vuelven como separadas con los datos de su comprador.</div>
                 </div>
-                <div class="col-12 d-grid">
-                    <button type="submit" class="btn btn-primary btn-lg d-inline-flex align-items-center justify-content-center gap-2">
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary btn-lg d-inline-flex align-items-center justify-content-center gap-2" data-confirmar-clave data-confirmar-texto="Crear una nueva rifa reiniciar&aacute; boletas, abonos, clientes y facturas actuales.">
                         <i class="bi bi-plus-circle"></i>
                         Crear rifa y generar boletas
                     </button>
@@ -225,11 +186,11 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="col-md-3">
             <label for="nuevo_nombre" class="form-label fw-semibold">Nombre completo</label>
-            <input type="text" class="form-control" id="nuevo_nombre" name="nombre" placeholder="Esteban Girón" required data-validation="name">
+            <input type="text" class="form-control" id="nuevo_nombre" name="nombre" placeholder="Nombre" required data-validation="name">
         </div>
         <div class="col-md-2">
             <label for="nuevo_usuario" class="form-label fw-semibold">Usuario</label>
-            <input type="text" class="form-control" id="nuevo_usuario" name="usuario" placeholder="egiron" required>
+            <input type="text" class="form-control" id="nuevo_usuario" name="usuario" placeholder="Usuario" required>
         </div>
         <div class="col-md-2">
             <label for="nuevo_rol" class="form-label fw-semibold">Rol</label>
@@ -253,11 +214,11 @@
         <table class="table table-sm align-middle">
             <thead class="table-light">
                 <tr>
-                    <th>Usuario</th>
-                    <th>Nombre</th>
-                    <th>Rol</th>
-                    <th>Estado</th>
-                    <th>&Uacute;ltimo acceso</th>
+                    <th data-sort="_id" class="sortable">Usuario</th>
+                    <th data-sort="nombre" class="sortable">Nombre</th>
+                    <th data-sort="rol" class="sortable">Rol</th>
+                    <th data-sort="activo" class="sortable">Estado</th>
+                    <th data-sort="ultimo_acceso" class="sortable">&Uacute;ltimo acceso</th>
                     <th style="width:330px">Acciones</th>
                 </tr>
             </thead>
@@ -275,12 +236,12 @@
                         <form method="post" action="{{ url_for('usuarios_estado', usuario_id=u._id) }}" class="d-inline">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="activo" value="{{ 0 if u.activo else 1 }}">
-                            <button type="submit" class="btn btn-sm {{ 'btn-success' if u.activo else 'btn-outline-secondary' }}">
+                            <button type="submit" class="btn btn-sm {{ 'btn-success' if u.activo else 'btn-outline-secondary' }}" data-confirmar-clave data-confirmar-texto="{{ 'Desactivar' if u.activo else 'Activar' }} el usuario {{ u.usuario }}.">
                                 {{ 'Activo' if u.activo else 'Inactivo' }}
                             </button>
                         </form>
                     </td>
-                    <td class="small text-secondary">{{ u.ultimo_acceso.strftime('%d/%m/%Y %H:%M') if u.ultimo_acceso else '&mdash;' }}</td>
+                    <td class="small text-secondary">{{ u.ultimo_acceso.strftime('%d/%m/%Y %H:%M') if u.ultimo_acceso else '—' }}</td>
                     <td>
                         <div class="d-flex flex-column gap-1">
                             <form method="post" action="{{ url_for('usuarios_editar', usuario_id=u._id) }}" class="d-flex gap-1 align-items-center" autocomplete="off">
@@ -295,7 +256,7 @@
                             <form method="post" action="{{ url_for('usuarios_contrasena', usuario_id=u._id) }}" class="d-flex gap-1 align-items-center" autocomplete="off">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <input type="password" class="form-control form-control-sm" name="password" placeholder="Nueva contrase&ntilde;a" required style="max-width:150px" autocomplete="new-password">
-                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Cambiar contrase&ntilde;a"><i class="bi bi-key"></i></button>
+                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Cambiar contrase&ntilde;a" data-confirmar-clave data-confirmar-texto="Cambiar la contrase&ntilde;a del usuario {{ u.usuario }}."><i class="bi bi-key"></i></button>
                             </form>
                             <button type="button"
                                 class="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center"
@@ -330,8 +291,8 @@
                 <div class="modal-body">
                     <p class="mb-2">¿Seguro que deseas eliminar al usuario <strong id="eliminarUsuarioNombre"></strong> (<span id="eliminarUsuarioLogin"></span>)?</p>
                     <p class="mb-3 small text-secondary">Esta acci&oacute;n no se puede deshacer.</p>
-                    <label for="eliminarUsuarioConfirmacion" class="form-label fw-semibold">Escribe <kbd>ELIMINAR</kbd> para confirmar</label>
-                    <input type="text" class="form-control" id="eliminarUsuarioConfirmacion" name="confirmacion" placeholder="ELIMINAR" required autocomplete="off">
+                    <label for="eliminarUsuarioConfirmacion" class="form-label fw-semibold">Contrase&ntilde;a del administrador</label>
+                    <input type="password" class="form-control" id="eliminarUsuarioConfirmacion" name="clave_admin" placeholder="Contrase&ntilde;a del administrador" required autocomplete="current-password">
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
@@ -390,10 +351,10 @@ function agregarTier() {
         confirmInput.value = '';
         confirmBtn.disabled = true;
     });
-
-    confirmInput.addEventListener('input', function () {
-        confirmBtn.disabled = confirmInput.value.trim() !== 'ELIMINAR';
+    confirmInput.addEventListener('input', function() {
+        confirmBtn.disabled = !confirmInput.value.trim();
     });
 })();
+initSortableTables();
 </script>
 {% endblock %}

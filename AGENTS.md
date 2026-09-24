@@ -54,7 +54,7 @@ motores/
   traslados.py      176 — traslado routes (cambio de número, admin + caja)
   health.py          51 — /health endpoint (colecciones, factura_counter, índices requeridos)
   errores.py         52 — custom 404/500 handlers: HTML pages + JSON for /api/* (error.html)
-  boletas.py        519 — ticket routes (consultas, cliente/BD redirects, eliminar pago)
+  boletas.py        519 — ticket routes (consultas, guardar/limpiar cliente, APIs)
   pagos.py          426 — vendor panel routes
   rifas.py          192 — config & rifa lifecycle routes
   facturacion.py    181 — invoice list & detail routes (ver_factura)
@@ -124,22 +124,23 @@ Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `SERVER_SELECTION_TIMEOUT_MS` (alias),
 - Usuarios y contaseñas: la app genera un admin inicial automáticamente si no existen usuarios (`ensure_initial_admin`).
 
 ## Ejecutables para la PC servidor (PyInstaller)
-- `boleteria.spec` genera en `dist/` tres exes desde el `.venv`: `BoleteriaServidor.exe` (servidor waitress, **embebe** `templates/` y `static/`), `BoleteriaBackup.exe` (`scripts/backup.py`) y `BoleteriaIntegridad.exe` (`scripts/integridad.py`). Build: `python -m PyInstaller --noconfirm --clean boleteria.spec`.
+- **PyInstaller spec**: `boleteria.spec` genera en `dist/` el ejecutable `boleteria.exe` desde `.venv`. **Embebe** `templates/` y `static/`. Build: `python -m PyInstaller --noconfirm --clean boleteria.spec`. Los exes de backup/integridad (`BoleteriaBackup.exe`, `BoleteriaIntegridad.exe`) se construyen con specs separados si existen.
 - **El `.env` NO se empaqueta**: en modo frozen (`sys.frozen`) `app.py`/`database.py` lo leen desde el directorio del `.exe`. Las credenciales quedan fuera del binario y se cambian sin recompilar.
 - `dist/`, `build/`, `*.exe` están en `.gitignore`; `boleteria.spec` está versionado (`!boleteria.spec`).
-- Kit de despliegue (copia a la PC servidor, misma carpeta): los 3 exes + un `.env` con `MONGO_URI`, `SECRET_KEY`, `FLASK_HOST=0.0.0.0`, `PORT`, `ADMIN_INICIAL_PASSWORD`, `SESSION_COOKIE_SECURE`, `TRUST_PROXY_HEADERS`, `BACKUP_DIR`/`BACKUP_KEEP`.
+- Kit de despliegue (copia a la PC servidor, misma carpeta): el exe + un `.env` con `MONGO_URI`, `SECRET_KEY`, `FLASK_HOST=0.0.0.0`, `PORT`, `ADMIN_INICIAL_PASSWORD`, `SESSION_COOKIE_SECURE`, `TRUST_PROXY_HEADERS`, `BACKUP_DIR`/`BACKUP_KEEP`.
 - Para LAN interna no hace falta proxy: `SESSION_COOKIE_SECURE=0` y `TRUST_PROXY_HEADERS=0`.
 
 ## Architecture notes
 - **Auth system**: session login with two roles (`admin`, `cajero`). `role_required(...)` guards every route (403 for HTML, JSON error for `/api/*`); menu visibility follows the same rules via `can(...)`. Dashboard, Configuración, Gestión de usuarios, Vendedores y respaldos son exclusivos del admin. Caja opera: consultas, compradores, facturas cliente/vendedor, egresos y traslados.
 - **Primary feature**: generate printable invoices (facturas) from ticket sales and seller payments.
-- **Invoice types**: `cliente` (customer data: name, address, phone), `vendedor` (seller payment summary) and `egreso` (internal outflow comprobante, e.g. vendor commission).
-- **Factura ID**: auto-incrementing integer from `configuracion.factura_counter` (displayed zero-padded 5 digits). Egresos share the same counter; traslados use their own `traslado_counter`.
+- **Payment cap rule**: No individual payment may exceed the ticket's `valor_boleta`. The accumulated `total_abonado` CAN exceed the ticket value without restriction.
+- **Pagada terminal state with excedente**: A `pagada` ticket accepts additional payments via `confirmar_pagadas` flag (set on form + backend). When `confirmar_pagadas=1`, payments register as excedente without changing `estado` (stays `pagada`). Frontend warns and requires explicit confirmation before submitting; backend returns `requiere_confirmacion_pagadas` to prompt the UI confirmation dialog if flag is missing.
+- **`confirmar_pagadas` flow**: Applied across `facturacion_cliente.py`, `facturacion_vendedor.py`, `compradores.py` (`_procesar_rows_rapido`), `payment_service.py` (`build_abono_preview`, `registrar_abono_lote`), `validacion_factura.py` (`_validar_boletas_en_db`). Frontend shows warning modal and badge in preview when pagada tickets detected.
 - **Vendedor ID**: 100% interno y auto-asignado por el sistema (`VEND_0001`, `VEND_0002`, ...) vía `configuracion.vendedor_counter` (`next_vendedor_id`). Es persistente entre rifas y se asigna tanto en la creación manual (campo id vacío) como en la importación Excel para vendedores nuevos; el campo id no es editable por el usuario.
 - **Unified ledger**: each ticket stores `historial_movimientos` with typed entries (`pago`, `egreso`, `traslado_entrada`, `traslado_salida`). Legacy entries without `tipo` count as `pago`.
 - **Invoice detail**: built from `historial_movimientos` of the selected tickets (pago movements only).
 - **Ticket numbers** are `int` in range 0000–9999 used as `_id` in MongoDB. Displayed zero-padded.
-- **Five ticket states**: `disponible`, `asignada` (vendor assigned), `separada` (client info saved), `abonando` (partial payment), `pagada`.
+- **Five ticket states**: `disponible`, `asignada` (vendor assigned, no buyer yet), `separada` (buyer data saved without payments, any vendor — reserved, not for sale), `abonando` (partial payment), `pagada`.
 - **Default vendedor**: `"LOCAL"` when no seller is assigned.
 - **Commission**: flat fee per ticket (`comision_por_boleta`, default 10,000 COP). Configurable per vendor as tier-based via config page.
 - **Config cached** in memory with 30-second TTL (`CONFIG_CACHE_SECONDS`).
@@ -171,11 +172,12 @@ Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `SERVER_SELECTION_TIMEOUT_MS` (alias),
 | `/facturas/egreso` | egresos | List of egreso comprobantes (admin + caja) |
 | `/facturas/egreso/nueva` | egresos | Create egreso invoice (admin + caja) |
 | `/traslados` | traslados | List of traslados de saldo (admin + caja) |
+| `/compradores/reservas` | compradores | Reservas fijas: números fijos del local con comprador (admin); sobreviven a nueva rifa como separadas |
 | `/traslados/nuevo` | traslados | Create traslado (admin + caja) |
 | `/traslados/<id>` | traslados | Traslado comprobante (admin + caja) |
 | `/facturas/nueva/cliente` | facturacion_cliente | Create customer invoice |
 | `/facturas/nueva/vendedor` | facturacion_vendedor | Create seller invoice — dynamic table: enter tickets + amounts (different per ticket), registers payments + generates invoice |
-| `/api/generar-factura` | facturacion | Create invoice (cliente or vendedor) via API |
+| `/api/validar-factura` | facturacion | Real-time invoice validation (no writes) |
 | `/configuracion` | rifas | Config edit |
 | `/health` | health | Liveness: db connected, factura_counter, config doc, required indexes |
 | `/api/boletas/<id>` | boletas | JSON ticket lookup |
@@ -188,5 +190,4 @@ Optional: `MONGO_DB`, `MONGO_TIMEOUT_MS`, `SERVER_SELECTION_TIMEOUT_MS` (alias),
 - Template `factura.html`: print-friendly with `window.print()` support
 - Accessible via `/facturas/<id>` and listed at `/facturas`
 - **Vendor invoice creation** (`/facturas/nueva/vendedor`): dynamic form where user adds rows with ticket number(s) comma-separated + payment amount (different per ticket) + method + reference (hidden unless "transferencia"); shows a **preview modal** (grouped by amount) before confirming; each payment registered to the ticket with `factura_id` in `historial_movimientos`
-- **Vendor invoice template** (`factura_vendedor.html`): "COMPROBANTE DE RECAUDO" layout; detalle **grouped by amount** (Jinja2 `groupby` filter); boleta numbers displayed in CSS grid per group; observations, signature lines; commissions summary; `page-break-inside: avoid` per group for clean printing
 - **Customer invoice template** (`factura_cliente.html`): "RECIBO DE PAGO / ABONO" layout; shows boleta info (price, state), movement type (ABONO/PAGO TOTAL/SEPARACIÓN), participation status per adicional, payment history table; supports multiple boletas per invoice; `boletas_info` passed from `ver_factura` route with `calcular_premios_adicionales`

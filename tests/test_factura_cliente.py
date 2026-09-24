@@ -1,5 +1,6 @@
 import hashlib
-from datetime import datetime
+import hmac
+from datetime import datetime, timedelta
 
 from app import app as flask_app
 from database import boletas, configuracion, facturas
@@ -44,6 +45,45 @@ def test_factura_cliente_pago_total(client):
     assert b["total_abonado"] == 70000
     assert b["cliente"]["nombre"] == "JUAN PEREZ"
     assert b["vendedor_id"] == "LOCAL"
+    assert f["creada_en"] is not None
+
+
+def test_limpieza_no_borra_factura_pendiente_con_movimientos(client):
+    factura_id = 456
+    facturas.insert_one(
+        {
+            "_id": factura_id,
+            "tipo": "cliente",
+            "estado": "pendiente",
+            "creada_en": datetime.now() - timedelta(minutes=10),
+            "fecha": datetime.now(),
+        }
+    )
+    boletas.update_one(
+        {"_id": 10},
+        {"$set": {"historial_movimientos": [{"tipo": "pago", "factura_id": factura_id, "valor": 10000}]}},
+    )
+
+    assert client.get("/facturas").status_code == 200
+    assert facturas.find_one({"_id": factura_id}) is not None
+
+
+def test_limpieza_borra_pendiente_antigua_sin_movimientos(client):
+    factura_id = 457
+    facturas.insert_one(
+        {
+            "_id": factura_id,
+            "tipo": "cliente",
+            "estado": "pendiente",
+            "creada_en": datetime.now() - timedelta(minutes=10),
+            "fecha": datetime.now(),
+        }
+    )
+
+    from motores.facturacion import _ULTIMA_LIMPIEZA_PENDIENTES, _limpiar_facturas_pendientes
+    _ULTIMA_LIMPIEZA_PENDIENTES[0] = 0.0
+    _limpiar_facturas_pendientes()
+    assert facturas.find_one({"_id": factura_id}) is None
 
 
 def test_factura_cliente_abono_parcial(client):
@@ -66,6 +106,14 @@ def test_factura_cliente_multiples_boletas(client):
     assert boletas.find_one({"_id": 10})["total_abonado"] == 30000
     assert boletas.find_one({"_id": 11})["total_abonado"] == 40000
     assert boletas.find_one({"_id": 12})["total_abonado"] == 70000
+
+
+def test_factura_cliente_boleta_duplicada_rechazada(client):
+    resp = _post_factura(client, ["0010", "0010"], ["30000", "30000"])
+    assert resp.status_code == 200
+    assert "duplicadas" in resp.get_data(as_text=True).lower()
+    assert facturas.count_documents({}) == 0
+    assert boletas.find_one({"_id": 10})["total_abonado"] == 0
 
 
 def test_factura_cliente_boleta_inexistente(client):
@@ -97,6 +145,28 @@ def test_factura_cliente_monto_excede_valor(client):
     resp = _post_factura(client, ["0010"], ["999999"])
     assert resp.status_code == 200
     assert facturas.count_documents({}) == 0
+
+
+def test_factura_cliente_monto_vacio_rechazado(client):
+    resp = _post_factura(client, ["0010"], [""])
+    assert resp.status_code == 200
+    assert facturas.count_documents({}) == 0
+    assert boletas.find_one({"_id": 10})["total_abonado"] == 0
+
+
+def test_factura_cliente_monto_cero_rechazado(client):
+    resp = _post_factura(client, ["0010"], ["0"])
+    assert resp.status_code == 200
+    assert facturas.count_documents({}) == 0
+    assert boletas.find_one({"_id": 10})["total_abonado"] == 0
+
+
+def test_factura_cliente_una_fila_sin_monto_rechaza_toda(client):
+    resp = _post_factura(client, ["0010", "0011"], ["30000", ""])
+    assert resp.status_code == 200
+    assert facturas.count_documents({}) == 0
+    assert boletas.find_one({"_id": 10})["total_abonado"] == 0
+    assert boletas.find_one({"_id": 11})["total_abonado"] == 0
 
 
 def test_factura_cliente_boleta_pagada_rechazada(client):
@@ -223,7 +293,7 @@ def test_anular_factura_cliente(client):
     _post_factura(client, ["0010"], ["70000"])
     f = facturas.find_one({"tipo": "cliente"})
     fid = f["_id"]
-    h = hashlib.sha256(f"{fid}:False:{flask_app.secret_key}".encode()).hexdigest()[:16]
+    h = hmac.new(flask_app.secret_key.encode(), f"{fid}:False".encode(), hashlib.sha256).hexdigest()[:16]
     resp = client.post(f"/facturas/{fid}/anular", data={"motivo": "Error de digitacion", "anulacion_hash": h})
     assert resp.status_code == 302
     b = boletas.find_one({"_id": 10})
@@ -246,3 +316,108 @@ def test_factura_id_salta_colision_por_restauracion(client):
     assert f["_id"] > 4
     assert facturas.count_documents({"_id": f["_id"]}) == 1
     assert configuracion.find_one({"_id": "rifa"})["factura_counter"] >= f["_id"]
+
+
+def test_facturas_cliente_ordena_por_cliente(client):
+    _post_factura(client, ["0010"], ["30000"], nombre="ZULU")
+    _post_factura(client, ["0011"], ["30000"], nombre="ALFA")
+    resp = client.get("/facturas/cliente?sort_by=cliente.nombre&sort_dir=asc")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert html.index("ALFA") < html.index("ZULU")
+
+
+def _marcar_pagada(bid, total=70000):
+    boletas.update_one(
+        {"_id": bid},
+        {
+            "$set": {
+                "estado": "pagada",
+                "total_abonado": total,
+                "historial_movimientos": [{"fecha": "2026-07-01", "valor": total, "metodo": "efectivo"}],
+            }
+        },
+    )
+
+
+def test_factura_cliente_pagada_sin_confirmar_pide_confirmacion(client):
+    _marcar_pagada(10)
+    resp = _post_factura(client, ["0010"], ["20000"])
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True).lower()
+    assert "confirme" in html
+    assert "excedente" in html
+    assert facturas.count_documents({"tipo": "cliente"}) == 0
+    assert boletas.find_one({"_id": 10})["total_abonado"] == 70000
+
+
+def test_factura_cliente_pagada_confirmada_registra_excedente(client):
+    _marcar_pagada(10)
+    resp = client.post(
+        "/facturas/nueva/cliente",
+        data={
+            "nombre": "JUAN PEREZ",
+            "telefono": "3001234567",
+            "direccion": "CRA 1",
+            "fecha": "2026-07-30",
+            "boleta[]": ["0010"],
+            "monto[]": ["20000"],
+            "metodo[]": ["efectivo"],
+            "referencia[]": [""],
+            "banco[]": [""],
+            "confirmar_pagadas": "1",
+        },
+    )
+    assert resp.status_code == 302
+    f = facturas.find_one({"tipo": "cliente"})
+    assert f is not None
+    assert f["valor_total"] == 20000
+    b = boletas.find_one({"_id": 10})
+    assert b["total_abonado"] == 90000
+    assert b["estado"] == "pagada"
+
+
+def test_factura_cliente_abonos_acumulados_superan_valor_permitido(client):
+    for _ in range(4):
+        resp = _post_factura(client, ["0010"], ["20000"])
+        assert resp.status_code == 302
+    b = boletas.find_one({"_id": 10})
+    assert b["total_abonado"] == 80000
+    assert b["estado"] == "pagada"
+    assert facturas.count_documents({"tipo": "cliente"}) == 4
+
+
+def test_factura_cliente_acumulado_puede_exceder_valor(client):
+    boletas.update_one(
+        {"_id": 10},
+        {
+            "$set": {
+                "estado": "abonando",
+                "total_abonado": 60000,
+                "historial_movimientos": [{"fecha": "2026-07-01", "valor": 60000, "metodo": "efectivo"}],
+            }
+        },
+    )
+    resp = _post_factura(client, ["0010"], ["30000"])
+    assert resp.status_code == 302
+    b = boletas.find_one({"_id": 10})
+    assert b["total_abonado"] == 90000
+    assert b["estado"] == "pagada"
+
+
+def test_factura_cliente_pago_individual_supera_valor_rechazado(client):
+    boletas.update_one(
+        {"_id": 10},
+        {
+            "$set": {
+                "estado": "abonando",
+                "total_abonado": 10000,
+                "historial_movimientos": [{"fecha": "2026-07-01", "valor": 10000, "metodo": "efectivo"}],
+            }
+        },
+    )
+    resp = _post_factura(client, ["0010"], ["80000"])
+    assert resp.status_code == 200
+    assert "supera el valor de la boleta" in resp.get_data(as_text=True)
+    assert facturas.count_documents({"tipo": "cliente"}) == 0
+    assert boletas.find_one({"_id": 10})["total_abonado"] == 10000

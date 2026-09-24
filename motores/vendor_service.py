@@ -1,9 +1,12 @@
+import copy
 import logging
 import re
+import time
 
 from flask import flash
 
 from database import boletas, configuracion, facturas, vendedores
+from motores.cache import VENDOR_PANEL_CACHE, VENDOR_PANEL_CACHE_SECONDS, VENDOR_PANEL_LOCK
 from motores.config_service import get_config, require_collections
 from motores.constants import (
     COMISION_DEFAULT_TIERS,
@@ -11,6 +14,7 @@ from motores.constants import (
     VENDEDOR_LOCAL,
     VENDEDOR_LOCAL_LABEL,
 )
+from motores.validacion import safe_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +36,7 @@ def next_vendedor_id() -> str:
     across rifas. If a candidate already exists (e.g. taken manually before this
     scheme was in place) it is skipped and the counter keeps advancing.
     """
-    while True:
+    for _retry in range(50):
         result = configuracion.find_one_and_update(
             {"_id": CONFIG_ID},
             {"$inc": {"vendedor_counter": 1}},
@@ -43,6 +47,7 @@ def next_vendedor_id() -> str:
         candidate = f"{VENDEDOR_ID_PREFIX}{counter:04d}"
         if vendedores.count_documents({"_id": candidate}) == 0:
             return candidate
+    raise RuntimeError("No se pudo obtener un id de vendedor libre tras 50 intentos.")
 
 
 def calc_comision_por_boleta(vendidas: int, tiers: list[dict] | None = None) -> int:
@@ -66,12 +71,20 @@ def get_vendedor_options() -> list[dict]:
 
 def vendedores_con_local() -> list[dict]:
     """Return all vendors plus the LOCAL system vendor (for selects/autocomplete)."""
-    lista = list(vendedores.find().sort("_id", 1))
+    lista = list(vendedores.find({}, {"_id": 1, "nombre": 1}).sort("_id", 1))
     return [*[{"_id": VENDEDOR_LOCAL, "nombre": VENDEDOR_LOCAL_LABEL}], *lista]
 
 
 def get_vendedores_snapshot(config: dict | None = None) -> tuple[list, dict]:
-    """Build the vendor panel list with stats (asignadas, vendidas, recaudado, comisión, egresos)."""
+    """Build the vendor panel list with stats (asignadas, vendidas, recaudado, comisión, egresos).
+
+    Cached for 30s to avoid re-running the heavy aggregation on every page load.
+    """
+    with VENDOR_PANEL_LOCK:
+        if VENDOR_PANEL_CACHE["data"] and time.monotonic() - VENDOR_PANEL_CACHE["loaded_at"] < VENDOR_PANEL_CACHE_SECONDS:
+            cached = copy.deepcopy(VENDOR_PANEL_CACHE["data"])
+            return cached["lista"], cached["stats"]
+
     require_collections()
     config = config or get_config()
     valor_boleta = int(config["valor_boleta"])
@@ -121,25 +134,25 @@ def get_vendedores_snapshot(config: dict | None = None) -> tuple[list, dict]:
     local_match = {"vendedor_id": VENDEDOR_LOCAL}
     if rifa_id:
         local_match["rifa_id"] = rifa_id
-    local_docs = boletas.find(local_match, {"_id": 1, "total_abonado": 1}).sort("_id", 1)
-    local_ids = [doc["_id"] for doc in local_docs]
+    local_count = boletas.count_documents(local_match)
+    local_preview = [doc["_id"] for doc in boletas.find(local_match, {"_id": 1}).sort("_id", 1).limit(12)]
     local_stats = stats_by_vendor.get(
         VENDEDOR_LOCAL,
         {"vendidas": 0, "pagadas": 0, "recaudado": 0, "saldo_pendiente": 0},
     )
     local_recaudado = int(local_stats.get("recaudado", 0) or 0)
-    total_asignadas += len(local_ids)
+    total_asignadas += local_count
     total_recaudado += local_recaudado
     lista.append(
         {
             "_id": VENDEDOR_LOCAL,
             "nombre": VENDEDOR_LOCAL_LABEL,
             "telefono": "",
-            "cantidad": len(local_ids),
-            "preview": local_ids[:12],
+            "cantidad": local_count,
+            "preview": local_preview,
             "vendidas": int(local_stats.get("vendidas", 0) or 0),
             "pagadas": int(local_stats.get("pagadas", 0) or 0),
-            "pendientes_fisicas": max(len(local_ids) - int(local_stats.get("vendidas", 0) or 0), 0),
+            "pendientes_fisicas": max(local_count - int(local_stats.get("vendidas", 0) or 0), 0),
             "recaudado": local_recaudado,
             "saldo_pendiente": int(local_stats.get("saldo_pendiente", 0) or 0),
             "comision_por_boleta": 0,
@@ -183,19 +196,23 @@ def get_vendedores_snapshot(config: dict | None = None) -> tuple[list, dict]:
             }
         )
 
-    return lista, {
+    stats_data = {
         "total_asignadas": total_asignadas,
         "total_recaudado": total_recaudado,
         "total_comision": total_comision,
         "total_egresos": total_egresos,
         "total_vendedores": sum(1 for v in lista if v["_id"] != VENDEDOR_LOCAL),
     }
+    with VENDOR_PANEL_LOCK:
+        VENDOR_PANEL_CACHE["data"] = {"lista": lista, "stats": stats_data}
+        VENDOR_PANEL_CACHE["loaded_at"] = time.monotonic()
+    return lista, stats_data
 
 
 def _egresos_por_vendedor() -> dict:
     """Return {vendedor_id: sum_of_egreso_invoices} from egreso facturas."""
     pipeline = [
-        {"$match": {"tipo": "egreso"}},
+        {"$match": {"tipo": "egreso", "anulada": {"$ne": True}}},
         {"$group": {"_id": "$vendedor_id", "total": {"$sum": {"$ifNull": ["$valor_total", 0]}}}},
     ]
     try:
@@ -210,7 +227,7 @@ def safe_vendedores_snapshot() -> tuple[list, dict]:
     try:
         return get_vendedores_snapshot()
     except Exception as exc:
-        flash(f"No se pudo cargar el listado de vendedores: {exc}", "danger")
+        flash(safe_error_message(exc), "danger")
         return [], {"total_asignadas": 0, "total_recaudado": 0, "total_comision": 0, "total_egresos": 0, "total_vendedores": 0}
 
 

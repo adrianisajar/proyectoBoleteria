@@ -1,4 +1,4 @@
-from conftest import _seed_once
+from conftest import ADMIN_PASSWORD, _seed_once
 
 from database import boletas, rifas
 from motores.config_service import get_rifa_activa
@@ -90,7 +90,7 @@ def test_nueva_rifa_actualiza_parametros(client):
                 "nombre_rifa_nueva": "Rifa de prueba",
                 "valor_boleta_nueva": "50.000",
                 "cantidad_boletas": "8000",
-                "confirmacion": "NUEVA RIFA",
+                "clave_admin": ADMIN_PASSWORD,
             },
         )
         assert resp.status_code == 302

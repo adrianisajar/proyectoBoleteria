@@ -109,7 +109,6 @@ with app.test_client() as client:
             "comision_fija": "10000",
             "comision_porcentaje": "10.0",
             "premio_mayor": "200 millones",
-            "footer_texto": "Documento interno, no tiene validez fiscal.",
             "precio_recambio": "2000",
             "precio_resorteo": "55000",
             "recambio_activo": "true",

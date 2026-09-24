@@ -1,4 +1,4 @@
-import contextlib
+import logging
 import os
 import sys
 from datetime import timedelta
@@ -26,7 +26,7 @@ from motores.health import register_routes as register_health
 from motores.pagos import register_routes as register_pagos
 from motores.reportes import register_routes as register_reportes
 from motores.rifas import register_routes as register_rifas
-from motores.shared import register_before_request, register_context_processor, register_template_filters
+from motores.shared import register_before_request, register_context_processor, register_request_logging, register_template_filters
 from motores.traslados import register_routes as register_traslados
 from motores.usuarios import ensure_initial_admin
 from motores.usuarios import register_routes as register_usuarios
@@ -38,24 +38,25 @@ else:
 app.secret_key = os.getenv("SECRET_KEY")
 if not app.secret_key:
     raise RuntimeError("SECRET_KEY no está definida. Agrega 'SECRET_KEY=...' al archivo .env antes de iniciar la aplicación.")
+if os.getenv("TESTING") == "1":
+    logging.getLogger(__name__).warning("TESTING=True en .env se ignora en producción. Solo se aplica en tests.")
 if app.debug:
     app.jinja_env.auto_reload = True
 
 app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
-app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "0") == "1"
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=int(os.getenv("SESSION_COOKIE_DAYS", "7")))
-app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_MB", "16")) * 1024 * 1024
+app.config["SESSION_COOKIE_SAMESITE"] = os.getenv("SESSION_COOKIE_SAMESITE") or "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE") == "1"
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=int(os.getenv("SESSION_COOKIE_DAYS") or "7"))
+app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_MB") or "16") * 1024 * 1024
 
-# Trust X-Forwarded-* headers only when behind a reverse proxy (nginx/Caddy).
-# Required so url_for/redirect generate https:// links and the secure cookie works.
-if os.getenv("TRUST_PROXY_HEADERS", "0") == "1":
+if os.getenv("TRUST_PROXY_HEADERS") == "1":
     from werkzeug.middleware.proxy_fix import ProxyFix
 
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
 register_template_filters(app)
 register_before_request(app)
+register_request_logging(app)
 register_context_processor(app)
 register_csrf(app)
 
@@ -73,8 +74,12 @@ register_usuarios(app)
 register_health(app)
 register_error_handlers(app)
 
-with contextlib.suppress(Exception):
+try:
     ensure_initial_admin()
+except Exception as exc:
+    import logging
+
+    logging.getLogger(__name__).warning("ensure_initial_admin: %s", exc)
 
 if __name__ == "__main__":
-    app.run(debug=os.getenv("FLASK_DEBUG", "0") == "1")
+    app.run(debug=os.getenv("FLASK_DEBUG") == "1")

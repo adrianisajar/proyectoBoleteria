@@ -156,7 +156,7 @@ def verificar() -> tuple[list[str], list[str], dict[int, list]]:
         vtotal = factura.get("valor_total")
         if not _es_numero_valido(vtotal):
             errores.append(f"factura #{fid}: valor_total inválido")
-        elif int(vtotal) != suma:
+        elif not factura.get("es_general") and int(vtotal) != suma:
             errores.append(f"factura #{fid}: valor_total ({int(vtotal)}) != suma del detalle ({suma})")
 
     counter = config.get("factura_counter")
@@ -175,9 +175,10 @@ def verificar() -> tuple[list[str], list[str], dict[int, list]]:
             continue
         asignaciones[v["_id"]] = {int(n) for n in asignadas if _es_numero_valido(n) and BOLETA_MIN <= int(n) <= BOLETA_MAX}
 
-    # ── Boletas ──────────────────────────────────────────────────────
+    # ── Boletas (streaming cursor — no full list in RAM) ──────────────
     boleta_vendedor: dict[int, str] = {}
-    for doc in boletas.find({}):
+    _boleta_proj = {"_id": 1, "total_abonado": 1, "estado": 1, "vendedor_id": 1, "cliente": 1, MOVIMIENTOS_FIELD: 1}
+    for doc in boletas.find({}, _boleta_proj).batch_size(500):
         bid = doc.get("_id")
         if not _es_numero_valido(bid) or not (BOLETA_MIN <= bid <= BOLETA_MAX):
             errores.append(f"boletas: _id inválido {bid!r}")
@@ -214,7 +215,12 @@ def verificar() -> tuple[list[str], list[str], dict[int, list]]:
         if vendedor_id not in ("", VENDEDOR_LOCAL) and vendedor_id not in vendedor_ids:
             errores.append(f"boleta #{bid:04d}: vendedor_id {vendedor_id!r} no existe en la colección vendedores.")
 
-        esperado = estado_para_total(total, valor_boleta, vendedor_id=vendedor_id or None)
+        esperado = estado_para_total(
+            total,
+            valor_boleta,
+            vendedor_id=vendedor_id or None,
+            cliente_nombre=(doc.get("cliente") or {}).get("nombre", ""),
+        )
         estado = doc.get("estado")
         if estado is not None and estado != esperado:
             errores.append(f"boleta #{bid:04d}: estado {estado!r} != esperado {esperado!r}.")
@@ -241,7 +247,7 @@ def verificar() -> tuple[list[str], list[str], dict[int, list]]:
             vendedor_boleta = boleta_vendedor.get(numero)
             if vendedor_boleta is None:
                 errores.append(f"vendedor {vendedor_id}: boleta #{numero:04d} asignada no existe.")
-            elif vendedor_boleta != vendedor_id:
+            elif vendedor_boleta != vendedor_id and vendedor_boleta and vendedor_boleta != VENDEDOR_LOCAL:
                 errores.append(f"vendedor {vendedor_id}: boleta #{numero:04d} asignada pertenece a {vendedor_boleta!r}.")
 
     return errores, advertencias, reparables
@@ -249,6 +255,9 @@ def verificar() -> tuple[list[str], list[str], dict[int, list]]:
 
 def reparar() -> tuple[int, list[str]]:
     """Restore missing pago movements from factura detalle (no totals/estado touched).
+
+    Uses ``$push`` with ``$each`` for atomic appends and deduplicates against
+    existing ``(factura_id, valor)`` pairs before writing.
 
     Returns (reinsertados, errores_restantes_despues_de_reparar).
     """
@@ -258,11 +267,23 @@ def reparar() -> tuple[int, list[str]]:
         return 0, ["sin conexión"]
     reinsertados = 0
     for bid, lineas in sorted(reparables.items()):
-        doc = boletas.find_one({"_id": bid}, {MOVIMIENTOS_FIELD: 1})
+        doc = boletas.find_one(
+            {"_id": bid},
+            {MOVIMIENTOS_FIELD: 1, "total_abonado": 1},
+        )
         if doc is None:
             continue
-        movimientos = list(doc.get(MOVIMIENTOS_FIELD) or [])
+        existentes = doc.get(MOVIMIENTOS_FIELD) or []
+        vistas: set[tuple[int, int]] = set()
+        for mov in existentes:
+            if isinstance(mov, dict) and _es_numero_valido(mov.get("factura_id")) and _es_numero_valido(mov.get("valor")):
+                vistas.add((int(mov["factura_id"]), int(mov["valor"])))
+        nuevos = []
         for fid, linea in lineas:
+            clave = (int(fid), int(linea.get("valor", 0) or 0))
+            if clave in vistas:
+                continue
+            vistas.add(clave)
             mov = {
                 "tipo": MOV_PAGO,
                 "fecha": str(linea.get("fecha", "")),
@@ -276,10 +297,14 @@ def reparar() -> tuple[int, list[str]]:
                 mov["referencia"] = linea["referencia"]
             if linea.get("banco"):
                 mov["banco"] = linea["banco"]
-            movimientos.append(mov)
+            nuevos.append(mov)
             reinsertados += 1
             print(f"[REPARAR] boleta #{bid:04d}: reinsertado pago ${mov['valor']:,} (factura #{fid}).")
-        boletas.update_one({"_id": bid}, {"$set": {MOVIMIENTOS_FIELD: movimientos}})
+        if nuevos:
+            boletas.update_one(
+                {"_id": bid},
+                {"$push": {MOVIMIENTOS_FIELD: {"$each": nuevos}}},
+            )
     if reinsertados:
         invalidate_dashboard_cache()
     _, _, reparables_restantes = verificar()

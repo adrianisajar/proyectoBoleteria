@@ -39,13 +39,23 @@
             <div class="metric-value">{{ resumen.total_comision|cop }}</div>
         </div>
     </div>
-    <div class="col">
-        <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-danger);">
-            <div class="metric-label mb-2">Egresos</div>
-            <div class="metric-value">{{ resumen.total_egresos|cop }}</div>
-        </div>
-    </div>
 </div>
+
+<ul class="nav nav-tabs mb-4" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabGestion" type="button" role="tab" aria-selected="true">
+            <i class="bi bi-gear me-1"></i>Gesti&oacute;n
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabAsignacionRapida" type="button" role="tab" aria-selected="false">
+            <i class="bi bi-lightning me-1"></i>Asignaci&oacute;n r&aacute;pida
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <div class="tab-pane fade show active" id="tabGestion" role="tabpanel">
 
 <div class="office-card bg-body p-3 p-md-4 mb-4">
     <form method="post" class="row g-3" autocomplete="off">
@@ -75,6 +85,7 @@
                     <option value="asignar" {% if form.operacion == "asignar" %}selected{% endif %}>Asignar</option>
                     <option value="quitar" {% if form.operacion == "quitar" %}selected{% endif %}>Quitar</option>
                     <option value="eliminar" {% if form.operacion == "eliminar" %}selected{% endif %}>Eliminar vendedor</option>
+                    <option value="cambiar_nombre" {% if form.operacion == "cambiar_nombre" %}selected{% endif %}>Cambiar nombre</option>
                     <option value="registrar_fecha_adquisicion" {% if form.operacion == "registrar_fecha_adquisicion" %}selected{% endif %}>Registrar fecha de adquisición</option>
                 </select>
         </div>
@@ -83,6 +94,19 @@
                 <i class="bi bi-check2-circle"></i>
                 Aplicar
             </button>
+            <input type="hidden" name="confirmar_pagos" id="confirmarPagos" value="">
+        </div>
+
+        <div class="col-12" id="divFechaAsignar" style="display:none;">
+            <label for="fechaAsignacion" class="form-label fw-semibold">Fecha de adquisición <span class="text-secondary fw-normal">(opcional — viaja con el traspaso)</span></label>
+            <input type="date" class="form-control" id="fechaAsignacion" name="fecha_asignacion" value="{{ form.fecha_asignacion }}" style="max-width:280px;">
+            <div class="form-text">Con fecha: las boletas quedan con esa fecha. Vacío: las que cambian de vendedor quedan sin fecha; las demás conservan la suya.</div>
+        </div>
+
+        <div class="col-12" id="divNuevoNombre" style="display:none;">
+            <label for="nuevo_nombre" class="form-label fw-semibold">Nuevo nombre</label>
+            <input type="text" class="form-control text-uppercase" id="nuevo_nombre" name="nuevo_nombre" placeholder="Nombre nuevo del vendedor" autocomplete="off" data-validation="name">
+            <div class="form-text">El ID interno no cambia. Las boletas y facturas anteriores conservan los datos registrados.</div>
         </div>
 
         <div class="col-12" id="divBoletasTexto">
@@ -95,21 +119,23 @@
                 id="boletas"
                 name="boletas"
                 rows="5"
-                placeholder="1, 0050, 432, 9999"
+                placeholder="Boletas"
                 data-validation="tickets"
             >{{ form.boletas }}</textarea>
         </div>
 
-        <div class="col-12" id="divBoletasFecha" style="display:none;">
+        <div class="col-12" id="divBoletasSelector" style="display:none;">
             <div class="d-flex flex-column flex-sm-row align-items-sm-end justify-content-between gap-2 mb-2">
                 <div>
-                    <label for="fechaAdquisicion" class="form-label fw-semibold mb-0">Fecha de adquisición</label>
-                    <div class="text-secondary small">La fecha en que cada boleta salió del vendedor / fue entregada al comprador.</div>
+                    <label id="selectorTitulo" class="form-label fw-semibold mb-0">Boletas del vendedor</label>
+                    <div class="text-secondary small" id="selectorAyuda">Seleccione las boletas sobre las que se aplicará la operación.</div>
                 </div>
-                <span class="badge text-bg-light border align-self-start align-self-sm-auto" id="contadorBoletasFecha">0 seleccionadas</span>
+                <span class="badge text-bg-light border align-self-start align-self-sm-auto" id="contadorBoletasSel">0 seleccionadas</span>
             </div>
             <div class="row g-3">
-                <div class="col-md-4">
+                <div class="col-md-4" id="colFechaAdquisicion">
+                    <label for="fechaAdquisicion" class="form-label fw-semibold">Fecha de adquisición</label>
+                    <div class="text-secondary small mb-2">La fecha en que cada boleta salió del vendedor / fue entregada al comprador.</div>
                     <input type="date" class="form-control" id="fechaAdquisicion" name="fecha_adquisicion" max="{{ now_local_date }}" autocomplete="off">
                 </div>
                 <div class="col-md-8">
@@ -144,16 +170,15 @@
 
     {% if vendedores_lista %}
         <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
+            <table class="table table-hover align-middle mb-0" id="tablaVendedores">
                 <thead class="table-light">
                     <tr>
-                        <th>Vendedor</th>
-                        <th class="text-end">Boletas</th>
-                        <th class="text-end">Vendidas</th>
-                        <th class="text-end">Pendientes</th>
-                        <th class="text-end">Recaudado</th>
-                        <th class="text-end">Egresos</th>
-                        <th class="text-end"></th>
+                        <th data-sort="nombre" class="sortable">Vendedor</th>
+                        <th data-sort="cantidad" class="sortable text-end">Boletas</th>
+                        <th data-sort="vendidas" class="sortable text-end">Vendidas</th>
+                        <th data-sort="pendientes_fisicas" class="sortable text-end">Pendientes</th>
+                        <th data-sort="recaudado" class="sortable text-end">Recaudado</th>
+<th class="text-end"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -175,11 +200,8 @@
                                     <span class="badge text-bg-success">0</span>
                                 {% endif %}
                             </td>
-                            <td class="text-end fw-bold text-success">{{ vendedor.recaudado|cop }}</td>
-                            <td class="text-end fw-bold text-danger">
-                                {% if vendedor.total_egresos > 0 %}{{ vendedor.total_egresos|cop }}{% else %}—{% endif %}
-                            </td>
-                            <td class="text-end">
+<td class="text-end fw-bold text-success">{{ vendedor.recaudado|cop }}</td>
+                             <td class="text-end">
                                 <div class="d-flex gap-1 justify-content-end">
                                     <button type="button" class="btn btn-sm btn-outline-info ver-boletas" data-vendedor="{{ vendedor._id }}" data-nombre="{{ vendedor.nombre|e }}" title="Ver boletas">
                                         <i class="bi bi-list-ul"></i>
@@ -201,6 +223,42 @@
     {% endif %}
 </div>
 
+    </div><!-- /tabGestion -->
+
+    <div class="tab-pane fade" id="tabAsignacionRapida" role="tabpanel">
+        <div class="office-card bg-body p-3 p-md-4">
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="arAddFila"><i class="bi bi-plus-lg me-1"></i>1</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="arAddFila5"><i class="bi bi-plus-lg me-1"></i>5</button>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="arCopiarAbajo" title="Copiar vendedor de la fila actual a todas las de abajo"><i class="bi bi-arrow-down me-1"></i>Copiar hacia abajo</button>
+                <span class="badge text-bg-light border" id="arContador">0 filas</span>
+                <div class="ms-auto">
+                    <button type="button" class="btn btn-success btn-lg d-inline-flex align-items-center gap-2" id="arAsignar" disabled>
+                        <i class="bi bi-check2-circle"></i>Asignar
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-responsive" style="max-height:60vh; overflow-y:auto;">
+                <table class="table table-bordered table-sm mb-0" id="arTabla">
+                    <thead class="table-light" style="position:sticky; top:0; z-index:2;">
+                        <tr>
+                            <th style="width:45px;">#</th>
+                            <th style="width:110px;">Boleta</th>
+                            <th style="width:260px;">Vendedor</th>
+                            <th style="width:100px;">Estado</th>
+                            <th style="width:40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="arTbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div><!-- /tabAsignacionRapida -->
+</div><!-- /tab-content -->
+
 <div class="modal fade" id="boletasModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
@@ -214,14 +272,13 @@
                     <div class="mt-2">Cargando...</div>
                 </div>
                 <div class="table-responsive" id="modalContent" style="display:none;">
-                    <table class="table table-hover align-middle mb-0">
+                    <table class="table table-hover align-middle mb-0" id="tablaModalBoletas">
                         <thead class="table-light">
                             <tr>
-                                <th>Boleta</th>
-                                <th>Estado</th>
-                                <th>Abonado</th>
-                                <th>Egresos</th>
-                                <th>Fech. adq.</th>
+                                <th class="sortable" onclick="sortTableFrontend('tablaModalBoletas', 0, true)">Boleta</th>
+                                <th class="sortable" onclick="sortTableFrontend('tablaModalBoletas', 1, false)">Estado</th>
+                                <th class="sortable" onclick="sortTableFrontend('tablaModalBoletas', 2, true)">Abonado</th>
+                                <th class="sortable" onclick="sortTableFrontend('tablaModalBoletas', 3, false)">Fech. adq.</th>
                             </tr>
                         </thead>
                         <tbody id="modalBoletasBody"></tbody>
@@ -232,6 +289,22 @@
             <div class="modal-footer">
                 <span class="text-secondary small" id="modalTotalBoletas"></span>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="arConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirmar asignacion rapida</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body" id="arConfirmBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success" id="arConfirmBtn"><i class="bi bi-check2-circle me-1"></i>Si, asignar</button>
             </div>
         </div>
     </div>
@@ -264,12 +337,18 @@
         const boletas = document.getElementById("boletas");
 
         const divBoletasTexto = document.getElementById("divBoletasTexto");
-        const divBoletasFecha = document.getElementById("divBoletasFecha");
+        const divBoletasSelector = document.getElementById("divBoletasSelector");
+        const selectorTitulo = document.getElementById("selectorTitulo");
+        const selectorAyuda = document.getElementById("selectorAyuda");
+        const colFechaAdquisicion = document.getElementById("colFechaAdquisicion");
         const fechaAdquisicion = document.getElementById("fechaAdquisicion");
+        const fechaAsignacion = document.getElementById("fechaAsignacion");
         const listaBoletasFecha = document.getElementById("listaBoletasFecha");
-        const contadorBoletasFecha = document.getElementById("contadorBoletasFecha");
+        const contadorBoletasSel = document.getElementById("contadorBoletasSel");
         const fechaSelTodas = document.getElementById("fechaSelTodas");
         const fechaDeseleccionar = document.getElementById("fechaDeseleccionar");
+        const divNuevoNombre = document.getElementById("divNuevoNombre");
+        const nuevoNombre = document.getElementById("nuevo_nombre");
 
         /* ── Autocomplete vendedor ── */
         const vendedorSug = document.getElementById("vendedorSugerencias");
@@ -278,9 +357,16 @@
             { id: {{ v._id | tojson }}, nombre: {{ (v.nombre or v._id) | tojson }} },
             {% endfor %}
         ];
+        window.__vendedoresLista = vendedores;
         let selectedVendedor = null;
 
-        var escAttr = function(s) { return String(s).replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
+        var escAttr = function(s) { return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
+        var fmtFecha = function(s) {
+            if (!s) return "—";
+            var parts = String(s).split("-");
+            if (parts.length === 3) return parts[2] + "/" + parts[1] + "/" + parts[0];
+            return s;
+        };
         var escHtml = function(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
 
         const mostrarSugerencias = (filtro) => {
@@ -300,11 +386,11 @@
             selectedVendedor = { id: id, nombre: nombre };
             vendedorIdInput.value = id;
             vendedorSug.style.display = "none";
-            if (isFechaOp(operacion.value)) refreshFechaBoletas();
+            if (isPickerOp(operacion.value)) refreshBoletasSel();
         };
 
         nombre.addEventListener("input", function() {
-            if (selectedVendedor && selectedVendedor.nombre !== this.value) {
+            if (operacion.value !== "cambiar_nombre" && selectedVendedor && selectedVendedor.nombre !== this.value) {
                 selectedVendedor = null;
                 vendedorIdInput.value = "";
             }
@@ -356,7 +442,7 @@
                     selectedVendedor = null;
                     vendedorIdInput.value = "";
                 }
-                toggleFechaUi();
+                toggleSelectorUi();
                 nombre.focus();
             });
         });
@@ -373,15 +459,18 @@
         });
         actualizarContador();
 
-        /* ── Operación: registrar fecha de adquisición ── */
+        /* ── Operación: selector de boletas (quitar / fecha de adquisición) ── */
         const isFechaOp = (op) => op === "registrar_fecha_adquisicion";
+        const isPickerOp = (op) => op === "quitar" || op === "registrar_fecha_adquisicion";
         const hoyLocal = new Date();
         const hoyISO = hoyLocal.getFullYear() + "-" + String(hoyLocal.getMonth() + 1).padStart(2, "0") + "-" + String(hoyLocal.getDate()).padStart(2, "0");
+        const getPickedBoletas = () => Array.from(document.querySelectorAll(".fecha-check:checked")).map(c => Number(c.value)).sort((a, b) => a - b);
 
-        const contarFechaSeleccionadas = () => {
+        const contarSeleccionadas = () => {
             const n = document.querySelectorAll(".fecha-check:checked").length;
-            contadorBoletasFecha.textContent = `${n} seleccionada${n === 1 ? "" : "s"}`;
-            validarFechaCampo(operacion.value);
+            contadorBoletasSel.textContent = `${n} seleccionada${n === 1 ? "" : "s"}`;
+            validarBoletasCampo(operacion.value);
+            if (isFechaOp(operacion.value)) validarFechaCampo(operacion.value);
         };
 
         const renderFechaBoletas = (boletasList) => {
@@ -392,34 +481,34 @@
                     '<input class="form-check-input mt-0 fecha-check flex-shrink-0" type="checkbox" name="boletas_fecha[]" value="' + b.numero + '" data-fecha="' + escAttr(b.fecha_adquisicion || "") + '" id="' + fid + '">' +
                     '<label class="form-check-label small flex-grow-1 d-flex justify-content-between align-items-center gap-2 mb-0" for="' + fid + '">' +
                         '<span class="fw-bold ticket-number">#' + b.numero + '</span>' +
-                        '<span class="badge rounded-pill ' + badgeClass + ' text-uppercase">' + b.estado + '</span>' +
-                        '<span class="text-secondary small">' + (b.fecha_adquisicion || "—") + '</span>' +
+                        '<span class="badge rounded-pill ' + badgeClass + ' text-uppercase">' + escHtml(b.estado) + '</span>' +
+                        '<span class="text-secondary small">' + fmtFecha(b.fecha_adquisicion) + '</span>' +
                     '</label>' +
                 '</div>';
             }).join("");
         };
 
         let fechaRefreshTimer = null;
-        const refreshFechaBoletas = () => {
+        const refreshBoletasSel = () => {
             clearTimeout(fechaRefreshTimer);
             fechaRefreshTimer = setTimeout(() => {
                 const vId = vendedorIdInput.value.trim();
-                if (!isFechaOp(operacion.value) || !vId) {
+                if (!isPickerOp(operacion.value) || !vId) {
                     listaBoletasFecha.innerHTML = '<div class="text-secondary small p-2">Seleccione un vendedor para cargar sus boletas.</div>';
-                    contadorBoletasFecha.textContent = "0 seleccionadas";
+                    contadorBoletasSel.textContent = "0 seleccionadas";
                     return;
                 }
                 listaBoletasFecha.innerHTML = '<div class="text-center text-secondary small p-3"><span class="spinner-border spinner-border-sm me-1"></span>Cargando...</div>';
-                fetch("/api/vendedores/" + encodeURIComponent(vId) + "/boletas")
+                fetch("/api/vendedores/" + encodeURIComponent(vId) + "/boletas?movimientos=0")
                     .then(r => r.json())
                     .then(data => {
                         if (!data.ok || !data.boletas || !data.boletas.length) {
                             listaBoletasFecha.innerHTML = '<div class="text-secondary small p-2">Este vendedor no tiene boletas asignadas.</div>';
-                            contadorBoletasFecha.textContent = "0 seleccionadas";
+                            contadorBoletasSel.textContent = "0 seleccionadas";
                             return;
                         }
                         renderFechaBoletas(data.boletas);
-                        contadorBoletasFecha.textContent = "0 seleccionadas";
+                        contadorBoletasSel.textContent = "0 seleccionadas";
                     })
                     .catch(() => {
                         listaBoletasFecha.innerHTML = '<div class="text-danger small p-2">Error al cargar las boletas.</div>';
@@ -427,27 +516,43 @@
             }, 300);
         };
 
-        const toggleFechaUi = () => {
+        const toggleSelectorUi = () => {
+            const pickerOp = isPickerOp(operacion.value);
             const fechaOp = isFechaOp(operacion.value);
-            divBoletasTexto.style.display = fechaOp ? "none" : "";
-            divBoletasFecha.style.display = fechaOp ? "" : "none";
+            const asignarOp = operacion.value === "asignar";
+            divBoletasTexto.style.display = pickerOp ? "none" : "";
+            divBoletasSelector.style.display = pickerOp ? "" : "none";
+            colFechaAdquisicion.style.display = fechaOp ? "" : "none";
+            document.getElementById("divFechaAsignar").style.display = asignarOp ? "" : "none";
+            const cambiarNombreOp = operacion.value === "cambiar_nombre";
+            divNuevoNombre.style.display = cambiarNombreOp ? "" : "none";
             if (fechaOp) {
+                selectorTitulo.textContent = "Fecha de adquisición";
+                selectorAyuda.textContent = "La fecha en que cada boleta salió del vendedor / fue entregada al comprador.";
+            } else if (operacion.value === "quitar") {
+                selectorTitulo.textContent = "Boletas a quitar";
+                selectorAyuda.textContent = "Seleccione las boletas que se quitarán a este vendedor.";
+            }
+            if (pickerOp) {
                 fechaSelTodas.checked = false;
-                refreshFechaBoletas();
+                refreshBoletasSel();
             }
         };
 
         listaBoletasFecha.addEventListener("change", function(e) {
-            if (e.target.classList.contains("fecha-check")) contarFechaSeleccionadas();
+            if (e.target.classList.contains("fecha-check")) {
+                contarSeleccionadas();
+                fetchServerValidation();
+            }
         });
         fechaSelTodas.addEventListener("change", function() {
             document.querySelectorAll(".fecha-check").forEach(c => { c.checked = fechaSelTodas.checked; });
-            contarFechaSeleccionadas();
+            contarSeleccionadas();
         });
         fechaDeseleccionar.addEventListener("click", function() {
             fechaSelTodas.checked = false;
             document.querySelectorAll(".fecha-check").forEach(c => { c.checked = false; });
-            contarFechaSeleccionadas();
+            contarSeleccionadas();
         });
 
         /* ── Validación servidor (debounced) ── */
@@ -460,17 +565,23 @@
             };
         };
         var serverErrorsBoletas = [];
+        var serverWarningsBoletas = [];
+        var serverPagosBoletas = [];
 
         const fetchServerValidation = debounce(function() {
             var op = operacion.value;
             if (op !== "asignar" && op !== "quitar") {
                 serverErrorsBoletas = [];
+                serverWarningsBoletas = [];
+                serverPagosBoletas = [];
                 validarBoletasCampo(op);
                 return;
             }
-            var nums = [...getUniqueNumbers()];
+            var nums = op === "quitar" ? getPickedBoletas() : [...getUniqueNumbers()];
             if (!nums.length) {
                 serverErrorsBoletas = [];
+                serverWarningsBoletas = [];
+                serverPagosBoletas = [];
                 validarBoletasCampo(op);
                 return;
             }
@@ -487,15 +598,21 @@
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 serverErrorsBoletas = [];
+                serverWarningsBoletas = [];
+                serverPagosBoletas = [];
                 if (data.ok && data.resultados) {
                     data.resultados.forEach(function(r) {
                         if (!r.ok) serverErrorsBoletas.push("Boleta #" + r.boleta + ": " + r.error);
+                        else if (r.aviso) serverWarningsBoletas.push("Boleta #" + r.boleta + ": " + r.aviso);
+                        if (r.ok && r.con_pagos) serverPagosBoletas.push({boleta: r.boleta, abonado: r.abonado || 0});
                     });
                 }
                 validarBoletasCampo(operacion.value);
             })
             .catch(function() {
                 serverErrorsBoletas = [];
+                serverWarningsBoletas = [];
+                serverPagosBoletas = [];
                 validarBoletasCampo(operacion.value);
             });
         }, 400);
@@ -534,16 +651,11 @@
                     data.boletas.forEach((b) => {
                         const tr = document.createElement("tr");
                         const badgeClass = b.estado === "pagada" ? "text-bg-success" : b.estado === "abonando" ? "text-bg-warning" : b.estado === "asignada" ? "text-bg-primary" : b.estado === "separada" ? "text-bg-info" : "text-bg-secondary";
-                        let egresosCell = '<td><span class="text-muted">&mdash;</span></td>';
-                        if (b.egresos && b.egresos.length) {
-                            egresosCell = '<td>' + b.egresos.map((e) => '<div class="small text-danger">' + e.label + ': $' + Number(e.valor).toLocaleString("es-CO") + '</div>').join("") + '</td>';
-                        }
                         tr.innerHTML = [
                             '<td class="fw-bold ticket-number">#' + b.numero + '</td>',
-                            '<td><span class="badge rounded-pill ' + badgeClass + ' text-uppercase">' + b.estado + '</span></td>',
+                            '<td><span class="badge rounded-pill ' + badgeClass + ' text-uppercase">' + escHtml(b.estado) + '</span></td>',
                             '<td class="fw-bold text-success">$' + Number(b.abonado).toLocaleString("es-CO") + '</td>',
-                            egresosCell,
-                            '<td class="small">' + (b.fecha_adquisicion || '<span class="text-muted">&mdash;</span>') + '</td>',
+                            '<td class="small">' + fmtFecha(b.fecha_adquisicion) + '</td>',
                         ].join("");
                         modalBody.appendChild(tr);
                     });
@@ -598,7 +710,7 @@
         };
 
         const opsConBoletas = {"asignar": true, "quitar": true};
-        const opsConNombre = {"guardar": true, "asignar": true, "quitar": true, "eliminar": true, "registrar_fecha_adquisicion": true};
+        const opsConNombre = {"guardar": true, "asignar": true, "quitar": true, "eliminar": true, "cambiar_nombre": true, "registrar_fecha_adquisicion": true};
         const necesitaBoletas = function(op) { return !!opsConBoletas[op]; };
         const necesitaNombre = function(op) { return !!opsConNombre[op]; };
 
@@ -624,7 +736,7 @@
                 }
             }
             const vIdActual = vendedorIdInput.value.trim().toUpperCase();
-            if (vIdActual === {{ VENDEDOR_LOCAL | tojson }} && (op === "guardar" || op === "eliminar")) {
+            if (vIdActual === {{ VENDEDOR_LOCAL | tojson }} && (op === "guardar" || op === "eliminar" || op === "cambiar_nombre")) {
                 errors.push("{{ VENDEDOR_LOCAL_LABEL }} es un vendedor del sistema: solo puede asignar, quitar boletas o registrar fecha de adquisici\u00f3n.");
             }
             mostrarErrores("nombre", errors);
@@ -635,13 +747,13 @@
             if (!op) {
                 if (getUniqueNumbers().size) errors.push("Seleccione una operaci\u00f3n primero.");
             } else if (necesitaBoletas(op)) {
-                const nums = [...getUniqueNumbers()];
+                const nums = op === "quitar" ? getPickedBoletas() : [...getUniqueNumbers()];
                 const incompletas = boletas.value.trim().split(/[\s,;]+/).filter(function(p) { return /^\d+$/.test(p) && p.length < 4; });
                 if (incompletas.length) {
                     errors.push("Boletas incompletas, escribe los 4 d\u00edgitos: " + incompletas.join(", "));
                 }
                 if (!nums.length) {
-                    if (!incompletas.length) errors.push("Ingrese al menos una boleta para esta operaci\u00f3n.");
+                    if (!incompletas.length) errors.push(op === "quitar" ? "Seleccione al menos una boleta del vendedor." : "Ingrese al menos una boleta para esta operaci\u00f3n.");
                 } else {
                     const invalidos = nums.filter(function(n) { return n < 0 || n > 9999; });
                     if (invalidos.length) {
@@ -651,10 +763,28 @@
             } else {
                 if (getUniqueNumbers().size) errors.push("La operaci\u00f3n seleccionada no requiere boletas.");
             }
+            var allMsgs = [];
             if (serverErrorsBoletas.length) {
-                serverErrorsBoletas.forEach(function(e) { errors.push(e); });
+                serverErrorsBoletas.forEach(function(e) { allMsgs.push(e); });
             }
-            mostrarErrores("boletas", errors);
+            mostrarErrores(op === "quitar" ? "listaBoletasFecha" : "boletas", allMsgs);
+            var fieldId = op === "quitar" ? "listaBoletasFecha" : "boletas";
+            var warnId = fieldId + "_warnings";
+            var warnDiv = document.getElementById(warnId);
+            if (serverWarningsBoletas.length) {
+                if (!warnDiv) {
+                    warnDiv = document.createElement("div");
+                    warnDiv.id = warnId;
+                    warnDiv.className = "text-warning small mt-1 mb-0 ps-3";
+                    var el = document.getElementById(fieldId);
+                    if (el) el.parentNode.appendChild(warnDiv);
+                }
+                warnDiv.innerHTML = serverWarningsBoletas.map(function(w) {
+                    return '<i class="bi bi-exclamation-triangle me-1"></i>' + escHtml(w);
+                }).join("<br>");
+            } else if (warnDiv) {
+                warnDiv.innerHTML = "";
+            }
         };
 
         const validarFechaCampo = (op) => {
@@ -674,12 +804,25 @@
             mostrarErrores("fechaAdquisicion", errors);
         };
 
+        const validarFechaAsignar = (op) => {
+            const errors = [];
+            if (op === "asignar" && fechaAsignacion.value) {
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaAsignacion.value)) {
+                    errors.push("La fecha de adquisición debe tener formato dd/mm/aaaa.");
+                } else if (fechaAsignacion.value > hoyISO) {
+                    errors.push("La fecha no puede ser posterior a hoy.");
+                }
+            }
+            mostrarErrores("fechaAsignacion", errors);
+        };
+
         const validarFormulario = (op) => {
             limpiarErrores();
             validarOperacionCampo(op);
             validarNombreCampo(op);
             validarBoletasCampo(op);
             validarFechaCampo(op);
+            validarFechaAsignar(op);
             var ok = true;
             Object.keys(errorLists).forEach(function(k) {
                 const ul = errorLists[k];
@@ -707,6 +850,30 @@
             e.preventDefault();
             const vName = nombre.value.trim();
             const vId = vendedorIdInput.value || vName;
+            document.getElementById("confirmarPagos").value = "";
+
+            if (op === "cambiar_nombre") {
+                const actual = (selectedVendedor && selectedVendedor.nombre) || vId;
+                const nombreNuevo = nuevoNombre.value.trim();
+                if (!nombreNuevo) {
+                    nuevoNombre.focus();
+                    nuevoNombre.classList.add("is-invalid");
+                    return;
+                }
+                nuevoNombre.classList.remove("is-invalid");
+                confirmTitle.textContent = "Cambiar nombre";
+                confirmBody.innerHTML = `<div class="mb-3">
+                    <p class="mb-2">Se cambiará el nombre del vendedor <strong class="text-uppercase">${escHtml(actual)}</strong> (${escHtml(vId)}) a:</p>
+                    <p class="fw-semibold text-uppercase fs-5">${escHtml(nombreNuevo)}</p>
+                    <p class="small text-secondary mb-0">El ID interno no cambia. Las boletas y facturas anteriores conservan los datos registrados.</p>
+                </div>`;
+                confirmBtn.className = "btn btn-primary";
+                confirmBtn.textContent = "Sí, cambiar";
+                confirmBtn.disabled = false;
+                pendingSubmit = () => { submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...'; form.submit(); };
+                bootstrap.Modal.getOrCreateInstance(confirmModal).show();
+                return;
+            }
 
             if (op === "registrar_fecha_adquisicion") {
                 const checked = Array.from(document.querySelectorAll(".fecha-check:checked"));
@@ -739,8 +906,8 @@
                     <p class="mb-2">¿Está seguro de eliminar al vendedor?</p>
                     <div class="p-3 panel-muted rounded mb-3">
                         <div class="d-flex align-items-center gap-2 mb-1">
-                            <span class="badge text-bg-secondary">${vId}</span>
-                            <span class="fw-semibold text-uppercase">${vName}</span>
+                            <span class="badge text-bg-secondary">${escHtml(vId)}</span>
+                            <span class="fw-semibold text-uppercase">${escHtml(vName)}</span>
                         </div>
                         <div class="small text-danger mt-2">
                             <i class="bi bi-exclamation-triangle"></i>
@@ -749,7 +916,7 @@
                     </div>
                     <div class="mb-2">
                         <label for="confirmarNombre" class="form-label fw-semibold">Escriba el nombre del vendedor para confirmar:</label>
-                        <input type="text" class="form-control" id="confirmarNombre" autocomplete="off" placeholder="${vName}">
+                        <input type="text" class="form-control" id="confirmarNombre" autocomplete="off" placeholder="Nombre del vendedor">
                     </div>
                 </div>`;
                 confirmBtn.className = "btn btn-danger";
@@ -768,16 +935,33 @@
                 return;
             }
 
-            const nums = [...getUniqueNumbers()];
+            const nums = op === "quitar" ? getPickedBoletas() : [...getUniqueNumbers()];
+            if (op === "quitar") {
+                boletas.value = nums.map(n => String(n).padStart(4, "0")).join(", ");
+            }
+            const conPagos = op === "asignar"
+                ? serverPagosBoletas.filter(p => nums.includes(Number(p.boleta)))
+                : [];
             const opLabel = op === "asignar" ? "Asignar" : "Quitar";
             confirmTitle.textContent = opLabel + " boletas";
 
-            confirmBody.innerHTML = `<p class="mb-1">Se ${op === "asignar" ? "asignarán" : "quitarán"} <strong>${nums.length}</strong> boleta(s) ${op === "asignar" ? "a" : "de"} <strong class="text-uppercase">${vName}</strong>.</p>
-                <div class="ticket-number small text-secondary">${nums.sort((a,b)=>a-b).map(n => "#" + String(n).padStart(4,"0")).join(" ")}</div>`;
+            const fechaTraspaso = op === "asignar" ? fechaAsignacion.value : "";
+            const hayReasignadas = op === "asignar" && serverWarningsBoletas.some(w => w.includes("reasignada") || w.includes("reasignará"));
+            confirmBody.innerHTML = `<p class="mb-1">Se ${op === "asignar" ? "asignarán" : "quitarán"} <strong>${nums.length}</strong> boleta(s) ${op === "asignar" ? "a" : "de"} <strong class="text-uppercase">${escHtml(vName)}</strong>.</p>
+                <div class="ticket-number small text-secondary">${nums.sort((a,b)=>a-b).map(n => "#" + String(n).padStart(4,"0")).join(" ")}</div>`
+                + (fechaTraspaso ? `<p class="mb-0 mt-2"><i class="bi bi-calendar3 me-1"></i>Fecha de adquisición: <strong>${fechaTraspaso}</strong></p>` : "")
+                + (!fechaTraspaso && hayReasignadas ? `<p class="mb-0 mt-2 text-warning small"><i class="bi bi-exclamation-triangle me-1"></i>Las boletas que cambian de vendedor quedarán sin fecha de adquisición.</p>` : "")
+                + (conPagos.length ? `<div class="alert alert-danger py-2 small mt-2 mb-0">
+                    <i class="bi bi-exclamation-triangle me-1"></i><strong>${conPagos.length} boleta(s) tienen pagos registrados</strong> y serán reasignadas con sus abonos al nuevo vendedor:
+                    <div class="ticket-number mt-1">${conPagos.map(p => "#" + p.boleta + " ($" + Number(p.abonado).toLocaleString("es-CO") + ")").join(" ")}</div>
+                </div>` : "");
             confirmBtn.className = "btn " + (op === "quitar" ? "btn-danger" : "btn-primary");
             confirmBtn.textContent = "Sí, " + opLabel.toLowerCase();
             confirmBtn.disabled = false;
-            pendingSubmit = () => { submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...'; form.submit(); };
+            pendingSubmit = () => {
+                if (conPagos.length) document.getElementById("confirmarPagos").value = "1";
+                submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Enviando...'; form.submit();
+            };
             bootstrap.Modal.getOrCreateInstance(confirmModal).show();
         });
 
@@ -788,10 +972,11 @@
         /* ── Errores en tiempo real ── */
         nombre.addEventListener("input", function() {
             validarNombreCampo(operacion.value);
-            fetchServerValidation();
+            if (boletas.value.trim()) fetchServerValidation();
         });
         boletas.addEventListener("input", function() {
             serverErrorsBoletas = [];
+            serverWarningsBoletas = [];
             validarBoletasCampo(operacion.value);
             fetchServerValidation();
         });
@@ -800,7 +985,8 @@
             validarNombreCampo(this.value);
             validarBoletasCampo(this.value);
             validarFechaCampo(this.value);
-            toggleFechaUi();
+            validarFechaAsignar(this.value);
+            toggleSelectorUi();
             fetchServerValidation();
         });
 
@@ -809,20 +995,370 @@
         validarNombreCampo(operacion.value);
         validarBoletasCampo(operacion.value);
         validarFechaCampo(operacion.value);
-        toggleFechaUi();
+        toggleSelectorUi();
         }
 
         const buscarInput = document.getElementById("buscarVendedor");
         const tablaBody = document.querySelector(".office-card .table tbody");
         if (buscarInput && tablaBody) {
+            let buscarTimer = null;
             buscarInput.addEventListener("input", () => {
-                const q = buscarInput.value.toLowerCase().trim();
-                for (const tr of tablaBody.querySelectorAll("tr")) {
-                    const txt = tr.textContent.toLowerCase();
-                    tr.style.display = !q || txt.includes(q) ? "" : "none";
-                }
+                clearTimeout(buscarTimer);
+                buscarTimer = setTimeout(() => {
+                    const q = buscarInput.value.toLowerCase().trim();
+                    for (const tr of tablaBody.querySelectorAll("tr")) {
+                        const txt = tr.textContent.toLowerCase();
+                        tr.style.display = !q || txt.includes(q) ? "" : "none";
+                    }
+                }, 150);
             });
         }
     })();
 </script>
+
+<script>
+    (() => {
+        /* ══ Asignación rápida — Vendedor + Boleta por fila ══ */
+        const arTbody = document.getElementById("arTbody");
+        const arContador = document.getElementById("arContador");
+        const arBtnAsignar = document.getElementById("arAsignar");
+
+        const escA = (s) => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+        /* ── Vendor list from server (shared with main autocomplete) ── */
+        const vendedoresAR = window.__vendedoresLista || [];
+
+        /* ── Row HTML ── */
+        function arRowHTML(idx) {
+            const n = idx + 1;
+            return '<tr>'
+                + '<td class="text-center text-muted small">' + n + '</td>'
+                + '<td><input type="text" class="form-control form-control-sm ar-boleta-input ticket-number" inputmode="numeric" maxlength="4" placeholder="Boleta" data-validation="numbers"></td>'
+                + '<td class="position-relative">'
+                +   '<input type="text" class="form-control form-control-sm ar-vendedor-input text-uppercase" placeholder="Nombre o ID" autocomplete="off" data-validation="name">'
+                +   '<div class="list-group position-absolute w-100 shadow-sm rounded-2 ar-vendedor-sug" style="display:none; z-index:1050; max-height:180px; overflow-y:auto;"></div>'
+                +   '<input type="hidden" class="ar-vendedor-id">'
+                + '</td>'
+                + '<td class="text-center ar-estado-cell"><span class="text-muted small">--</span></td>'
+                + '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger ar-del-fila" title="Eliminar">&times;</button></td>'
+                + '</tr>';
+        }
+
+        function arAddRows(n) {
+            const start = arTbody.children.length;
+            const html = Array.from({length: n}, (_, i) => arRowHTML(start + i)).join("");
+            arTbody.insertAdjacentHTML("beforeend", html);
+            arRenumber();
+            if (arTbody.lastElementChild) {
+                arTbody.lastElementChild.querySelector(".ar-boleta-input").focus();
+            }
+        }
+
+        function arRenumber() {
+            Array.from(arTbody.children).forEach((tr, i) => {
+                const td = tr.querySelector("td");
+                if (td) td.textContent = i + 1;
+            });
+        }
+
+        function arUpdateContador() {
+            const n = arTbody.children.length;
+            arContador.textContent = n + " fila" + (n === 1 ? "" : "s");
+        }
+
+        function arUpdateBtn() {
+            const rows = Array.from(arTbody.children);
+            const hasData = rows.some(tr => tr.querySelector(".ar-boleta-input").value.trim().length >= 4);
+            arBtnAsignar.disabled = !hasData;
+        }
+
+        /* ── Batch validation (single fetch for all pasted rows) ── */
+        let arValidationTimer = null;
+        const arValidatedNums = new Set();
+        function arRunBatchValidation() {
+            if (arValidationTimer) clearTimeout(arValidationTimer);
+            arValidationTimer = setTimeout(() => {
+                const inputs = Array.from(arTbody.querySelectorAll(".ar-boleta-input")).filter(inp => inp.value.trim().length === 4);
+                if (!inputs.length) return;
+                const nums = inputs.map(inp => Number(inp.value.trim()));
+                const newNums = nums.filter(n => !arValidatedNums.has(n));
+                if (!newNums.length) return;
+                newNums.forEach(n => arValidatedNums.add(n));
+                fetch("/api/boletas/validar", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json", "X-CSRF-Token": getCsrfToken()},
+                    body: JSON.stringify({ boletas: newNums }),
+                }).then(r => r.json()).then(data => {
+                if (!data.ok) return;
+                inputs.forEach(inp => {
+                    const key = inp.value.trim();
+                    const tr = inp.closest("tr");
+                    const estadoCell = tr.querySelector(".ar-estado-cell");
+                    const r = data.resultados[key];
+                    if (!r) { estadoCell.innerHTML = '<span class="text-muted small">--</span>'; return; }
+                    if (!r.ok) estadoCell.innerHTML = '<span class="badge text-bg-danger">No existe</span>';
+                    else if (r.estado === "pagada") estadoCell.innerHTML = '<span class="badge text-bg-success">Pagada</span>';
+                    else if (r.total_abonado > 0) estadoCell.innerHTML = '<span class="badge text-bg-warning">Con pagos</span>';
+                    else if (r.vendedor_id && r.vendedor_id !== "" && r.vendedor_id !== "LOCAL") estadoCell.innerHTML = '<span class="badge text-bg-info">Reasigna</span>';
+                    else estadoCell.innerHTML = '<span class="badge text-bg-primary">OK</span>';
+                });
+            }).catch(() => {});
+            }, 400);
+        }
+
+        document.getElementById("arAddFila").addEventListener("click", () => { arAddRows(1); arUpdateBtn(); });
+        document.getElementById("arAddFila5").addEventListener("click", () => { arAddRows(5); arUpdateBtn(); });
+
+        /* ── Copy vendor down from focused row ── */
+        document.getElementById("arCopiarAbajo").addEventListener("click", () => {
+            const focused = document.activeElement;
+            const srcTr = focused ? focused.closest("tr") : null;
+            if (!srcTr || !arTbody.contains(srcTr)) return;
+            const srcId = srcTr.querySelector(".ar-vendedor-id").value;
+            const srcNombre = srcTr.querySelector(".ar-vendedor-input").value.toUpperCase();
+            if (!srcId && !srcNombre) return;
+            const rows = Array.from(arTbody.children);
+            const startIdx = rows.indexOf(srcTr);
+            for (let i = startIdx + 1; i < rows.length; i++) {
+                rows[i].querySelector(".ar-vendedor-input").value = srcNombre;
+                rows[i].querySelector(".ar-vendedor-id").value = srcId;
+            }
+        });
+
+        /* ── Delete row ── */
+        arTbody.addEventListener("click", function(e) {
+            const btn = e.target.closest(".ar-del-fila");
+            if (btn) {
+                btn.closest("tr").remove();
+                arRenumber();
+                arUpdateContador();
+                arUpdateBtn();
+            }
+        });
+
+        /* ── Per-row vendor autocomplete ── */
+        arTbody.addEventListener("input", function(e) {
+            if (e.target.classList.contains("ar-vendedor-input")) {
+                const tr = e.target.closest("tr");
+                const sug = tr.querySelector(".ar-vendedor-sug");
+                const hiddenId = tr.querySelector(".ar-vendedor-id");
+                const raw = e.target.value.trim().toUpperCase();
+                e.target.value = raw;
+                hiddenId.value = "";
+                if (!raw) { sug.style.display = "none"; return; }
+                const opts = vendedoresAR.filter(v => v.id.toUpperCase().includes(raw) || v.nombre.toUpperCase().includes(raw));
+                if (!opts.length) { sug.style.display = "none"; return; }
+                sug.innerHTML = opts.map(v => {
+                    return '<button type="button" class="list-group-item list-group-item-action py-1" data-id="' + escA(v.id) + '" data-nombre="' + escA(v.nombre) + '">'
+                        + '<small class="fw-bold">' + escA(v.nombre) + '</small> <small class="text-secondary">(' + escA(v.id) + ')</small></button>';
+                }).join("");
+                sug.style.display = "";
+            }
+            if (e.target.classList.contains("ar-boleta-input")) {
+                const raw = e.target.value.replace(/\D/g, "").slice(0, 4);
+                e.target.value = raw;
+                const tr = e.target.closest("tr");
+                const estadoCell = tr.querySelector(".ar-estado-cell");
+                if (raw.length < 4) {
+                    estadoCell.innerHTML = '<span class="text-muted small">--</span>';
+                    arUpdateBtn();
+                    return;
+                }
+                estadoCell.innerHTML = '<span class="text-muted small">...</span>';
+                arRunBatchValidation();
+                arUpdateBtn();
+            }
+        });
+
+        /* ── Close autocomplete on blur ── */
+        arTbody.addEventListener("focusin", function(e) {
+            if (e.target.classList.contains("ar-vendedor-input")) {
+                const tr = e.target.closest("tr");
+                const allSugs = arTbody.querySelectorAll(".ar-vendedor-sug");
+                allSugs.forEach(s => { if (s !== tr.querySelector(".ar-vendedor-sug")) s.style.display = "none"; });
+            }
+        });
+        arTbody.addEventListener("focusout", function(e) {
+            if (e.target.classList.contains("ar-vendedor-input")) {
+                const tr = e.target.closest("tr");
+                setTimeout(() => {
+                    const sug = tr.querySelector(".ar-vendedor-sug");
+                    if (sug) sug.style.display = "none";
+                    const hiddenId = tr.querySelector(".ar-vendedor-id");
+                    const raw = e.target.value.trim().toUpperCase();
+                    e.target.value = raw;
+                    if (!hiddenId.value && raw) {
+                        const match = vendedoresAR.find(v => v.nombre.toUpperCase() === raw || v.id.toUpperCase() === raw);
+                        if (match) { hiddenId.value = match.id; e.target.value = match.nombre.toUpperCase(); }
+                    }
+                }, 150);
+            }
+        });
+
+        /* ── Click on autocomplete suggestion ── */
+        arTbody.addEventListener("click", function(e) {
+            const btn = e.target.closest(".ar-vendedor-sug button");
+            if (!btn) return;
+            const tr = btn.closest("tr");
+            tr.querySelector(".ar-vendedor-input").value = btn.dataset.nombre.toUpperCase();
+            tr.querySelector(".ar-vendedor-id").value = btn.dataset.id;
+            tr.querySelector(".ar-boleta-input").focus();
+        });
+
+        /* ── Paste handler (2-column from spreadsheet: Vendedor<TAB>Boleta) ── */
+        arTbody.addEventListener("paste", function(e) {
+            const target = e.target.closest("input");
+            if (!target || !arTbody.contains(target)) return;
+            const text = (e.clipboardData || window.clipboardData).getData("text");
+            if (!text) return;
+            const lines = text.split(/\r?\n/).filter(l => l.trim());
+            if (lines.length < 2) return;
+            e.preventDefault();
+            const tr0 = target.closest("tr");
+            const existingCount = arTbody.children.length;
+            const newRows = lines.length - 1;
+            if (newRows > 0) {
+                const html = Array.from({length: newRows}, (_, i) => arRowHTML(existingCount + i)).join("");
+                arTbody.insertAdjacentHTML("beforeend", html);
+            }
+            const allRows = Array.from(arTbody.children);
+            for (let i = 0; i < lines.length; i++) {
+                const tr = (i === 0) ? tr0 : allRows[existingCount + i - 1];
+                const parts = lines[i].split(/\t/);
+                const boletaVal = (parts[0] || "").trim().replace(/\D/g, "").slice(0, 4);
+                let vendedorVal = (parts[1] || "").trim().replace(/^VEND[\.\s]+/i, "").trim().toUpperCase();
+                if (vendedorVal) {
+                    tr.querySelector(".ar-vendedor-input").value = vendedorVal;
+                    const match = vendedoresAR.find(v => v.nombre.toUpperCase() === vendedorVal || v.id.toUpperCase() === vendedorVal);
+                    if (match) tr.querySelector(".ar-vendedor-id").value = match.id;
+                }
+                if (boletaVal) {
+                    const boletaInput = tr.querySelector(".ar-boleta-input");
+                    boletaInput.value = boletaVal;
+                }
+            }
+            arUpdateContador();
+            arUpdateBtn();
+            arRunBatchValidation();
+        });
+
+        /* ── Keyboard navigation ── */
+        arTbody.addEventListener("keydown", function(e) {
+            const inp = e.target;
+            if (!inp.classList.contains("ar-vendedor-input") && !inp.classList.contains("ar-boleta-input")) return;
+            const tr = inp.closest("tr");
+            const rows = Array.from(arTbody.children);
+            const rowIdx = rows.indexOf(tr);
+            const isVend = inp.classList.contains("ar-vendedor-input");
+            if (e.key === "ArrowDown" && rowIdx < rows.length - 1) {
+                e.preventDefault();
+                const next = rows[rowIdx + 1];
+                (isVend ? next.querySelector(".ar-boleta-input") : next.querySelector(".ar-vendedor-input")).focus();
+            } else if (e.key === "ArrowUp" && rowIdx > 0) {
+                e.preventDefault();
+                const prev = rows[rowIdx - 1];
+                (isVend ? prev.querySelector(".ar-boleta-input") : prev.querySelector(".ar-vendedor-input")).focus();
+            } else if (e.key === "Tab" && !e.shiftKey && !isVend) {
+                e.preventDefault();
+                tr.querySelector(".ar-vendedor-input").focus();
+            } else if (e.key === "Tab" && e.shiftKey && isVend) {
+                e.preventDefault();
+                tr.querySelector(".ar-boleta-input").focus();
+            } else if (e.key === "Enter") {
+                e.preventDefault();
+                if (isVend) {
+                    if (rowIdx < rows.length - 1) rows[rowIdx + 1].querySelector(".ar-boleta-input").focus();
+                    else { arAddRows(1); arUpdateBtn(); }
+                } else {
+                    tr.querySelector(".ar-vendedor-input").focus();
+                }
+            }
+        });
+
+        /* ── Submit (AJAX with confirmation) ── */
+        const arConfirmModal = document.getElementById("arConfirmModal");
+        const arConfirmBody = document.getElementById("arConfirmBody");
+        const arConfirmBtn = document.getElementById("arConfirmBtn");
+        let arPendingSubmit = null;
+
+        arConfirmBtn.addEventListener("click", () => {
+            bootstrap.Modal.getInstance(arConfirmModal).hide();
+            if (arPendingSubmit) arPendingSubmit();
+        });
+
+        arBtnAsignar.addEventListener("click", () => {
+            const rows = Array.from(arTbody.children);
+            const assignments = [];
+            const errores = [];
+            rows.forEach((tr, i) => {
+                const boletaVal = tr.querySelector(".ar-boleta-input").value.trim();
+                const vendId = tr.querySelector(".ar-vendedor-id").value.trim();
+                const vendNombre = tr.querySelector(".ar-vendedor-input").value.trim();
+                if (!boletaVal && !vendNombre) return;
+                if (!vendNombre) { errores.push("Fila " + (i + 1) + ": falta el vendedor"); return; }
+                if (!/^\d{4}$/.test(boletaVal)) { errores.push("Fila " + (i + 1) + ": boleta incompleta"); return; }
+                assignments.push({ vendedor_id: vendId, vendedor_nombre: vendNombre, boleta: Number(boletaVal) });
+            });
+            if (errores.length) {
+                if (errores.length > 1 && errores.every(e => e.includes("falta el vendedor"))) {
+                    alert("Selecciona un vendedor en al menos una fila.");
+                } else {
+                    alert(errores.join("\n"));
+                }
+                return;
+            }
+            if (!assignments.length) { alert("No hay asignaciones validas."); return; }
+
+            const groups = {};
+            assignments.forEach(a => {
+                const key = a.vendedor_nombre;
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(a.boleta);
+            });
+            let html = "<p class='mb-2'>Se asignaran <strong>" + assignments.length + "</strong> boleta(s):</p>";
+            Object.entries(groups).forEach(([vName, nums]) => {
+                html += "<div class='mb-1'><strong class='text-uppercase'>" + escA(vName) + "</strong> <span class='text-secondary'>(" + nums.length + ")</span>: "
+                    + "<span class='ticket-number small'>" + nums.sort((a,b)=>a-b).map(n => "#" + String(n).padStart(4,"0")).join(" ") + "</span></div>";
+            });
+            arConfirmBody.innerHTML = html;
+
+            arPendingSubmit = async () => {
+                arBtnAsignar.disabled = true;
+                arBtnAsignar.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Asignando...';
+                try {
+                    const res = await fetch("/vendedores/api/asignar-rapido", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json", "X-CSRF-Token": getCsrfToken()},
+                        body: JSON.stringify({ assignments: assignments }),
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                        let msg = data.assigned + " asignacion(es) realizada(s).";
+                        if (data.skipped && data.skipped.length) msg += "\nOmitidas: " + data.skipped.join(", ");
+                        if (data.warnings && data.warnings.length) msg += "\nAvisos: " + data.warnings.join("\n");
+                        alert(msg);
+                        arTbody.innerHTML = "";
+                        arAddRows(5);
+                        arUpdateContador();
+                        arUpdateBtn();
+                    } else {
+                        alert("Error: " + (data.error || "Error desconocido"));
+                    }
+                } catch (err) {
+                    alert("Error de conexion: " + err.message);
+                } finally {
+                    arBtnAsignar.disabled = false;
+                    arBtnAsignar.innerHTML = '<i class="bi bi-check2-circle"></i>Asignar';
+                    arUpdateBtn();
+                }
+            };
+            bootstrap.Modal.getOrCreateInstance(arConfirmModal).show();
+        });
+
+        arUpdateContador();
+        arUpdateBtn();
+        arAddRows(5);
+    })();
+</script>
+<script>initSortableTables();</script>
 {% endblock %}

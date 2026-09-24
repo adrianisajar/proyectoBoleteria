@@ -49,14 +49,19 @@ def _dividir_boletas(raw: str) -> list[str]:
     return [p.strip() for p in re.split(r"[\s,;]+", (raw or "").strip()) if p.strip()]
 
 
-def _resolver_duplicados_globales(filas: list[dict]) -> set[int]:
-    """Return the set of ticket numbers that appear in more than one fila."""
-    conteo = Counter()
+def _resolver_duplicados_globales(filas: list[dict]) -> set[tuple[int, str]]:
+    """Return set of (ticket, method) pairs that appear more than once.
+
+    A ticket repeated across *different* methods (e.g. efectivo + transferencia)
+    is intentionally allowed - only same-method duplicates are flagged.
+    """
+    conteo: Counter = Counter()
     for fila in filas:
+        metodo = _normalizar_metodo(fila.get("metodo", ""))
         for part in _dividir_boletas(fila.get("boletas", "")):
             if es_boleta_completa(part):
-                conteo[int(part)] += 1
-    return {num for num, count in conteo.items() if count > 1}
+                conteo[(int(part), metodo)] += 1
+    return {pair for pair, count in conteo.items() if count > 1}
 
 
 def _nombres_vendedores(ids: set[str]) -> dict[str, str]:
@@ -88,7 +93,7 @@ def _validar_filas_vendedor(filas: list[dict], valor_boleta: int, vendedor_id: s
             res["boletas"].append(f"Valores no num\u00e9ricos: {', '.join(no_digitos[:8])}.")
         if incompletas:
             res["boletas"].append(f"Boleta(s) incompleta(s), escriba los 4 d\u00edgitos: {', '.join(incompletas[:8])}.")
-        duplicadas_fila = {int(p) for p in partes if int(p) in duplicados}
+        duplicadas_fila = {int(p) for p in partes if (int(p), metodo) in duplicados}
         if duplicadas_fila:
             res["boletas"].append("Boleta(s) duplicada(s) en el abono: " + ", ".join(f"#{n:04d}" for n in sorted(duplicadas_fila)) + ".")
 
@@ -96,8 +101,8 @@ def _validar_filas_vendedor(filas: list[dict], valor_boleta: int, vendedor_id: s
             res["boletas"].append("Ingrese al menos un n\u00famero de boleta.")
         if monto <= 0:
             res["monto"].append("El valor del abono debe ser mayor que cero.")
-        elif partes and monto > valor_boleta * len(partes):
-            res["monto"].append(f"El monto ${monto:,} para {len(partes)} boleta(s) supera el m\u00e1ximo de ${valor_boleta * len(partes):,}.")
+        elif partes and monto > valor_boleta:
+            res["monto"].append(f"El monto ${monto:,} supera el valor de la boleta (${valor_boleta:,}). El abono se aplica a cada boleta escrita.")
 
         if metodo == METODO_TRANSFERENCIA:
             if not referencia:
@@ -114,7 +119,7 @@ def _validar_filas_vendedor(filas: list[dict], valor_boleta: int, vendedor_id: s
     return resultados
 
 
-def _validar_filas_cliente(filas: list[dict], valor_boleta: int, campo_errores: dict, duplicados: set[int]) -> list[dict]:
+def _validar_filas_cliente(filas: list[dict], valor_boleta: int, campo_errores: dict, duplicados: set[tuple[int, str]]) -> list[dict]:
     """Validate cliente rows: boleta parse/range/exist/estado, monto, transferencias."""
     resultados = []
     for fila in filas:
@@ -134,11 +139,13 @@ def _validar_filas_cliente(filas: list[dict], valor_boleta: int, campo_errores: 
             res["boletas"].append("Debe escribir los 4 d\u00edgitos de la boleta (ej: 0042).")
         else:
             num = int(raw)
-            if num in duplicados:
+            if (num, metodo) in duplicados:
                 res["boletas"].append(f"#{num:04d} est\u00e1 repetida en la factura.")
-            else:
-                if monto > valor_boleta:
-                    res["monto"].append(f"El monto ${monto:,} supera el valor de la boleta (${valor_boleta:,}).")
+
+        if monto <= 0:
+            res["monto"].append(f"El monto ${monto:,} debe ser mayor a cero.")
+        elif monto > valor_boleta:
+            res["monto"].append(f"El monto ${monto:,} supera el valor de la boleta (${valor_boleta:,}).")
 
         if metodo == METODO_TRANSFERENCIA:
             if not referencia:
@@ -154,31 +161,44 @@ def _validar_filas_cliente(filas: list[dict], valor_boleta: int, campo_errores: 
     return resultados
 
 
-def _verificar_boletas_en_db(filas: list[dict], resultados: list[dict], tipo: str, vendedor_id: str = "", duplicados: set[int] | None = None) -> None:
-    """Cross-check ticket existence, state and (vendedor) ownership against the DB."""
+def _verificar_boletas_en_db(
+    filas: list[dict],
+    resultados: list[dict],
+    tipo: str,
+    vendedor_id: str = "",
+    duplicados: set[tuple[int, str]] | None = None,
+    confirmar_pagadas: bool = False,
+) -> None:
+    """Cross-check ticket existence, state and (vendedor) ownership against the DB.
+
+    Tickets already `pagada` are flagged unless `confirmar_pagadas` is set,
+    in which case the payment is accepted as excedente (mirrors the POST flows).
+    """
     duplicados = duplicados or set()
     ids = set()
     for fila in filas:
+        metodo = _normalizar_metodo(fila.get("metodo", ""))
         for part in _dividir_boletas(fila.get("boletas", "")):
-            if es_boleta_completa(part) and int(part) not in duplicados:
+            if es_boleta_completa(part) and (int(part), metodo) not in duplicados:
                 ids.add(int(part))
     if not ids:
         return
 
-    docs = {d["_id"]: d for d in boletas.find({"_id": {"$in": list(ids)}})}
-    for fila, res in zip(filas, resultados, strict=False):
+    docs = {d["_id"]: d for d in boletas.find({"_id": {"$in": list(ids)}}, {"_id": 1, "estado": 1, "vendedor_id": 1})}
+    for fila, res in zip(filas, resultados, strict=True):
+        metodo = _normalizar_metodo(fila.get("metodo", ""))
         for part in _dividir_boletas(fila.get("boletas", "")):
             if not es_boleta_completa(part):
                 continue
             num = int(part)
-            if num in duplicados:
+            if (num, metodo) in duplicados:
                 continue
             if num not in docs:
                 res["boletas"].append(f"#{num:04d} no existe.")
                 continue
             doc = docs[num]
-            if doc.get("estado") == "pagada":
-                res["boletas"].append(f"#{num:04d} ya est\u00e1 pagada.")
+            if doc.get("estado") == "pagada" and not confirmar_pagadas:
+                res["boletas"].append(f"#{num:04d} ya está pagada.")
             elif tipo == "vendedor" and vendedor_id and doc.get("vendedor_id", "") != vendedor_id:
                 actual = doc.get("vendedor_id", "")
                 v_nombre = actual
@@ -202,6 +222,7 @@ def validar_factura(payload: dict) -> dict:
     campo_errores = {"vendedor": [], "fecha": [], "nombre": [], "telefono": [], "direccion": []}
     filas = _filas_desde_payload(payload)
     duplicados = _resolver_duplicados_globales(filas)
+    confirmar_pagadas = bool(payload.get("confirmar_pagadas", False))
 
     if tipo == "vendedor":
         vendedor_id = (payload.get("vendedor_id") or "").strip()
@@ -209,7 +230,7 @@ def validar_factura(payload: dict) -> dict:
             campo_errores["vendedor"].append("Debe seleccionar un vendedor.")
         _validar_fecha(payload.get("fecha", ""), campo_errores)
         resultados = _validar_filas_vendedor(filas, valor_boleta, vendedor_id, duplicados)
-        _verificar_boletas_en_db(filas, resultados, "vendedor", vendedor_id, duplicados)
+        _verificar_boletas_en_db(filas, resultados, "vendedor", vendedor_id, duplicados, confirmar_pagadas)
     else:
         nombre = (payload.get("nombre") or "").strip()
         telefono = (payload.get("telefono") or "").strip()
@@ -226,7 +247,7 @@ def validar_factura(payload: dict) -> dict:
             campo_errores["direccion"].append("La direcci\u00f3n no puede tener m\u00e1s de 200 caracteres.")
         _validar_fecha(payload.get("fecha", ""), campo_errores)
         resultados = _validar_filas_cliente(filas, valor_boleta, campo_errores, duplicados)
-        _verificar_boletas_en_db(filas, resultados, "cliente", duplicados=duplicados)
+        _verificar_boletas_en_db(filas, resultados, "cliente", duplicados=duplicados, confirmar_pagadas=confirmar_pagadas)
 
     if not any(fila.get("boletas", "").strip() for fila in filas):
         campo_errores.setdefault("boletas", []).append("Ingrese al menos una boleta.")

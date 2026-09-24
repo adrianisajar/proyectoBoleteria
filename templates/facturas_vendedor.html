@@ -20,11 +20,11 @@
     <table class="table table-bordered table-hover table-sm align-middle">
         <thead class="table-light">
             <tr>
-                <th>N°</th>
-                <th>Fecha</th>
-                <th>Vendedor</th>
+                <th data-sort="_id" class="sortable">N°</th>
+                <th data-sort="fecha" class="sortable">Fecha</th>
+                <th data-sort="vendedor_id" class="sortable">Vendedor</th>
                 <th>Boletas</th>
-                <th class="text-end">Total</th>
+                <th data-sort="valor_total" class="sortable text-end">Total</th>
                 <th></th>
             </tr>
         </thead>
@@ -54,3 +54,4 @@
     </table>
 </div>
 {% endblock %}
+{% block scripts %}{{ super() }}<script>initSortableTables();</script>{% endblock %}
