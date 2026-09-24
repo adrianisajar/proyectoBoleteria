@@ -9,7 +9,7 @@ services:
       - key: MONGO_URI
         sync: false
       - key: SECRET_KEY
-        generateValue: true
+        value: cambialo-esta-clave-secreta-del-deploy
       - key: FLASK_HOST
         value: 0.0.0.0
       - key: FLASK_DEBUG
