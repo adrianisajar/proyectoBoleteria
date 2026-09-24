@@ -38,6 +38,7 @@ from motores.shared import (
     url_for,
     vendedores,
 )
+from motores.ticket_service import update_ticket_safe
 from motores.validacion import safe_error_message as _safe_flash_error
 from motores.validacion import sanitizar_texto
 
@@ -308,17 +309,14 @@ def register_routes(app: Flask) -> None:
             else:
                 vendedor_expr = "$vendedor_id"
 
-            result = boletas.update_one(
-                {"_id": boleta_id},
-                [
-                    {"$set": {"cliente": {"nombre": nombre, "telefono": telefono, "direccion": direccion}}},
-                    {"$set": {"vendedor_id": vendedor_expr}},
-                    {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
-                ],
-            )
-            if result.matched_count == 0:
-                flash(f"No existe la boleta #{boleta_id:04d}.", "warning")
-                return redirect(url_for("consultas"))
+            pipeline = [
+                {"$set": {"cliente": {"nombre": nombre, "telefono": telefono, "direccion": direccion}}},
+                {"$set": {"vendedor_id": vendedor_expr}},
+                {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
+            ]
+            if not update_ticket_safe(boleta_id, pipeline):
+                flash(f"Conflicto al guardar #{boleta_id:04d}. Reintente.", "warning")
+                return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
 
             invalidate_dashboard_cache()
             flash(f"Datos guardados para #{boleta_id:04d}.", "success")
@@ -344,13 +342,13 @@ def register_routes(app: Flask) -> None:
 
             config_local = get_config()
             valor_boleta_local = int(config_local.get("valor_boleta", 10000) or 10000)
-            boletas.update_one(
-                {"_id": boleta_id},
-                [
-                    {"$set": {"cliente": {"nombre": "", "telefono": "", "direccion": ""}}},
-                    {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
-                ],
-            )
+            pipeline = [
+                {"$set": {"cliente": {"nombre": "", "telefono": "", "direccion": ""}}},
+                {"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}},
+            ]
+            if not update_ticket_safe(boleta_id, pipeline):
+                flash(f"Conflicto al limpiar #{boleta_id:04d}. Reintente.", "warning")
+                return redirect(url_for("consultas", numero=f"{boleta_id:04d}"))
 
             invalidate_dashboard_cache()
             flash(f"Datos del cliente eliminados de #{boleta_id:04d}.", "success")

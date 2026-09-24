@@ -177,7 +177,21 @@ def movimiento_neto_expr() -> dict:
                             "in": {"$add": ["$$value", {"$ifNull": ["$$this.valor", 0]}]},
                         }
                     },
-                ]
+                ],
             },
-        ]
+        ],
     }
+
+
+def update_ticket_safe(boleta_id: int, update_pipeline: list) -> bool:
+    """Atomically update a ticket with optimistic locking via _version.
+
+    Returns True on success, False on version conflict (caller should retry).
+    """
+    doc = boletas.find_one({"_id": boleta_id}, {"_version": 1})
+    current_version = doc.get("_version", 0) if doc else 0
+    result = boletas.update_one(
+        {"_id": boleta_id, "_version": current_version},
+        [*update_pipeline, {"$inc": {"_version": 1}}],
+    )
+    return result.matched_count == 1
