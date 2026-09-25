@@ -13,14 +13,16 @@ def crear_indices():
         collection = {"boletas": boletas, "vendedores": vendedores, "facturas": facturas, "rifas": rifas, "traslados": traslados, "usuarios": usuarios}.get(nombre_col)
         if collection is None:
             continue
-        for key_spec, name in specs:
-            kwargs = {"name": name}
-            if nombre_col == "usuarios":
-                kwargs["unique"] = True
+        for entry in specs:
+            key_spec, name = entry[0], entry[1]
+            options = dict(entry[2]) if len(entry) > 2 else {}
+            if nombre_col == "usuarios" and key_spec == {"usuario": 1}:
+                options["unique"] = True
+            options.setdefault("name", name)
             if isinstance(key_spec, dict):
-                collection.create_index(list(key_spec.items()), **kwargs)
+                collection.create_index(list(key_spec.items()), **options)
             else:
-                collection.create_index(key_spec, **kwargs)
+                collection.create_index(key_spec, **options)
 
 
 def crear_rifa():

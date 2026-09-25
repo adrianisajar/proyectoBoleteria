@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from bson import ObjectId
-from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
+from flask import Flask, Response, current_app, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import login_intentos, usuarios
@@ -282,6 +282,9 @@ def register_routes(app: Flask) -> None:
                 return render_template("login.html"), 401
             _limpiar_intentos(usuario)
             session.clear()
+            # Regenerate session ID to prevent fixation attacks
+            with contextlib.suppress(Exception):
+                current_app.session_interface.regenerate(session)
             session["usuario_id"] = str(user["_id"])
             session["usuario"] = user["usuario"]
             session["nombre"] = user["nombre"]

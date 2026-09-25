@@ -9,7 +9,7 @@ services:
       - key: MONGO_URI
         sync: false
       - key: SECRET_KEY
-        value: cambialo-esta-clave-secreta-del-deploy
+        generateValue: true
       - key: FLASK_HOST
         value: 0.0.0.0
       - key: FLASK_DEBUG
@@ -30,8 +30,6 @@ services:
         value: "16"
       - key: LOG_LEVEL
         value: INFO
-      - key: PORT
-        value: "8000"
       - key: MONGO_DB
         value: sistema_boleteria
       - key: TZ_OFFSET
@@ -40,7 +38,8 @@ services:
         value: "7"
       - key: SESSION_IDLE_TIMEOUT_SECONDS
         value: "1800"
-      # NOTA: ANOTAR SECRET_KEY y ADMIN_INICIAL_PASSWORD generados para el .env local
+      # NOTA: copiar SECRET_KEY y ADMIN_INICIAL_PASSWORD generados al .env local
+    healthCheckPath: /health
     routes:
       - type: https
         path: /

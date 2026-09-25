@@ -59,6 +59,12 @@ app.config["SESSION_MONGODB_COLLECT"] = "sessions"
 app.config["SESSION_PERMANENT"] = True
 Session(app)
 
+# Índice único en sessions.id — evita full-scan en cada lectura de sesión
+try:
+    client[app.config["SESSION_MONGODB_DB"]][app.config["SESSION_MONGODB_COLLECT"]].create_index("id", unique=True, name="sessions_id_1")
+except Exception:
+    logging.getLogger(__name__).warning("No se pudo crear índice sessions.id (se creará en el próximo arranque).")
+
 if os.getenv("TRUST_PROXY_HEADERS") == "1":
     from werkzeug.middleware.proxy_fix import ProxyFix
 

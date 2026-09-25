@@ -70,6 +70,9 @@ def register_before_request(app: Flask) -> None:
     @app.before_request
     def load_user_context() -> Any:
         """Populate g.config and g.current_user, and close idle sessions."""
+        # Saltar todo el trabajo de sesión/config para assets estáticos
+        if (request.path or "").startswith("/static/"):
+            return None
         g.config = get_config()
         g.current_user = current_user()
 

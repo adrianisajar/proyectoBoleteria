@@ -312,13 +312,13 @@ def register_routes(app: Flask) -> None:
         if request.method == "POST":
             accion = request.form.get("accion", "")
             if accion == "exportar":
-                data = {}
-                for nombre, col in COLECCIONES:
-                    if col is not None:
-                        data[nombre] = list(col.find({}))
                 buf = io.BytesIO()
                 with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                    zf.writestr("backup.json", json_util.dumps(data, ensure_ascii=False, indent=2))
+                    for nombre, col in COLECCIONES:
+                        if col is None:
+                            continue
+                        # Stream each collection as its own JSON file — avoids loading all docs in RAM
+                        zf.writestr(f"{nombre}.json", json_util.dumps(list(col.find({})), ensure_ascii=False))
                 buf.seek(0)
                 return Response(
                     buf.getvalue(),
@@ -333,17 +333,34 @@ def register_routes(app: Flask) -> None:
                     flash("Seleccione un archivo ZIP.", "danger")
                     return redirect(url_for("backup"))
                 try:
+                    data = {}
                     with zipfile.ZipFile(archivo.stream) as zf:
-                        info = zf.getinfo("backup.json")
-                        if info.file_size > MAX_BACKUP_UNCOMPRESSED_BYTES:
-                            raise ValueError("El respaldo descomprimido supera el límite permitido de 64 MB.")
-                        if info.compress_size and info.file_size / info.compress_size > 100:
-                            raise ValueError("El respaldo tiene una relación de compresión no permitida.")
-                        with zf.open(info) as f:
-                            raw = f.read(MAX_BACKUP_UNCOMPRESSED_BYTES + 1)
-                    if len(raw) > MAX_BACKUP_UNCOMPRESSED_BYTES:
-                        raise ValueError("El respaldo descomprimido supera el límite permitido de 64 MB.")
-                    data = json_util.loads(raw.decode("utf-8"))
+                        nombres = zf.namelist()
+                        if "backup.json" in nombres:
+                            # Formato antiguo: un solo archivo JSON
+                            info = zf.getinfo("backup.json")
+                            if info.file_size > MAX_BACKUP_UNCOMPRESSED_BYTES:
+                                raise ValueError("El respaldo descomprimido supera el límite permitido de 64 MB.")
+                            if info.compress_size and info.file_size / info.compress_size > 100:
+                                raise ValueError("El respaldo tiene una relación de compresión no permitida.")
+                            with zf.open(info) as f:
+                                raw = f.read(MAX_BACKUP_UNCOMPRESSED_BYTES + 1)
+                            if len(raw) > MAX_BACKUP_UNCOMPRESSED_BYTES:
+                                raise ValueError("El respaldo descomprimido supera el límite permitido de 64 MB.")
+                            data = json_util.loads(raw.decode("utf-8"))
+                        else:
+                            # Formato nuevo: un JSON por colección
+                            for nombre in nombres:
+                                if not nombre.endswith(".json"):
+                                    continue
+                                info = zf.getinfo(nombre)
+                                if info.file_size > MAX_BACKUP_UNCOMPRESSED_BYTES:
+                                    raise ValueError(f"{nombre}: supera el límite de 64 MB.")
+                                with zf.open(info) as f:
+                                    raw = f.read(MAX_BACKUP_UNCOMPRESSED_BYTES + 1)
+                                if len(raw) > MAX_BACKUP_UNCOMPRESSED_BYTES:
+                                    raise ValueError(f"{nombre}: supera el límite de 64 MB.")
+                                data[nombre[:-5]] = json_util.loads(raw.decode("utf-8"))
                     # Backward compat: convert string ObjectId for old backups
                     _restore_objectids_from_backup(data)
                 except Exception as exc:
@@ -380,7 +397,7 @@ def register_routes(app: Flask) -> None:
                     for error in errores:
                         flash(f"Error al restaurar {error}.", "danger")
                     return redirect(url_for("backup"))
-                client = getattr(database, "_client", None)
+                client = getattr(database, "client", None)
                 if client is None:
                     flash("No hay conexión a MongoDB para restaurar el respaldo.", "danger")
                     return redirect(url_for("backup"))

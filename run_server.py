@@ -51,6 +51,10 @@ if __name__ == "__main__":
         require_collections()
         config = get_config(force=True)
         valor_boleta = int(config["valor_boleta"])
+        _status("Verificando índices...")
+        from optimizar_db import verificar_indices
+
+        verificar_indices(crear=True)
         sync_ticket_statuses(valor_boleta)
         _ok("Base de datos lista")
     except Exception as exc:
