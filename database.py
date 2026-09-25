@@ -59,9 +59,10 @@ def _connect() -> tuple[MongoClient, Database]:
 
 
 try:
-    _client, db = _connect()
+    client, db = _connect()
 except Exception as e:
     logger.error("Error al conectar a MongoDB: %s", e)
+    client = None
     db = None
 
 boletas: Collection | None = db["boletas"] if db is not None else None

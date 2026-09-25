@@ -13,7 +13,9 @@ else:
     load_dotenv()
 
 from flask import Flask
+from flask_session import Session
 
+from database import client
 from motores.boletas import register_routes as register_boletas
 from motores.compradores import register_routes as register_compradores
 from motores.csrf import register_csrf
@@ -48,6 +50,14 @@ app.config["SESSION_COOKIE_SAMESITE"] = os.getenv("SESSION_COOKIE_SAMESITE") or 
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE") == "1"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=int(os.getenv("SESSION_COOKIE_DAYS") or "7"))
 app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH_MB") or "16") * 1024 * 1024
+
+# Sesión compartida en MongoDB (funciona en ambas instancias, cualquier dominio)
+app.config["SESSION_TYPE"] = "mongodb"
+app.config["SESSION_MONGODB"] = client
+app.config["SESSION_MONGODB_DB"] = os.getenv("MONGO_DB") or "sistema_boleteria"
+app.config["SESSION_MONGODB_COLLECT"] = "sessions"
+app.config["SESSION_PERMANENT"] = True
+Session(app)
 
 if os.getenv("TRUST_PROXY_HEADERS") == "1":
     from werkzeug.middleware.proxy_fix import ProxyFix
