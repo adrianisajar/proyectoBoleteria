@@ -63,9 +63,7 @@ def estado_para_total(
     if total_abonado > 0:
         return "abonando"
     tiene_cliente = bool((cliente_nombre or "").strip())
-    tiene_vendedor_real = bool(
-        vendedor_id and vendedor_id not in (VENDEDOR_SIN_ASIGNAR, VENDEDOR_LOCAL, None)
-    )
+    tiene_vendedor_real = bool(vendedor_id and vendedor_id not in (VENDEDOR_SIN_ASIGNAR, VENDEDOR_LOCAL, None))
     if tiene_cliente:
         return "asignada" if tiene_vendedor_real else "separada"
     if tiene_vendedor_real:

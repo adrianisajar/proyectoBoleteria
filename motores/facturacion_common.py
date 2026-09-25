@@ -31,7 +31,16 @@ def validar_filas_transferencia(form_rows: list[dict[str, Any]], errors: list[st
                     unique_refs.append(ref_key)
         if unique_refs:
             or_conditions = [
-                {"historial_movimientos": {"$elemMatch": {"$or": [{"tipo": "pago"}, {"tipo": {"$exists": False}}], "metodo": METODO_TRANSFERENCIA, "referencia": ref, "banco": banco}}}
+                {
+                    "historial_movimientos": {
+                        "$elemMatch": {
+                            "$or": [{"tipo": "pago"}, {"tipo": {"$exists": False}}],
+                            "metodo": METODO_TRANSFERENCIA,
+                            "referencia": ref,
+                            "banco": banco,
+                        }
+                    }
+                }
                 for ref, banco in unique_refs
             ]
             existing = {doc["_id"] for doc in boletas.find({"$or": or_conditions}, {"_id": 1})}

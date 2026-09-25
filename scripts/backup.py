@@ -100,10 +100,10 @@ def _verificar_contrasena_admin(password: str) -> bool:
     if usuarios is None:
         return False
     admin_user = ADMIN_INICIAL_USUARIO or "admin"
-    user = usuarios.find_one({"_id": admin_user})
+    user = usuarios.find_one({"usuario": admin_user, "rol": "admin"})
     if user is None:
         return False
-    return check_password_hash(user.get("password", ""), password)
+    return check_password_hash(user.get("password_hash", ""), password)
 
 
 def _validar_zip_seguro(zf: zipfile.ZipFile) -> None:
@@ -149,13 +149,18 @@ def importar_respaldo(zip_path: str, admin_password: str) -> int:
     with zipfile.ZipFile(zip_path, "r") as zf:
         _validar_zip_seguro(zf)
 
-        if "backup.json" not in zf.namelist():
-            raise ValueError("El ZIP no contiene un archivo backup.json.")
-
-        raw = zf.read("backup.json")
-
-    data = json.loads(raw)
-    del raw  # release raw bytes immediately
+        nombres = zf.namelist()
+        if "backup.json" in nombres:
+            raw = zf.read("backup.json")
+            data = json.loads(raw)
+            del raw
+        elif any(n.endswith(".json") for n in nombres):
+            data = {}
+            for nombre in nombres:
+                if nombre.endswith(".json"):
+                    data[nombre[:-5]] = json.loads(zf.read(nombre))
+        else:
+            raise ValueError("El ZIP no contiene archivos JSON de respaldo.")
     _validar_estructura(data)
 
     print(f"[IMPORTAR] Archivo válido: {zip_path}")

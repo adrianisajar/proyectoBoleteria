@@ -526,7 +526,9 @@ def register_routes(app: Flask) -> None:
                 boletas.find(
                     {"vendedor_id": vendedor_id},
                     projection,
-                ).sort("_id", 1).limit(5000)
+                )
+                .sort("_id", 1)
+                .limit(5000)
             )
             boletas_list = []
             for d in docs:

@@ -57,7 +57,13 @@ app.config["SESSION_MONGODB"] = client
 app.config["SESSION_MONGODB_DB"] = os.getenv("MONGO_DB") or "sistema_boleteria"
 app.config["SESSION_MONGODB_COLLECT"] = "sessions"
 app.config["SESSION_PERMANENT"] = True
-Session(app)
+try:
+    Session(app)
+except Exception as exc:
+    logging.getLogger(__name__).critical(
+        "No se pudo inicializar Flask-Session con MongoDB: %s. Verifica que MONGO_URI sea correcta y Atlas esté accesible.", exc
+    )
+    raise SystemExit(1) from exc
 
 # Índice único en sessions.id — evita full-scan en cada lectura de sesión
 try:

@@ -81,6 +81,7 @@ def test_limpieza_borra_pendiente_antigua_sin_movimientos(client):
     )
 
     from motores.facturacion import _ULTIMA_LIMPIEZA_PENDIENTES, _limpiar_facturas_pendientes
+
     _ULTIMA_LIMPIEZA_PENDIENTES[0] = 0.0
     _limpiar_facturas_pendientes()
     assert facturas.find_one({"_id": factura_id}) is None

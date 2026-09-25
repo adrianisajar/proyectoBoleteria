@@ -188,7 +188,7 @@ def _reset():
 def _session_seed():
     _seed_once()
     yield
-    client = getattr(database, "_client", None)
+    client = getattr(database, "client", None)
     if client is None:
         return
     with contextlib.suppress(Exception):

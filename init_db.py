@@ -10,7 +10,9 @@ CONFIG_ID = "rifa"
 
 def crear_indices():
     for nombre_col, specs in REQUIRED_INDEXES.items():
-        collection = {"boletas": boletas, "vendedores": vendedores, "facturas": facturas, "rifas": rifas, "traslados": traslados, "usuarios": usuarios}.get(nombre_col)
+        collection = {"boletas": boletas, "vendedores": vendedores, "facturas": facturas, "rifas": rifas, "traslados": traslados, "usuarios": usuarios}.get(
+            nombre_col
+        )
         if collection is None:
             continue
         for entry in specs:

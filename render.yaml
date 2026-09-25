@@ -40,9 +40,3 @@ services:
         value: "1800"
       # NOTA: copiar SECRET_KEY y ADMIN_INICIAL_PASSWORD generados al .env local
     healthCheckPath: /health
-    routes:
-      - type: https
-        path: /
-        ssl:
-          certificate:
-            type: auto

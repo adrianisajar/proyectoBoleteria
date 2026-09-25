@@ -40,3 +40,4 @@ scripts/*.ps1
 *.code-workspace
 .idea/
 .vscode/
+*.xlsx

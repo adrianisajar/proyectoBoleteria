@@ -53,15 +53,17 @@ def ensure_initial_admin() -> None:
     try:
         usuarios.update_one(
             {"rol": ROL_ADMIN},
-            {"$setOnInsert": {
-                "nombre": "Administrador",
-                "usuario": ADMIN_INICIAL_USUARIO,
-                "password_hash": generate_password_hash(ADMIN_INICIAL_PASSWORD),
-                "rol": ROL_ADMIN,
-                "activo": True,
-                "fecha_creacion": now_local(),
-                "ultimo_acceso": None,
-            }},
+            {
+                "$setOnInsert": {
+                    "nombre": "Administrador",
+                    "usuario": ADMIN_INICIAL_USUARIO,
+                    "password_hash": generate_password_hash(ADMIN_INICIAL_PASSWORD),
+                    "rol": ROL_ADMIN,
+                    "activo": True,
+                    "fecha_creacion": now_local(),
+                    "ultimo_acceso": None,
+                }
+            },
             upsert=True,
         )
     except Exception as exc:
