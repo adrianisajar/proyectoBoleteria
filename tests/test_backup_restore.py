@@ -140,3 +140,25 @@ def test_restore_rechaza_falta_documento_rifa(client):
     resp = _restaurar(client, data)
     assert resp.status_code == 302
     _assert_no_se_aplico_respaldo()
+
+
+def test_export_import_roundtrip(client):
+    resp = client.post("/backup", data={"accion": "exportar"})
+    assert resp.status_code == 200
+    assert "application/zip" in resp.headers["Content-Type"]
+    payload = resp.get_data()
+    with zipfile.ZipFile(io.BytesIO(payload)) as zf:
+        nombres = zf.namelist()
+        assert "boletas.json" in nombres
+        data = {n[:-5]: json_util.loads(zf.read(n)) for n in nombres if n.endswith(".json")}
+    assert len(data["boletas"]) == 500
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("backup.json", json_util.dumps(data, ensure_ascii=False))
+    resp2 = client.post(
+        "/backup",
+        data={"accion": "importar", "archivo": (io.BytesIO(buf.getvalue()), "backup.zip"), "clave_admin": ADMIN_PASSWORD},
+    )
+    assert resp2.status_code == 302
+    assert boletas.count_documents({}) == 500

@@ -1,6 +1,7 @@
 import contextlib
-import io
+import os
 import re
+import tempfile
 import zipfile
 from datetime import date
 from typing import Any
@@ -47,6 +48,17 @@ from motores.validacion import safe_error_message
 
 TIPOS_FACTURA = {"cliente", "vendedor", "egreso"}
 MAX_BACKUP_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
+
+
+def _stream_zip_file(path: str):  # type: ignore[no-untyped-def]
+    """Yield the ZIP in 64 KB chunks and delete the temp file afterwards."""
+    try:
+        with open(path, "rb") as f:
+            while chunk := f.read(64 * 1024):
+                yield chunk
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(path)
 
 
 def _es_numero(value: Any) -> bool:
@@ -312,18 +324,36 @@ def register_routes(app: Flask) -> None:
         if request.method == "POST":
             accion = request.form.get("accion", "")
             if accion == "exportar":
-                buf = io.BytesIO()
-                with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                    for nombre, col in COLECCIONES:
-                        if col is None:
-                            continue
-                        # Stream each collection as its own JSON file — avoids loading all docs in RAM
-                        zf.writestr(f"{nombre}.json", json_util.dumps(list(col.find({})), ensure_ascii=False))
-                buf.seek(0)
+                # ZIP en disco temporal: la respuesta se transmite en chunks de 64 KB
+                # y cada documento se serializa por separado (pico de RAM ~1 doc).
+                fd, tmp_path = tempfile.mkstemp(suffix=".zip")
+                os.close(fd)
+                try:
+                    with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                        for nombre, col in COLECCIONES:
+                            if col is None:
+                                continue
+                            with zf.open(f"{nombre}.json", "w", force_zip64=True) as entry:
+                                entry.write(b"[")
+                                primero = True
+                                for doc in col.find({}):
+                                    if not primero:
+                                        entry.write(b",")
+                                    primero = False
+                                    entry.write(json_util.dumps(doc, ensure_ascii=False).encode("utf-8"))
+                                entry.write(b"]")
+                except Exception:
+                    with contextlib.suppress(OSError):
+                        os.unlink(tmp_path)
+                    raise
+                size = os.path.getsize(tmp_path)
                 return Response(
-                    buf.getvalue(),
+                    _stream_zip_file(tmp_path),
                     mimetype="application/zip",
-                    headers={"Content-Disposition": f"attachment; filename=backup_{date.today().isoformat()}.zip"},
+                    headers={
+                        "Content-Disposition": f"attachment; filename=backup_{date.today().isoformat()}.zip",
+                        "Content-Length": str(size),
+                    },
                 )
             elif accion == "importar":
                 if not requiere_clave_admin():

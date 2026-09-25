@@ -71,6 +71,21 @@ try:
 except Exception:
     logging.getLogger(__name__).warning("No se pudo crear índice sessions.id (se creará en el próximo arranque).")
 
+# Flask abre la sesión en ctx.push (antes de before_request), así que sin este
+# skip cada asset /static/* haría un find_one a Atlas (~10 RTTs extra por página).
+# Devolver None crea una NullSession: sin consulta y sin guardado.
+_session_iface = app.session_interface
+_orig_open_session = type(_session_iface).open_session
+
+
+def _open_session_skip_static(flask_app, req):  # type: ignore[no-untyped-def]
+    if (req.path or "").startswith("/static/"):
+        return None
+    return _orig_open_session(_session_iface, flask_app, req)
+
+
+_session_iface.open_session = _open_session_skip_static
+
 if os.getenv("TRUST_PROXY_HEADERS") == "1":
     from werkzeug.middleware.proxy_fix import ProxyFix
 
