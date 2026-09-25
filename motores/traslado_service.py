@@ -88,7 +88,7 @@ def registrar_traslado(
         "contraparte": origen,
     }
 
-    client = getattr(database, "_client", None)
+    client = getattr(database, "client", None)
     if client is None:
         raise RuntimeError("MongoDB no está disponible para registrar el traslado.")
     valor_boleta = _valor_boleta()

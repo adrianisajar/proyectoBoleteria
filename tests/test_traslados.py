@@ -158,3 +158,16 @@ def test_ver_traslado_renders(client):
     html = resp.get_data(as_text=True)
     assert "COMPROBANTE DE TRASLADO DE SALDO" in html
     assert "10,000" in html
+
+
+def test_nuevo_traslado_muestra_abono_de_boletas(client):
+    _cargar_saldo(1, 30000)
+    resp = client.get("/traslados/nuevo")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'id="origenAbonado"' in html
+    assert 'id="destinoAbonado"' in html
+    assert "consultarAbono" in html
+    api = client.get("/api/boletas/1")
+    assert api.status_code == 200
+    assert api.get_json()["total_abonado"] == 30000

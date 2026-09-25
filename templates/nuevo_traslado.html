@@ -34,11 +34,13 @@
             <label for="origen" class="form-label fw-semibold">Boleta de origen</label>
             <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="origen" name="origen" value="{{ form.origen }}" placeholder="Boleta de origen" data-validation="numbers" required>
             <div class="ticket-helper text-secondary small mt-1">Boleta que entrega el saldo</div>
+            <div class="small fw-semibold mt-1" id="origenAbonado" aria-live="polite"></div>
         </div>
         <div class="col-md-3">
             <label for="destino" class="form-label fw-semibold">Boleta de destino</label>
             <input type="text" inputmode="numeric" maxlength="4" class="form-control ticket-number" id="destino" name="destino" value="{{ form.destino }}" placeholder="Boleta de destino" data-validation="numbers" required>
             <div class="ticket-helper text-secondary small mt-1">Boleta que recibe el saldo</div>
+            <div class="small fw-semibold mt-1" id="destinoAbonado" aria-live="polite"></div>
         </div>
         <div class="col-md-2">
             <label for="valor" class="form-label fw-semibold">Valor a trasladar</label>
@@ -133,6 +135,60 @@
 
         vendedorSearch.addEventListener("focus", function() {
             if (this.value) mostrarSugerencias(this.value);
+        });
+
+        // Mostrar total abonado debajo de cada boleta al escribir su número
+        const abonoCache = {};
+        const abonoTimers = { origen: null, destino: null };
+        const fmtCop = (n) => "$" + Number(n || 0).toLocaleString("de-DE");
+
+        const pintarAbono = (out, data) => {
+            out.classList.remove("text-success", "text-danger", "text-secondary");
+            if (!data) {
+                out.textContent = "Error al consultar";
+                out.classList.add("text-danger");
+            } else if (!data.ok) {
+                out.textContent = "Boleta no existe";
+                out.classList.add("text-danger");
+            } else {
+                out.textContent = "Abonado: " + fmtCop(data.total_abonado);
+                out.classList.add(data.total_abonado > 0 ? "text-success" : "text-secondary");
+            }
+        };
+
+        const consultarAbono = async (id) => {
+            const input = document.getElementById(id);
+            const out = document.getElementById(id + "Abonado");
+            const num = input.value.trim();
+            out.classList.remove("text-success", "text-danger", "text-secondary");
+            if (!/^\d{4}$/.test(num)) {
+                out.textContent = "";
+                return;
+            }
+            let data = abonoCache[num];
+            if (data === undefined) {
+                out.textContent = "Consultando…";
+                out.classList.add("text-secondary");
+                try {
+                    const res = await fetch("/api/boletas/" + num);
+                    const json = await res.json();
+                    data = json.ok ? { ok: true, total_abonado: json.total_abonado || 0 } : { ok: false };
+                    abonoCache[num] = data;
+                } catch (_e) {
+                    data = null; // error de red: no cachear
+                }
+            }
+            pintarAbono(out, data);
+        };
+
+        ["origen", "destino"].forEach(function(id) {
+            const input = document.getElementById(id);
+            input.addEventListener("input", function() {
+                clearTimeout(abonoTimers[id]);
+                abonoTimers[id] = setTimeout(function() { consultarAbono(id); }, 250);
+            });
+            input.addEventListener("blur", function() { consultarAbono(id); });
+            if (input.value.trim()) consultarAbono(id);
         });
     })();
 </script>
