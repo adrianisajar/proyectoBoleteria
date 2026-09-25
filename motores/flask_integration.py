@@ -3,8 +3,10 @@ import time
 from datetime import datetime
 from typing import Any
 
-from flask import Flask, current_app, g, jsonify, redirect, request, session, url_for
+from bson import ObjectId
+from flask import Flask, current_app, flash, g, jsonify, redirect, request, session, url_for
 
+from database import usuarios
 from motores.auth import current_user, has_role
 from motores.config_service import get_config
 from motores.constants import SESSION_IDLE_TIMEOUT_SECONDS, VENDEDOR_LOCAL, VENDEDOR_LOCAL_LABEL
@@ -12,6 +14,10 @@ from motores.dashboard_service import get_alertas
 from motores.impresora import is_configured as printer_configured
 
 logger = logging.getLogger(__name__)
+
+# Cache corto para verificar si el usuario sigue activo (evita query en cada request)
+_ACTIVO_CACHE: dict[str, tuple[float, bool]] = {}
+_ACTIVO_CACHE_TTL = 10  # segundos
 
 
 def register_template_filters(app: Flask) -> None:
@@ -72,6 +78,21 @@ def register_before_request(app: Flask) -> None:
 
         session.permanent = True
 
+        # Verificar que el usuario siga activo (inhabilitación inmediata, máx 10s de delay)
+        usuario_id = session.get("usuario_id")
+        if usuario_id and not _usuario_activo(usuario_id):
+            current_app.logger.warning(
+                "Sesión cerrada: usuario inhabilitado=%s ruta=%s",
+                session.get("usuario"),
+                request.path,
+            )
+            session.clear()
+            path = (request.path or "").lower()
+            if path.startswith("/api/"):
+                return jsonify({"ok": False, "error": "Usuario inhabilitado."}), 401
+            flash("Tu cuenta ha sido inhabilitada.", "warning")
+            return redirect(url_for("login"))
+
         now = time.time()
         last = session.get("_ultima_actividad")
         if last is not None and (now - last) > SESSION_IDLE_TIMEOUT_SECONDS:
@@ -88,6 +109,31 @@ def register_before_request(app: Flask) -> None:
             return redirect(url_for("login"))
         session["_ultima_actividad"] = now
         return None
+
+
+def _usuario_activo(usuario_id: str) -> bool:
+    """Return True if the user is active in the DB (cached for 10s)."""
+    now = time.time()
+    cached = _ACTIVO_CACHE.get(usuario_id)
+    if cached and (now - cached[0]) < _ACTIVO_CACHE_TTL:
+        return cached[1]
+    try:
+        if usuarios is None:
+            return True
+        doc = usuarios.find_one({"_id": ObjectId(usuario_id)}, {"activo": 1})
+        activo = doc.get("activo", True) if doc else False
+    except Exception:
+        activo = True
+    _ACTIVO_CACHE[usuario_id] = (now, activo)
+    return activo
+
+
+def invalidate_activo_cache(usuario_id: str | None = None) -> None:
+    """Clear the active-user cache (all users or a specific one)."""
+    if usuario_id is None:
+        _ACTIVO_CACHE.clear()
+    else:
+        _ACTIVO_CACHE.pop(usuario_id, None)
 
 
 def register_request_logging(app: Flask) -> None:

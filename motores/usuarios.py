@@ -19,6 +19,7 @@ from motores.constants import (
     ROLES,
 )
 from motores.fechas import now_local
+from motores.flask_integration import invalidate_activo_cache
 from motores.shared import jsonify
 from motores.validacion import safe_error_message, sanitizar_texto
 
@@ -372,6 +373,7 @@ def register_routes(app: Flask) -> None:
                 if activos <= 1:
                     raise ValueError("No puedes desactivar el último usuario admin.")
             usuarios.update_one({"_id": doc["_id"]}, {"$set": {"activo": activo}})
+            invalidate_activo_cache(usuario_id)
 
         return _try_view(action)
 
