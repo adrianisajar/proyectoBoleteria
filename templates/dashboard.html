@@ -43,7 +43,21 @@
         <div class="metric-card bg-body p-3 h-100" style="--metric-accent: var(--bs-primary);">
             <div class="metric-label mb-2">Recaudo hoy</div>
             <div class="metric-value">{{ stats.recaudo_hoy|cop }}</div>
-            <div class="metric-subtext">{{ stats.pagos_hoy or 0 }} pago(s)</div>
+            <div class="metric-subtext mb-2">{{ stats.pagos_hoy or 0 }} pago(s)</div>
+            <div class="row g-2">
+                <div class="col-6">
+                    <div class="border rounded p-2 text-center h-100">
+                        <div class="metric-label mb-1">Efectivo hoy</div>
+                        <div class="fs-5 fw-bold text-success">{{ stats.recaudo_hoy_efectivo|cop }}</div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="border rounded p-2 text-center h-100">
+                        <div class="metric-label mb-1">Transferencia hoy</div>
+                        <div class="fs-5 fw-bold text-info">{{ stats.recaudo_hoy_transferencia|cop }}</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     <div class="col-6 col-md-4">

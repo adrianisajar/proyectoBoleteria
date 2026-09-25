@@ -217,6 +217,8 @@ def register_routes(app: Flask) -> None:
                 "recaudo_total": 0,
                 "recaudo_hoy": 0,
                 "pagos_hoy": 0,
+                "recaudo_hoy_efectivo": 0,
+                "recaudo_hoy_transferencia": 0,
                 "pagos_efectivo": 0,
                 "pagos_transferencia": 0,
                 "total_pagos_delio": 0,

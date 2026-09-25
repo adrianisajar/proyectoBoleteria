@@ -179,6 +179,10 @@ def get_dashboard_stats(force: bool = False) -> dict:
                         {"$match": {MOVIMIENTOS_FIELD + ".tipo": {"$in": [None, MOV_PAGO]}, MOVIMIENTOS_FIELD + ".fecha": today}},
                         {"$group": {"_id": None, "recaudo_hoy": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}, "pagos_hoy": {"$sum": 1}}},
                     ],
+                    "today_por_metodo": [
+                        {"$match": {MOVIMIENTOS_FIELD + ".tipo": {"$in": [None, MOV_PAGO]}, MOVIMIENTOS_FIELD + ".fecha": today}},
+                        {"$group": {"_id": "$" + MOVIMIENTOS_FIELD + ".metodo", "total": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}}},
+                    ],
                     "pagos_por_metodo": [
                         {"$match": {MOVIMIENTOS_FIELD + ".tipo": {"$in": [None, MOV_PAGO]}}},
                         {"$group": {"_id": "$" + MOVIMIENTOS_FIELD + ".metodo", "total": {"$sum": "$" + MOVIMIENTOS_FIELD + ".valor"}}},
@@ -200,6 +204,7 @@ def get_dashboard_stats(force: bool = False) -> dict:
 
     today_data = (combined.get("today_totals") or [{}])[0] if combined else {}
     pagos_por_metodo = combined.get("pagos_por_metodo", []) if combined else []
+    today_por_metodo = combined.get("today_por_metodo", []) if combined else []
     egresos_data = (combined.get("egresos_totales") or [{}])[0] if combined else {}
     delio_data = (combined.get("pagos_delio") or [{}])[0] if combined else {}
 
@@ -210,6 +215,14 @@ def get_dashboard_stats(force: bool = False) -> dict:
             pagos_efectivo = int(item.get("total", 0) or 0)
         elif item["_id"] == METODO_TRANSFERENCIA:
             pagos_transferencia = int(item.get("total", 0) or 0)
+
+    recaudo_hoy_efectivo = 0
+    recaudo_hoy_transferencia = 0
+    for item in today_por_metodo:
+        if item["_id"] == METODO_EFECTIVO:
+            recaudo_hoy_efectivo = int(item.get("total", 0) or 0)
+        elif item["_id"] == METODO_TRANSFERENCIA:
+            recaudo_hoy_transferencia = int(item.get("total", 0) or 0)
 
     ranking_query = {"total_abonado": {"$gt": 0}}
     if rifa_id:
@@ -263,6 +276,8 @@ def get_dashboard_stats(force: bool = False) -> dict:
         **counts,
         "recaudo_hoy": today_data.get("recaudo_hoy", 0),
         "pagos_hoy": today_data.get("pagos_hoy", 0),
+        "recaudo_hoy_efectivo": recaudo_hoy_efectivo,
+        "recaudo_hoy_transferencia": recaudo_hoy_transferencia,
         "ranking": ranking,
         "valor_boleta": valor_boleta,
         "recaudo_potencial": recaudo_potencial,
