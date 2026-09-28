@@ -162,3 +162,40 @@ def test_export_import_roundtrip(client):
     )
     assert resp2.status_code == 302
     assert boletas.count_documents({}) == 500
+
+
+def _importar_zip(client, zip_bytes, follow=True):
+    return client.post(
+        "/backup",
+        data={"accion": "importar", "archivo": (io.BytesIO(zip_bytes), "backup.zip"), "clave_admin": ADMIN_PASSWORD},
+        follow_redirects=follow,
+    )
+
+
+def test_import_multicoleccion_desde_archivos(client):
+    """Formato nuevo (un .json por colección) restaura bajo el límite total."""
+    respaldo = _backup_estado_actual()
+    boletas.delete_one({"_id": 499})
+    assert boletas.count_documents({}) == 499
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for nombre, docs in respaldo.items():
+            zf.writestr(f"{nombre}.json", json_util.dumps(docs, ensure_ascii=False))
+    resp = _importar_zip(client, buf.getvalue())
+    assert resp.status_code == 200
+    assert "Respaldo restaurado" in resp.get_data(as_text=True)
+    assert boletas.count_documents({}) == 500
+
+
+def test_import_rechaza_limite_total_descomprimido(client, monkeypatch):
+    """Muchos .json pequeños no deben evadir el tope total de descompresión (zip bomb)."""
+    from motores import reportes
+
+    monkeypatch.setattr(reportes, "MAX_BACKUP_UNCOMPRESSED_BYTES", 1000)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("boletas.json", "[" + " " * 798 + "]")
+        zf.writestr("facturas.json", "[" + " " * 798 + "]")
+    resp = _importar_zip(client, buf.getvalue())
+    assert resp.status_code == 200
+    assert "límite total" in resp.get_data(as_text=True)

@@ -321,9 +321,18 @@ window.sortTableFrontend = function(tableId, colIndex, isNumeric) {
     var rows = Array.from(tbody.querySelectorAll("tr"));
     var dir = table.getAttribute("data-sort-dir") || "asc";
     table.setAttribute("data-sort-dir", dir === "asc" ? "desc" : "asc");
+    // En tablas editables la celda contiene <input>/<select>: textContent sería
+    // siempre vacío y el orden no cambiaría (no-op). Usar el valor del campo.
+    var cellValue = function(row) {
+        var td = row.querySelectorAll("td")[colIndex];
+        if (!td) return "";
+        var campo = td.querySelector("input, select, textarea");
+        if (campo) return (campo.value || "").trim();
+        return td.textContent.trim();
+    };
     rows.sort(function(a, b) {
-        var va = a.querySelectorAll("td")[colIndex] ? a.querySelectorAll("td")[colIndex].textContent.trim() : "";
-        var vb = b.querySelectorAll("td")[colIndex] ? b.querySelectorAll("td")[colIndex].textContent.trim() : "";
+        var va = cellValue(a);
+        var vb = cellValue(b);
         if (isNumeric) {
             var na = parseFloat(va.replace(/[^0-9.-]/g, "")) || 0;
             var nb = parseFloat(vb.replace(/[^0-9.-]/g, "")) || 0;

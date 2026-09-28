@@ -322,18 +322,16 @@ def registrar_abono_lote(
         if conflicto:
             rollback_pagos_por_factura(factura_id, valor_boleta)
             raise ValueError(f"La referencia {ref} fue registrada por otra factura mientras se procesaba el pago. Se revirtieron los pagos, intente de nuevo.")
-    # Limpiar _temp_batch_id de los documentos afectados.
+    # Limpiar _temp_batch_id de los documentos afectados (solo nuestro tag:
+    # el $unset sobre la ruta del array borraría el marcador de OTROS batches).
     temp_id = pago.get("_temp_batch_id")
     if temp_id:
-        boletas.update_many(
-            {MOVIMIENTOS_FIELD + "._temp_batch_id": temp_id},
-            {"$unset": {MOVIMIENTOS_FIELD + "._temp_batch_id": ""}},
-        )
+        _limpiar_temp_batch(temp_id)
     invalidate_dashboard_cache()
     return result
 
 
-def rollback_pagos_por_factura(factura_id: int, valor_boleta: int) -> None:
+def rollback_pagos_por_factura(factura_id: int, valor_boleta: int, session=None) -> None:
     """Remove payments tied to a factura from tickets and recompute totals/estado."""
     movimientos = {"$ifNull": ["$" + MOVIMIENTOS_FIELD, []]}
     pipeline = [
@@ -363,8 +361,55 @@ def rollback_pagos_por_factura(factura_id: int, valor_boleta: int) -> None:
     boletas.update_many(
         {MOVIMIENTOS_FIELD + ".factura_id": factura_id},
         pipeline,
+        session=session,
     )
     invalidate_dashboard_cache()
+
+
+def _limpiar_temp_batch(temp_batch_id: str, session=None) -> None:
+    """Strip the temporary batch tag from movements (element-scoped).
+
+    A ``$unset`` on ``historial_movimientos._temp_batch_id`` would remove the
+    tag from EVERY movement of the matched document — including tags of other
+    in-flight batches, whose rollback would then fail to find its movements.
+    This pipeline rewrites only the elements tagged with OUR batch id.
+    """
+    boletas.update_many(
+        {MOVIMIENTOS_FIELD + "._temp_batch_id": temp_batch_id},
+        [
+            {
+                "$set": {
+                    MOVIMIENTOS_FIELD: {
+                        "$map": {
+                            "input": {"$ifNull": ["$" + MOVIMIENTOS_FIELD, []]},
+                            "as": "mov",
+                            "in": {
+                                "$cond": [
+                                    {
+                                        "$and": [
+                                            {"$eq": [{"$type": "$$mov"}, "object"]},
+                                            {"$eq": [{"$ifNull": ["$$mov._temp_batch_id", None]}, temp_batch_id]},
+                                        ]
+                                    },
+                                    {
+                                        "$arrayToObject": {
+                                            "$filter": {
+                                                "input": {"$objectToArray": "$$mov"},
+                                                "as": "kv",
+                                                "cond": {"$ne": ["$$kv.k", "_temp_batch_id"]},
+                                            }
+                                        }
+                                    },
+                                    "$$mov",
+                                ]
+                            },
+                        }
+                    }
+                }
+            }
+        ],
+        session=session,
+    )
 
 
 def _rollback_temp_batch(temp_batch_id: str, valor_boleta: int) -> None:

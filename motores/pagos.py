@@ -737,10 +737,12 @@ def register_routes(app: Flask) -> None:
 
         name_map: dict[str, str] = {}
         if seen_names:
-            regex_patterns = [f"^{re.escape(n)}$" for n in seen_names]
-            for doc in vendedores.find({"nombre": {"$in": [{"$regex": p, "$options": "i"} for p in regex_patterns]}}, {"_id": 1, "nombre": 1}):
+            # $in no acepta objetos {$regex,...}: se traen los nombres y se
+            # normalizan igual que las claves (colapsar espacios + mayúsculas).
+            for doc in vendedores.find({}, {"_id": 1, "nombre": 1}):
                 norm = re.sub(r"\s+", " ", doc.get("nombre", "")).upper()
-                name_map[norm] = doc["_id"]
+                if norm in seen_names:
+                    name_map[norm] = doc["_id"]
 
         cache: dict[str, str] = dict(name_map)
         results = []
@@ -832,19 +834,12 @@ def register_routes(app: Flask) -> None:
             if valid:
                 boleta_ids_to_update = [v["boleta"] for v in valid]
 
-                old_vendors = {
-                    d["vendedor_id"]
-                    for d in vendedores.find(
-                        {"boletas_asignadas": {"$in": boleta_ids_to_update}},
-                        {"_id": 1},
-                    )
-                    if d.get("vendedor_id") and d.get("vendedor_id") != VENDEDOR_LOCAL
-                }
-                if old_vendors:
-                    vendedores.update_many(
-                        {"_id": {"$in": list(old_vendors)}},
-                        {"$pull": {"boletas_asignadas": {"$in": boleta_ids_to_update}}},
-                    )
+                # Quitar estas boletas del array de TODOS los vendedores que las
+                # tengan (el filtro $in sobre el array hace el pre-selección).
+                vendedores.update_many(
+                    {"boletas_asignadas": {"$in": boleta_ids_to_update}},
+                    {"$pull": {"boletas_asignadas": {"$in": boleta_ids_to_update}}},
+                )
 
                 vendor_ops = []
                 vendor_buckets = {}

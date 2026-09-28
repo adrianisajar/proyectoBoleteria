@@ -75,10 +75,17 @@ def register_routes(app: Flask) -> None:
                         "cantidad_boletas": cantidad_boletas,
                     }
                     try:
-                        rifas.update_one({"estado": "activa"}, {"$set": {"nombre": nombre, "valor_boleta": valor_boleta, "cantidad_boletas": cantidad_boletas}})
-                        # Limpiar overrides legacy en configuracion para que
-                        # get_config() lea de rifas sin stale overrides.
-                        configuracion.update_one({"_id": CONFIG_ID}, {"$unset": {"nombre_rifa": "", "valor_boleta": "", "cantidad_boletas": ""}})
+                        resultado = rifas.update_one(
+                            {"estado": "activa"}, {"$set": {"nombre": nombre, "valor_boleta": valor_boleta, "cantidad_boletas": cantidad_boletas}}
+                        )
+                        if resultado.matched_count:
+                            # Limpiar overrides legacy en configuracion para que
+                            # get_config() lea de rifas sin stale overrides.
+                            configuracion.update_one({"_id": CONFIG_ID}, {"$unset": {"nombre_rifa": "", "valor_boleta": "", "cantidad_boletas": ""}})
+                        else:
+                            # Sin rifa activa: persistir como overrides en
+                            # configuracion (get_config los aplica igual).
+                            configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
                     except Exception as exc:
                         flash(safe_error_message(exc), "danger")
                         return redirect(url_for("configuracion_panel"))
@@ -103,7 +110,13 @@ def register_routes(app: Flask) -> None:
                         nuevos_tiers.sort(key=lambda t: t["min"])
                         update = {"comisiones_tiers": nuevos_tiers}
                         try:
-                            rifas.update_one({"estado": "activa"}, {"$set": update})
+                            resultado = rifas.update_one({"estado": "activa"}, {"$set": update})
+                            if resultado.matched_count:
+                                # La rifa activa es la fuente: limpiar override stale.
+                                configuracion.update_one({"_id": CONFIG_ID}, {"$unset": {"comisiones_tiers": ""}})
+                            else:
+                                # Sin rifa activa: persistir como override en configuracion.
+                                configuracion.update_one({"_id": CONFIG_ID}, {"$set": update}, upsert=True)
                         except Exception as exc:
                             current_app.logger.warning("No se pudo actualizar comisiones en el documento de rifa: %s", exc)
                             flash("Advertencia: no se pudo actualizar comisiones en el documento de rifa.", "warning")

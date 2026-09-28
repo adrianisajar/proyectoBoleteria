@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from flask import Flask, Response, current_app
 
 from motores.constants import METODO_PAGO_DELIO, METODO_TRANSFERENCIA, USUARIO_SISTEMA
+from motores.db_tx import con_transaccion
 from motores.egreso_service import rollback_egresos_por_factura
 from motores.fechas import now_local
 from motores.impresora import (
@@ -178,6 +179,12 @@ def register_routes(app: Flask) -> None:
                     config_local = ctx["config"]
                     valor_boleta = int(config_local.get("valor_boleta", 10000) or 10000)
                     boletas_info = build_boletas_info_snapshot(factura.get("boletas", []), valor_boleta)
+                    # Backfill: persistir el snapshot en facturas legacy para que
+                    # la impresión (build_cliente_receipt) también lo tenga.
+                    try:
+                        facturas.update_one({"_id": factura_id}, {"$set": {"boletas_info": boletas_info}})
+                    except Exception as exc:
+                        current_app.logger.warning("No se pudo guardar boletas_info de la factura %s: %s", factura_id, exc)
                 except Exception:
                     current_app.logger.warning("No se pudo construir boletas_info para la factura %s", factura_id)
                     boletas_info = {}
@@ -258,24 +265,32 @@ def register_routes(app: Flask) -> None:
         try:
             # Marcar como anulada ANTES del rollback para que si algo falla,
             # la factura quede consistente (anulada sin pagos) en vez de
-            # inconsistente (pagos revertidos pero sin flag).
-            facturas.update_one(
-                {"_id": factura_id},
-                {
-                    "$set": {
-                        "anulada": True,
-                        "anulada_en": now_local(),
-                        "anulada_por": user,
-                        "motivo_anulacion": motivo,
-                    }
-                },
-            )
-            if factura.get("tipo") == "egreso":
-                rollback_egresos_por_factura(factura_id)
-            else:
-                rollback_pagos_por_factura(factura_id, valor_boleta_local)
+            # inconsistente (pagos revertidos pero sin flag). Flag + rollback
+            # corren en una transacción: o se aplican juntos o no se aplica nada.
+            def _anular_en_transaccion(sess) -> bool:
+                facturas.update_one(
+                    {"_id": factura_id},
+                    {
+                        "$set": {
+                            "anulada": True,
+                            "anulada_en": now_local(),
+                            "anulada_por": user,
+                            "motivo_anulacion": motivo,
+                        }
+                    },
+                    session=sess,
+                )
+                if factura.get("tipo") == "egreso":
+                    rollback_egresos_por_factura(factura_id, session=sess)
+                else:
+                    rollback_pagos_por_factura(factura_id, valor_boleta_local, session=sess)
+                return True
+
+            con_transaccion(_anular_en_transaccion)
         except Exception as exc:
-            # Revertir el flag de anulación si el rollback falló.
+            # En servidores sin transacciones el flag puede quedar si el
+            # rollback falló: revertirlo. En replica set la transacción ya
+            # lo deshace sola (esta escritura es inocua en ese caso).
             try:
                 facturas.update_one(
                     {"_id": factura_id},

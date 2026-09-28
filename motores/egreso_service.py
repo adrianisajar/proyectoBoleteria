@@ -12,6 +12,7 @@ from pymongo import UpdateOne
 from database import boletas
 from motores.cache import invalidate_dashboard_cache
 from motores.constants import MOV_EGRESO, MOVIMIENTOS_FIELD
+from motores.db_tx import con_transaccion
 from motores.fechas import now_local
 
 
@@ -85,16 +86,21 @@ def registrar_egresos(factura_id: int, rows: list[dict], fecha: str, usuario: st
                 [{"$set": {MOVIMIENTOS_FIELD: {"$concatArrays": [{"$ifNull": ["$" + MOVIMIENTOS_FIELD, []]}, {"$literal": [mov]}]}}}],
             )
         )
-    result = boletas.bulk_write(ops, ordered=False)
-    if result.matched_count < len(ops):
-        # Rollback: remove all movements tagged with this batch_id.
-        _rollback_egreso_batch(batch_id)
-        omitidas = len(ops) - result.matched_count
-        raise ValueError(f"{omitidas} boleta(s) no aceptaron el egreso (superarían lo abonado). Se revirtieron los cambios, intente de nuevo.")
+
+    def _operaciones(sess) -> bool:
+        result = boletas.bulk_write(ops, ordered=False, session=sess)
+        if result.matched_count < len(ops):
+            # Rollback: remove all movements tagged with this batch_id.
+            _rollback_egreso_batch(batch_id, session=sess)
+            omitidas = len(ops) - result.matched_count
+            raise ValueError(f"{omitidas} boleta(s) no aceptaron el egreso (superarían lo abonado). Se revirtieron los cambios, intente de nuevo.")
+        return True
+
+    con_transaccion(_operaciones)
     invalidate_dashboard_cache()
 
 
-def rollback_egresos_por_factura(factura_id: int) -> None:
+def rollback_egresos_por_factura(factura_id: int, session=None) -> None:
     """Remove egreso movements tied to a factura (does NOT touch total_abonado/estado)."""
     boletas.update_many(
         {MOVIMIENTOS_FIELD + ".factura_id": factura_id},
@@ -119,11 +125,12 @@ def rollback_egresos_por_factura(factura_id: int) -> None:
                 }
             }
         ],
+        session=session,
     )
     invalidate_dashboard_cache()
 
 
-def _rollback_egreso_batch(batch_id: str) -> None:
+def _rollback_egreso_batch(batch_id: str, session=None) -> None:
     """Remove movements tagged with a temporary batch id (single atomic pipeline).
 
     The previous implementation used two separate ``update_many`` calls: first
@@ -152,5 +159,6 @@ def _rollback_egreso_batch(batch_id: str) -> None:
                 }
             }
         ],
+        session=session,
     )
     invalidate_dashboard_cache()

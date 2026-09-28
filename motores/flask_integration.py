@@ -15,8 +15,9 @@ from motores.impresora import is_configured as printer_configured
 
 logger = logging.getLogger(__name__)
 
-# Cache corto para verificar si el usuario sigue activo (evita query en cada request)
-_ACTIVO_CACHE: dict[str, tuple[float, bool]] = {}
+# Cache corto para verificar si el usuario sigue activo y su rol actual
+# (evita una query en cada request; se invalida al editar usuarios).
+_ACTIVO_CACHE: dict[str, tuple[float, tuple[bool, str | None]]] = {}
 _ACTIVO_CACHE_TTL = 10  # segundos
 
 
@@ -74,16 +75,30 @@ def register_before_request(app: Flask) -> None:
         if (request.path or "").startswith("/static/"):
             return None
         g.config = get_config()
-        g.current_user = current_user()
 
-        if not g.current_user:
+        usuario_id = session.get("usuario_id")
+        if not usuario_id:
+            g.current_user = None
             return None
 
-        session.permanent = True
+        verificacion = _usuario_verificado(usuario_id)
+        if verificacion is None:
+            # Fail-closed: sin poder verificar en la DB no se confía en la sesión
+            # (un usuario inhabilitado no debe seguir operando durante un fallo).
+            current_app.logger.warning(
+                "Sesión cerrada: no se pudo verificar el usuario=%s ruta=%s",
+                session.get("usuario"),
+                request.path,
+            )
+            session.clear()
+            path = (request.path or "").lower()
+            if path.startswith("/api/"):
+                return jsonify({"ok": False, "error": "No se pudo verificar la sesi\u00f3n."}), 401
+            flash("No se pudo verificar tu sesi\u00f3n. Inicia de nuevo.", "warning")
+            return redirect(url_for("login"))
 
-        # Verificar que el usuario siga activo (inhabilitación inmediata, máx 10s de delay)
-        usuario_id = session.get("usuario_id")
-        if usuario_id and not _usuario_activo(usuario_id):
+        activo, rol_db = verificacion
+        if not activo:
             current_app.logger.warning(
                 "Sesión cerrada: usuario inhabilitado=%s ruta=%s",
                 session.get("usuario"),
@@ -95,6 +110,13 @@ def register_before_request(app: Flask) -> None:
                 return jsonify({"ok": False, "error": "Usuario inhabilitado."}), 401
             flash("Tu cuenta ha sido inhabilitada.", "warning")
             return redirect(url_for("login"))
+
+        # Rol sincronizado con la DB (≤10s): un rol revocado aplica sin re-login.
+        if rol_db and session.get("rol") != rol_db:
+            session["rol"] = rol_db
+        g.current_user = current_user()
+
+        session.permanent = True
 
         now = time.time()
         last = session.get("_ultima_actividad")
@@ -114,21 +136,27 @@ def register_before_request(app: Flask) -> None:
         return None
 
 
-def _usuario_activo(usuario_id: str) -> bool:
-    """Return True if the user is active in the DB (cached for 10s)."""
+def _usuario_verificado(usuario_id: str) -> tuple[bool, str | None] | None:
+    """Return (activo, rol) from the DB (cached 10s), or None when the check failed.
+
+    Fail-closed: a DB error is NOT cached and returns None so the caller can
+    close the session; the next request retries (immediate recovery).
+    """
     now = time.time()
     cached = _ACTIVO_CACHE.get(usuario_id)
     if cached and (now - cached[0]) < _ACTIVO_CACHE_TTL:
         return cached[1]
+    if usuarios is None:
+        return (True, None)
     try:
-        if usuarios is None:
-            return True
-        doc = usuarios.find_one({"_id": ObjectId(usuario_id)}, {"activo": 1})
-        activo = doc.get("activo", True) if doc else False
-    except Exception:
-        activo = True
-    _ACTIVO_CACHE[usuario_id] = (now, activo)
-    return activo
+        doc = usuarios.find_one({"_id": ObjectId(usuario_id)}, {"activo": 1, "rol": 1})
+    except Exception as exc:
+        logger.warning("No se pudo verificar el usuario %s: %s", usuario_id, exc)
+        _ACTIVO_CACHE.pop(usuario_id, None)
+        return None
+    resultado = (False, None) if doc is None else (bool(doc.get("activo", True)), doc.get("rol"))
+    _ACTIVO_CACHE[usuario_id] = (now, resultado)
+    return resultado
 
 
 def invalidate_activo_cache(usuario_id: str | None = None) -> None:

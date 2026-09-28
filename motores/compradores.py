@@ -18,6 +18,7 @@ from motores.constants import (
     USUARIO_SISTEMA,
     VENDEDOR_LOCAL,
 )
+from motores.db_tx import con_transaccion
 from motores.errores import safe_error_message
 from motores.fechas import now_local
 from motores.shared import (
@@ -36,6 +37,16 @@ from motores.shared import (
     url_for,
 )
 from motores.validacion import parse_money, sanitizar_texto
+
+# Campos reales de la colección reservas para el sort del listado
+# (los nombres de la whitelist no existen en el documento: sort no-op).
+_SORT_CAMPOS_RESERVAS = {
+    "_id": "_id",
+    "comprador": "cliente.nombre",
+    "telefono": "cliente.telefono",
+    "direccion": "cliente.direccion",
+    "reservada": "creado_en",
+}
 
 
 def _procesar_rows_rapido(rows: list, confirmar_pagadas: bool = False) -> dict:
@@ -70,6 +81,7 @@ def _procesar_rows_rapido(rows: list, confirmar_pagadas: bool = False) -> dict:
     pagos_rechazados = []
     pagos_plan = []
     pagadas_sin_confirmar = []
+    vistos: set[int] = set()
 
     for row in rows:
         bid = row.get("boleta")
@@ -95,6 +107,10 @@ def _procesar_rows_rapido(rows: list, confirmar_pagadas: bool = False) -> dict:
         if not nombre and not telefono and not direccion:
             ids_sin_datos.append(bid)
             continue
+        if bid in vistos:
+            errores.append(f"#{bid:04d}: boleta repetida en la lista (se ignoró la fila).")
+            continue
+        vistos.add(bid)
 
         set_fields: dict = {
             "cliente.nombre": nombre,
@@ -168,7 +184,30 @@ def _procesar_rows_rapido(rows: list, confirmar_pagadas: bool = False) -> dict:
     pagos_total = 0
     pagos_omitidos = 0
     if ops:
-        boletas.bulk_write(ops, ordered=False)
+        # Escrituras en una transacción: clientes + pagos + estados aplican
+        # juntos (o nada), en vez de quedar un bulk a medias sin rollback.
+        def _escribir(sess) -> None:
+            boletas.bulk_write(ops, ordered=False, session=sess)
+            if ids_con_nombre:
+                boletas.update_many(
+                    {
+                        "_id": {"$in": ids_con_nombre},
+                        "$or": [
+                            {"vendedor_id": {"$in": ["", VENDEDOR_LOCAL]}},
+                            {"vendedor_id": None},
+                        ],
+                        "total_abonado": 0,
+                    },
+                    {"$set": {"vendedor_id": VENDEDOR_LOCAL}},
+                    session=sess,
+                )
+            boletas.update_many(
+                {"_id": {"$in": ids_con_nombre}},
+                [{"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}}],
+                session=sess,
+            )
+
+        con_transaccion(_escribir)
         # Los ops de cliente siempre coinciden (boleta verificada); el
         # desfase solo puede venir de pagos a boletas que quedaron pagadas
         # por otra operación concurrente (filtro estado != pagada).
@@ -183,24 +222,6 @@ def _procesar_rows_rapido(rows: list, confirmar_pagadas: bool = False) -> dict:
                     pagos_registrados += 1
                     pagos_total += int(movimiento.get("valor", 0) or 0)
         pagos_omitidos = len(pagos_plan) - pagos_registrados
-
-        if ids_con_nombre:
-            boletas.update_many(
-                {
-                    "_id": {"$in": ids_con_nombre},
-                    "$or": [
-                        {"vendedor_id": {"$in": ["", VENDEDOR_LOCAL]}},
-                        {"vendedor_id": None},
-                    ],
-                    "total_abonado": 0,
-                },
-                {"$set": {"vendedor_id": VENDEDOR_LOCAL}},
-            )
-
-        boletas.update_many(
-            {"_id": {"$in": ids_con_nombre}},
-            [{"$set": {"estado": estado_pipeline_expr(valor_boleta_local)}}],
-        )
 
         invalidate_dashboard_cache()
 
@@ -451,10 +472,10 @@ def register_routes(app: Flask) -> None:
         sort_dir = request.args.get("sort_dir", "asc").strip()
         if sort_dir not in {"asc", "desc"}:
             sort_dir = "asc"
-        if sort_by not in {"_id", "comprador", "telefono", "direccion", "reservada"}:
+        if sort_by not in _SORT_CAMPOS_RESERVAS:
             sort_by = "_id"
         sort_direction = 1 if sort_dir == "asc" else -1
-        lista = list(reservas.find({}).sort(sort_by, sort_direction).limit(1000))
+        lista = list(reservas.find({}).sort(_SORT_CAMPOS_RESERVAS[sort_by], sort_direction).limit(1000))
         return render_template("compradores_reservas.html", reservas=lista, sort_by=sort_by, sort_dir=sort_dir)
 
     @app.route("/api/compradores/reservas", methods=["POST"])

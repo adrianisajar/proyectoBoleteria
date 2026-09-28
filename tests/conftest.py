@@ -148,6 +148,7 @@ def _seed_once():
             "total_abonado": 0,
             "historial_movimientos": [],
             "fecha_adquisicion": None,
+            "_version": 0,
         }
         for n in range(N_BOLETAS)
     ]
@@ -178,7 +179,14 @@ def _reset():
             }
         },
     )
-    configuracion.update_one({"_id": "rifa"}, {"$set": {"factura_counter": 0, "traslado_counter": 0, "vendedor_counter": 0}})
+    configuracion.update_one(
+        {"_id": "rifa"},
+        {
+            "$set": {"factura_counter": 0, "traslado_counter": 0, "vendedor_counter": 0},
+            # Overrides de rifa no deben sobrevivir entre tests (aislamiento).
+            "$unset": {"nombre_rifa": "", "valor_boleta": "", "cantidad_boletas": "", "comisiones_tiers": ""},
+        },
+    )
     _seed_usuarios()
     invalidate_config_cache()
     invalidate_dashboard_cache()

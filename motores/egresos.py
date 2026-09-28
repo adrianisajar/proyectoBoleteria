@@ -249,6 +249,16 @@ def register_routes(app: Flask) -> None:
                 flash(f"Boletas no encontradas: {', '.join(f'{b:04d}' for b in missing)}", "danger")
                 return _render_form(form_data, vendedores_list=vendedores_list)
 
+            # Las boletas del egreso deben pertenecer al vendedor seleccionado
+            # (coincide con lo que ofrece /api/egresos/boletas/<vid>).
+            ajenas = sorted({b for b in boleta_ids if (docs_map[b].get("vendedor_id") or "") != vendedor_id})
+            if ajenas:
+                muestra = ", ".join(f"#{b:04d}" for b in ajenas[:8])
+                if len(ajenas) > 8:
+                    muestra += f" (+{len(ajenas) - 8})"
+                flash(f"Boleta(s) no asignadas al vendedor seleccionado: {muestra}.", "danger")
+                return _render_form(form_data, vendedores_list=vendedores_list)
+
             ingresado_por_boleta = {b: int(docs_map[b].get("total_abonado") or 0) for b in boleta_ids}
             egresado_por_boleta = {
                 b: sum(int((m or {}).get("valor") or 0) for m in (docs_map[b].get(MOVIMIENTOS_FIELD) or []) if (m or {}).get("tipo") == MOV_EGRESO)

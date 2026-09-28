@@ -188,8 +188,19 @@ def update_ticket_safe(boleta_id: int, update_pipeline: list) -> bool:
     """
     doc = boletas.find_one({"_id": boleta_id}, {"_version": 1})
     current_version = doc.get("_version", 0) if doc else 0
+    filtro: dict = {"_id": boleta_id}
+    if current_version:
+        filtro["_version"] = current_version
+    else:
+        # Docs creados antes del locking no tienen el campo: {_version: 0} NO
+        # matchea documentos donde el campo falta, así que se acepta ambos.
+        filtro["$or"] = [{"_version": 0}, {"_version": {"$exists": False}}]
     result = boletas.update_one(
-        {"_id": boleta_id, "_version": current_version},
-        [*update_pipeline, {"$inc": {"_version": 1}}],
+        filtro,
+        [
+            *update_pipeline,
+            # $inc no es válido dentro de un update-pipeline; se usa $set con $add.
+            {"$set": {"_version": {"$add": [{"$ifNull": ["$_version", 0]}, 1]}}},
+        ],
     )
     return result.matched_count == 1

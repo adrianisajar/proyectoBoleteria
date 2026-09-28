@@ -2,6 +2,7 @@ import contextlib
 import logging
 import os
 import re
+import time
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -29,6 +30,10 @@ LOGIN_MAX_INTENTOS = int(os.getenv("LOGIN_MAX_INTENTOS") or "50")
 LOGIN_BLOQUEO_MINUTOS = 15
 LOGIN_ATTEMPT_TTL_DAYS = 1
 
+# Throttle de ensure_initial_admin: no repetir el upsert en cada GET /login.
+_ADMIN_ULTIMA_VERIFICACION: dict[str, float] = {"ts": 0.0}
+_ADMIN_VERIFICACION_TTL = 60.0  # segundos
+
 
 def _ensure_indexes() -> None:
     """Create the unique index on 'usuario' (idempotent)."""
@@ -46,12 +51,17 @@ def ensure_initial_admin() -> None:
 
     Uses ``update_one`` with ``upsert=True`` to make the check-and-insert
     atomic — no TOCTOU race between ``count_documents`` and ``insert_one``.
+    Throttled for 60s once an admin is confirmed present, so GET /login does
+    not run a write on every request.
     """
     if usuarios is None:
         return
+    ahora = time.monotonic()
+    if (ahora - _ADMIN_ULTIMA_VERIFICACION["ts"]) < _ADMIN_VERIFICACION_TTL:
+        return
     _ensure_indexes()
     try:
-        usuarios.update_one(
+        result = usuarios.update_one(
             {"rol": ROL_ADMIN},
             {
                 "$setOnInsert": {
@@ -66,6 +76,8 @@ def ensure_initial_admin() -> None:
             },
             upsert=True,
         )
+        if result.matched_count or result.upserted_id:
+            _ADMIN_ULTIMA_VERIFICACION["ts"] = ahora
     except Exception as exc:
         logger.warning("No se pudo crear el usuario administrador inicial: %s", exc)
         _ensure_indexes()
@@ -258,6 +270,19 @@ def _try_view(action: Any, mensaje: str = "Cambios guardados correctamente.") ->
     return redirect(url_for("configuracion_panel"))
 
 
+def _es_next_seguro(next_url: str | None) -> bool:
+    """True cuando next_url es una ruta interna segura (evita open redirect).
+
+    Los navegadores normalizan ``\\`` a ``/``: ``/\\evil.com`` se convierte en
+    ``//evil.com`` (URL protocol-relative hacia otro host), por lo que se
+    rechazan backslashes, CRLF y cualquier cosa que no sea un path con una
+    sola barra inicial.
+    """
+    if not next_url or not next_url.startswith("/") or next_url.startswith("//"):
+        return False
+    return not any(ch in next_url for ch in ("\\", "\n", "\r", "\x00"))
+
+
 def register_routes(app: Flask) -> None:
     """Register the login, logout and user management routes."""
 
@@ -284,18 +309,20 @@ def register_routes(app: Flask) -> None:
                 return render_template("login.html"), 401
             _limpiar_intentos(usuario)
             session.clear()
-            # Regenerate session ID to prevent fixation attacks
-            with contextlib.suppress(Exception):
-                current_app.session_interface.regenerate(session)
             session["usuario_id"] = str(user["_id"])
             session["usuario"] = user["usuario"]
             session["nombre"] = user["nombre"]
             session["rol"] = user["rol"]
+            # Regenerate session ID to prevent fixation attacks. MUST run AFTER
+            # the session has data: flask_session's regenerate() is a no-op when
+            # bool(session) is False (which is the case right after clear()).
+            with contextlib.suppress(Exception):
+                current_app.session_interface.regenerate(session)
             if usuarios is not None:
                 with contextlib.suppress(Exception):
                     usuarios.update_one({"_id": user["_id"]}, {"$set": {"ultimo_acceso": now_local()}})
-            next_url = request.args.get("next") or url_for(home_endpoint())
-            if not next_url.startswith("/") or next_url.startswith("//"):
+            next_url = request.args.get("next")
+            if not _es_next_seguro(next_url):
                 next_url = url_for(home_endpoint())
             return redirect(next_url)
         return render_template("login.html")
@@ -342,6 +369,8 @@ def register_routes(app: Flask) -> None:
             if str(doc["_id"]) == current_user().get("usuario_id") and rol != doc.get("rol"):
                 raise ValueError("No puedes cambiar tu propio rol.")
             usuarios.update_one({"_id": doc["_id"]}, {"$set": {"nombre": nombre, "rol": rol}})
+            # Que el nuevo rol aplique en ≤10s sin reiniciar sesión.
+            invalidate_activo_cache(usuario_id)
 
         return _try_view(action)
 
@@ -398,6 +427,7 @@ def register_routes(app: Flask) -> None:
                 if activos <= 1:
                     raise ValueError("No puedes eliminar el último usuario admin.")
             usuarios.delete_one({"_id": doc["_id"]})
+            invalidate_activo_cache(usuario_id)
 
         return _try_view(action, mensaje="Usuario eliminado correctamente.")
 

@@ -102,10 +102,11 @@ def get_dashboard_counts(rifa_id: str | None = None, valor_boleta: int | None = 
                         "$sum": {
                             "$cond": [
                                 {
+                                    # FSM: total 0 + vendedor real => "asignada"
+                                    # (con o sin cliente; con cliente sin vendedor es "separada")
                                     "$and": [
                                         {"$eq": [{"$ifNull": ["$total_abonado", 0]}, 0]},
-                                        {"$eq": [{"$ifNull": ["$cliente.nombre", ""]}, ""]},
-                                        {"$not": {"$in": [{"$ifNull": ["$vendedor_id", ""]}, ["", None, VENDEDOR_LOCAL]]}},
+                                        {"$not": {"$in": [{"$ifNull": ["$vendedor_id", ""]}, ["", VENDEDOR_LOCAL]]}},
                                     ]
                                 },
                                 1,

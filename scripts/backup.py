@@ -18,7 +18,6 @@ contra ZIP bombs (>500 MB sin comprimir) y path traversal en nombres de archivo.
 
 import argparse
 import getpass
-import json
 import os
 import sys
 import time
@@ -152,13 +151,14 @@ def importar_respaldo(zip_path: str, admin_password: str) -> int:
         nombres = zf.namelist()
         if "backup.json" in nombres:
             raw = zf.read("backup.json")
-            data = json.loads(raw)
+            # json_util.loads para reconstruir ObjectId/datetime (json.loads los dejaría como {"$oid":...})
+            data = json_util.loads(raw)
             del raw
         elif any(n.endswith(".json") for n in nombres):
             data = {}
             for nombre in nombres:
                 if nombre.endswith(".json"):
-                    data[nombre[:-5]] = json.loads(zf.read(nombre))
+                    data[nombre[:-5]] = json_util.loads(zf.read(nombre))
         else:
             raise ValueError("El ZIP no contiene archivos JSON de respaldo.")
     _validar_estructura(data)

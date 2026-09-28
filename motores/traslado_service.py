@@ -16,6 +16,7 @@ from database import boletas, configuracion, traslados
 from motores.cache import invalidate_dashboard_cache
 from motores.config_service import get_config
 from motores.constants import CONFIG_ID, MOV_TRASLADO_ENTRADA, MOV_TRASLADO_SALIDA, MOVIMIENTOS_FIELD
+from motores.db_tx import con_transaccion
 from motores.fechas import now_local
 from motores.ticket_service import estado_pipeline_expr, movimiento_neto_expr
 
@@ -122,31 +123,35 @@ def registrar_traslado(
                 session=session,
             )
 
-    with client.start_session() as session:
-        session.with_transaction(aplicar)
+    con_transaccion(aplicar)
     invalidate_dashboard_cache()
 
 
 def revertir_traslado(traslado_id: int, valor_boleta: int) -> None:
     """Remove both movements of a traslado and recompute net balance/estado."""
-    boletas.update_many(
-        {MOVIMIENTOS_FIELD + ".traslado_id": traslado_id},
-        [
-            {
-                "$set": {
-                    MOVIMIENTOS_FIELD: {
-                        "$filter": {
-                            "input": {"$ifNull": ["$" + MOVIMIENTOS_FIELD, []]},
-                            "cond": {"$ne": ["$$this.traslado_id", traslado_id]},
+
+    def _operaciones(sess) -> None:
+        boletas.update_many(
+            {MOVIMIENTOS_FIELD + ".traslado_id": traslado_id},
+            [
+                {
+                    "$set": {
+                        MOVIMIENTOS_FIELD: {
+                            "$filter": {
+                                "input": {"$ifNull": ["$" + MOVIMIENTOS_FIELD, []]},
+                                "cond": {"$ne": ["$$this.traslado_id", traslado_id]},
+                            }
                         }
                     }
-                }
-            },
-            {"$set": {"total_abonado": movimiento_neto_expr()}},
-            {"$set": {"estado": estado_pipeline_expr(valor_boleta)}},
-        ],
-    )
-    traslados.delete_one({"_id": traslado_id})
+                },
+                {"$set": {"total_abonado": movimiento_neto_expr()}},
+                {"$set": {"estado": estado_pipeline_expr(valor_boleta)}},
+            ],
+            session=sess,
+        )
+        traslados.delete_one({"_id": traslado_id}, session=sess)
+
+    con_transaccion(_operaciones)
     invalidate_dashboard_cache()
 
 

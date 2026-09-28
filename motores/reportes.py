@@ -18,6 +18,7 @@ from motores.constants import (
     MOV_PAGO,
     MOV_TRASLADO_ENTRADA,
     MOV_TRASLADO_SALIDA,
+    ROLES,
     VENDEDOR_LOCAL,
 )
 from motores.excel_export import make_xlsx_response
@@ -157,6 +158,69 @@ def _validar_respaldo(data: dict[str, Any]) -> tuple[list[str], list[str]]:
         counter = config_rifa.get("factura_counter")
         if isinstance(counter, int) and max_factura_id > counter:
             errores.append(f"configuracion: factura_counter ({counter}) es menor que el id máximo de factura ({max_factura_id})")
+
+    for nombre in ("rifas", "usuarios", "traslados", "reservas"):
+        if nombre in data and not isinstance(data.get(nombre), list):
+            errores.append(f"{nombre}: el dato no es una lista")
+
+    ids_rifas: set[str] = set()
+    rifas_activas = 0
+    for doc in (d for d in (data.get("rifas") or []) if isinstance(d, dict)):
+        rid = doc.get("_id")
+        if rid is None:
+            errores.append("rifas: _id faltante")
+            continue
+        key = str(rid)
+        if key in ids_rifas:
+            errores.append(f"rifas: _id duplicado {key}")
+        ids_rifas.add(key)
+        estado = doc.get("estado")
+        if estado is not None and (not isinstance(estado, str) or not estado.strip()):
+            errores.append(f"rifas {key}: estado inválido {estado!r}")
+        if estado == "activa":
+            rifas_activas += 1
+        valor = doc.get("valor_boleta")
+        if valor is not None and (not _es_numero(valor) or valor <= 0):
+            errores.append(f"rifas {key}: valor_boleta inválido {valor!r}")
+        cantidad = doc.get("cantidad_boletas")
+        if cantidad is not None and (not isinstance(cantidad, int) or isinstance(cantidad, bool) or cantidad < 1):
+            errores.append(f"rifas {key}: cantidad_boletas inválida {cantidad!r}")
+    if rifas_activas > 1:
+        errores.append(f"rifas: {rifas_activas} rifas con estado 'activa' (solo puede haber una)")
+
+    logins_vistos: set[str] = set()
+    for doc in (d for d in (data.get("usuarios") or []) if isinstance(d, dict)):
+        login = doc.get("usuario")
+        if not isinstance(login, str) or not login.strip():
+            errores.append(f"usuarios: usuario inválido {login!r}")
+            continue
+        if login in logins_vistos:
+            errores.append(f"usuarios: login duplicado {login!r}")
+        logins_vistos.add(login)
+        rol = doc.get("rol")
+        if rol not in ROLES:
+            errores.append(f"usuarios {login}: rol inválido {rol!r}")
+        if not isinstance(doc.get("password_hash"), str) or not doc.get("password_hash"):
+            errores.append(f"usuarios {login}: password_hash faltante")
+
+    ids_traslados: set[int] = set()
+    for doc in (d for d in (data.get("traslados") or []) if isinstance(d, dict)):
+        tid = doc.get("_id")
+        if not isinstance(tid, int) or isinstance(tid, bool) or tid <= 0:
+            errores.append(f"traslados: _id inválido {tid!r}")
+            continue
+        if tid in ids_traslados:
+            errores.append(f"traslados: _id duplicado {tid}")
+        ids_traslados.add(tid)
+        valor = doc.get("valor")
+        if not _es_numero(valor) or valor <= 0:
+            errores.append(f"traslados {tid}: valor inválido {valor!r}")
+        for campo in ("boleta_origen", "boleta_destino"):
+            numero = doc.get(campo)
+            if not isinstance(numero, int) or isinstance(numero, bool) or not (BOLETA_MIN <= numero <= BOLETA_MAX):
+                errores.append(f"traslados {tid}: {campo} inválido {numero!r}")
+            elif numero not in boletas_por_id:
+                errores.append(f"traslados {tid}: {campo} #{numero:04d} no existe en el respaldo")
 
     for numero, doc in boletas_por_id.items():
         movimientos = doc.get("historial_movimientos") or []
@@ -381,20 +445,33 @@ def register_routes(app: Flask) -> None:
                                 raise ValueError("El respaldo descomprimido supera el límite permitido de 64 MB.")
                             data = json_util.loads(raw.decode("utf-8"))
                         else:
-                            # Formato nuevo: un JSON por colección
+                            # Formato nuevo: un JSON por colección.
+                            # Límite TOTAL (no por archivo): un ZIP con muchos
+                            # .json no puede evadir el tope de 64 MB (zip bomb).
+                            total_leido = 0
                             for nombre in nombres:
                                 if not nombre.endswith(".json"):
                                     continue
                                 info = zf.getinfo(nombre)
                                 if info.file_size > MAX_BACKUP_UNCOMPRESSED_BYTES:
                                     raise ValueError(f"{nombre}: supera el límite de 64 MB.")
+                                if total_leido + info.file_size > MAX_BACKUP_UNCOMPRESSED_BYTES:
+                                    raise ValueError("El respaldo descomprimido supera el límite total de 64 MB.")
                                 with zf.open(info) as f:
                                     raw = f.read(MAX_BACKUP_UNCOMPRESSED_BYTES + 1)
                                 if len(raw) > MAX_BACKUP_UNCOMPRESSED_BYTES:
                                     raise ValueError(f"{nombre}: supera el límite de 64 MB.")
+                                total_leido += len(raw)
+                                if total_leido > MAX_BACKUP_UNCOMPRESSED_BYTES:
+                                    raise ValueError("El respaldo descomprimido supera el límite total de 64 MB.")
                                 data[nombre[:-5]] = json_util.loads(raw.decode("utf-8"))
                     # Backward compat: convert string ObjectId for old backups
                     _restore_objectids_from_backup(data)
+                except ValueError as exc:
+                    # ValueError = mensajes propios listos para el usuario
+                    # (límites de tamaño, JSON inválido): no ocultarlos.
+                    flash(str(exc) or "El archivo de respaldo no es válido.", "danger")
+                    return redirect(url_for("backup"))
                 except Exception as exc:
                     flash(safe_error_message(exc), "danger")
                     return redirect(url_for("backup"))
